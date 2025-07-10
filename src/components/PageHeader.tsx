@@ -8,6 +8,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useEffect, useState } from "react";
+import { getAuth } from "firebase/auth";
+import { db } from "@/lib/firebase";
+import { collection, query, where, getDocs } from "firebase/firestore";
 
 interface PageHeaderProps {
   title: string;
@@ -20,12 +24,57 @@ export function PageHeader({
   subtitle,
   icon
 }: PageHeaderProps) {
-  // TODO: Replace with actual user data from your auth context
-  const user = {
-    name: "John Doe",
-    role: "Admin",
-    avatarUrl: "/path/to/avatar.jpg"
-  };
+  // User info state
+  const [user, setUser] = useState({
+    name: "",
+    role: "",
+    avatarUrl: ""
+  });
+
+  useEffect(() => {
+    async function fetchUser() {
+      const adminLoggedIn = localStorage.getItem("adminLoggedIn") === "true";
+      if (adminLoggedIn) {
+        const username = localStorage.getItem("adminUsername");
+        if (username) {
+          const q = query(collection(db, "admins"), where("username", "==", username));
+          const querySnapshot = await getDocs(q);
+          if (!querySnapshot.empty) {
+            const data = querySnapshot.docs[0].data();
+            setUser({
+              name: data.name || data.username || "Admin",
+              role: data.position || "Admin",
+              avatarUrl: data.profilePicture || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name || data.username || "Admin")}&background=random`
+            });
+            return;
+          }
+        }
+      } else {
+        const authUser = getAuth().currentUser;
+        if (authUser) {
+          if (authUser.email === "accizardlucban@gmail.com") {
+            const q = query(collection(db, "superAdmin"), where("email", "==", authUser.email));
+            const querySnapshot = await getDocs(q);
+            if (!querySnapshot.empty) {
+              const data = querySnapshot.docs[0].data();
+              setUser({
+                name: data.fullName || data.username || "Super Admin",
+                role: data.role || data.position || "Super Admin",
+                avatarUrl: data.profilePicture || authUser.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.fullName || data.username || "Super Admin")}&background=random`
+              });
+              return;
+            }
+          }
+          setUser({
+            name: authUser.displayName || authUser.email?.split("@")[0] || "Super Admin",
+            role: "Super Admin",
+            avatarUrl: authUser.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(authUser.displayName || authUser.email?.split("@")[0] || "Super Admin")}&background=random`
+          });
+        }
+      }
+    }
+    fetchUser();
+  }, []);
 
   return (
     <div className="bg-white border-b border-gray-200 px-8 py-4">
@@ -42,16 +91,17 @@ export function PageHeader({
 
         <DropdownMenu>
           <DropdownMenuTrigger className="flex items-center space-x-3 hover:bg-gray-50 rounded-lg px-3 py-2 transition-colors">
+            
+            <div className="text-sm text-right">
+              <div className="font-medium text-gray-900">{user.name}</div>
+              <div className="text-gray-500">{user.role}</div>
+            </div>
             <Avatar className="h-8 w-8">
               <img src={user.avatarUrl} alt={user.name} onError={(e) => {
                 const target = e.target as HTMLImageElement;
                 target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`;
               }} />
             </Avatar>
-            <div className="text-sm text-right">
-              <div className="font-medium text-gray-900">{user.name}</div>
-              <div className="text-gray-500">{user.role}</div>
-            </div>
             <ChevronDown className="h-4 w-4 text-gray-500" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">

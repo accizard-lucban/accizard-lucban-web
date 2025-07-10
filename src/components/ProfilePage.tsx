@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,19 +9,99 @@ import { User, LogOut, Camera } from "lucide-react";
 import { Layout } from "./Layout";
 import { PageHeader } from "./PageHeader";
 import { useNavigate } from "react-router-dom";
+import { db, auth } from "@/lib/firebase";
+import { getAuth, updateProfile, updateEmail } from "firebase/auth";
+import { collection, query, where, getDocs, doc, updateDoc } from "firebase/firestore";
+import { toast } from "@/components/ui/sonner";
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel
+} from "@/components/ui/alert-dialog";
+
 export function ProfilePage() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState({
-    name: "John Admin",
-    position: "System Administrator",
-    idNumber: "ADM001",
-    username: "admin",
-    email: "admin@accizard.com",
+    name: "",
+    position: "",
+    idNumber: "",
+    username: "",
+    email: "",
     profilePicture: ""
   });
-  const handleSaveProfile = (e: React.FormEvent) => {
-    e.preventDefault();
-    console.log("Profile saved:", profile);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const handleSaveProfile = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setShowConfirm(false);
+    setSaving(true);
+    try {
+      const adminLoggedIn = localStorage.getItem("adminLoggedIn") === "true";
+      if (adminLoggedIn) {
+        // Update admin profile in Firestore by username
+        const username = localStorage.getItem("adminUsername");
+        if (username) {
+          const q = query(collection(db, "admins"), where("username", "==", username));
+          const querySnapshot = await getDocs(q);
+          if (!querySnapshot.empty) {
+            const docRef = doc(db, "admins", querySnapshot.docs[0].id);
+            await updateDoc(docRef, {
+              name: profile.name,
+              position: profile.position,
+              idNumber: profile.idNumber,
+              username: profile.username,
+              email: profile.email,
+              profilePicture: profile.profilePicture
+            });
+            toast.success("Profile updated successfully!");
+          }
+        }
+      } else {
+        // Super-admin: use Firebase Auth
+        const user = getAuth().currentUser;
+        if (user) {
+          if (user.email === "accizardlucban@gmail.com") {
+            // Update superAdmin profile in Firestore by email
+            const q = query(collection(db, "superAdmin"), where("email", "==", user.email));
+            const querySnapshot = await getDocs(q);
+            if (!querySnapshot.empty) {
+              const docRef = doc(db, "superAdmin", querySnapshot.docs[0].id);
+              await updateDoc(docRef, {
+                fullName: profile.name,
+                position: profile.position,
+                idNumber: profile.idNumber,
+                username: profile.username,
+                email: profile.email,
+                profilePicture: profile.profilePicture
+              });
+              toast.success("Profile updated successfully!");
+            }
+          } else {
+            // For other super-admins, update Firebase Auth profile (displayName, photoURL)
+            await updateProfile(user, {
+              displayName: profile.name,
+              photoURL: profile.profilePicture
+            });
+            // Optionally update email
+            if (profile.email && profile.email !== user.email) {
+              await updateEmail(user, profile.email);
+            }
+            toast.success("Profile updated successfully!");
+          }
+        }
+      }
+    } catch (error) {
+      toast.error("Failed to update profile.");
+      console.error("Error updating profile:", error);
+    } finally {
+      setSaving(false);
+    }
   };
   const handleSignOut = () => {
     console.log("Signing out...");
@@ -40,15 +120,68 @@ export function ProfilePage() {
       reader.readAsDataURL(file);
     }
   };
+
+  useEffect(() => {
+    async function fetchProfile() {
+      // Check if admin or super-admin
+      const adminLoggedIn = localStorage.getItem("adminLoggedIn") === "true";
+      if (adminLoggedIn) {
+        // Admin: get username from localStorage (set after login)
+        const username = localStorage.getItem("adminUsername");
+        if (username) {
+          const q = query(collection(db, "admins"), where("username", "==", username));
+          const querySnapshot = await getDocs(q);
+          if (!querySnapshot.empty) {
+            const data = querySnapshot.docs[0].data();
+            setProfile({
+              name: data.name || "",
+              position: data.position || "",
+              idNumber: data.idNumber || "",
+              username: data.username || "",
+              email: data.email || "",
+              profilePicture: data.profilePicture || ""
+            });
+          }
+        }
+      } else {
+        // Super-admin: use Firebase Auth
+        const user = getAuth().currentUser;
+        if (user) {
+          if (user.email === "accizardlucban@gmail.com") {
+            // Fetch from superAdmin collection
+            const q = query(collection(db, "superAdmin"), where("email", "==", user.email));
+            const querySnapshot = await getDocs(q);
+            if (!querySnapshot.empty) {
+              const data = querySnapshot.docs[0].data();
+              setProfile({
+                name: data.fullName || "",
+                position: data.position || "",
+                idNumber: data.idNumber || "",
+                username: data.username || "",
+                email: data.email || user.email,
+                profilePicture: data.profilePicture || user.photoURL || ""
+              });
+              return;
+            }
+          }
+          // Fallback: use Firebase Auth
+          setProfile({
+            name: user.displayName || "",
+            position: "Super Admin",
+            idNumber: user.uid || "",
+            username: user.email?.split("@")[0] || "",
+            email: user.email || "",
+            profilePicture: user.photoURL || ""
+          });
+        }
+      }
+    }
+    fetchProfile();
+  }, []);
+
   return <Layout>
         
       <div className="max-w-4xl mx-auto">
-        <div className="flex items-center justify-end mb-6">
-          <Button onClick={handleSignOut} variant="outline" className="flex items-center space-x-2 border-red-500 text-red-500 hover:bg-red-500 hover:text-white">
-            <LogOut className="h-4 w-4" />
-            <span>Sign Out</span>
-          </Button>
-        </div>
 
         <Tabs defaultValue="profile" className="w-full">
           <TabsList className="bg-accizard-light">
@@ -58,7 +191,7 @@ export function ProfilePage() {
           <TabsContent value="profile">
             <Card>
               <CardContent className="p-6">
-                <form onSubmit={handleSaveProfile} className="space-y-6">
+                <form onSubmit={e => { e.preventDefault(); setShowConfirm(true); }} className="space-y-6">
                   {/* Profile Picture Section */}
                   <div className="flex items-center space-x-6">
                     <div className="relative">
@@ -117,9 +250,25 @@ export function ProfilePage() {
                     })} className="focus:border-accizard-primary focus:ring-accizard-primary" />
                     </div>
                   </div>
-                  <Button type="submit" className="bg-accizard-primary hover:bg-accizard-primary/90 text-white bg-[FF4F0B] bg-[#ff4f0b]">
-                    Save Changes
-                  </Button>
+                  <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
+                    <AlertDialogTrigger asChild>
+                      <Button type="submit" className="bg-accizard-primary hover:bg-accizard-primary/90 text-white bg-[FF4F0B] bg-[#ff4f0b]">
+                        Save Changes
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Confirm Save</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Are you sure you want to save these changes to your profile?
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleSaveProfile} disabled={saving}>Confirm</AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </form>
               </CardContent>
             </Card>
