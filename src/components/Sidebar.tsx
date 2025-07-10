@@ -2,6 +2,9 @@ import { Home, FileText, BarChart3, MessageSquare, Bell, Users, User, ChevronLef
 import { cn } from "@/lib/utils";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
+import { useState } from "react";
+import { AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
+import { getAuth, signOut } from "firebase/auth";
 
 interface SidebarProps {
   isCollapsed: boolean;
@@ -11,7 +14,7 @@ interface SidebarProps {
 const menuItems = [{
   title: "Dashboard",
   icon: Home,
-  path: "/"
+  path: "/dashboard"
 }, {
   title: "Manage Reports",
   icon: ClipboardList,
@@ -45,13 +48,21 @@ const otherItems = [{
 export function Sidebar({ isCollapsed, onCollapse }: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  const [showSignOut, setShowSignOut] = useState(false);
 
   const handleMenuClick = (item: typeof menuItems[0]) => {
     navigate(item.path);
   };
 
-  const handleSignOut = () => {
-    navigate("/login");
+  const handleSignOut = async () => {
+    try {
+      localStorage.removeItem("adminLoggedIn");
+      await signOut(getAuth());
+      navigate("/login");
+    } catch (error) {
+      // Optionally handle error
+      console.error("Sign out error:", error);
+    }
   };
 
   const isActive = (path: string) => {
@@ -108,10 +119,28 @@ export function Sidebar({ isCollapsed, onCollapse }: SidebarProps) {
 
       {/* Sign Out Button */}
       <div className="p-3 border-t border-orange-400/30">
-        <button onClick={handleSignOut} className="w-full flex items-center px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 text-orange-100 hover:bg-red-500 hover:text-white">
-          <LogOut className="h-5 w-5 mr-3 flex-shrink-0" />
-          {!isCollapsed && <span>Sign Out</span>}
-        </button>
+        <AlertDialog open={showSignOut} onOpenChange={setShowSignOut}>
+          <AlertDialogTrigger asChild>
+            <button onClick={() => setShowSignOut(true)} className="w-full flex items-center px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 text-orange-100 hover:bg-red-500 hover:text-white">
+              <LogOut className="h-5 w-5 mr-3 flex-shrink-0" />
+              {!isCollapsed && <span>Sign Out</span>}
+            </button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirm Sign Out</AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to sign out? Your session will end.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleSignOut} className="bg-red-600 hover:bg-red-700">
+                Sign Out
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>;
 }

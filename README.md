@@ -54,11 +54,22 @@ npm run dev
 
 This project is built with:
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### Frontend
+- **Vite** - Build tool and development server
+- **TypeScript** - Type-safe JavaScript
+- **React** - UI framework
+- **shadcn-ui** - Component library
+- **Tailwind CSS** - Utility-first CSS framework
+- **React Router** - Client-side routing
+- **React Hook Form** - Form handling
+- **Mapbox GL** - Interactive maps
+
+### Backend
+- **Firebase Backend-as-a-Service (BaaS)** - Complete backend solution
+  - **Firebase Hosting** - Static site hosting and CDN
+  - **Firebase Authentication** - User authentication and authorization
+  - **Firestore Database** - NoSQL cloud database
+  - **Firebase Storage** - File storage and serving
 
 ## How can I deploy this project?
 

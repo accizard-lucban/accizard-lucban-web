@@ -50,6 +50,11 @@ const pageConfig: Record<string, PageConfig> = {
     title: "My Profile",
     icon: User,
     subtitle: "Manage your account settings"
+  },
+  "/dashboard": {
+    title: "Dashboard",
+    icon: Home,
+    subtitle: "Overview of your system"
   }
 };
 

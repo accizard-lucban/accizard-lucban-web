@@ -5,19 +5,36 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
+import { auth } from "@/lib/firebase";
+import { sendPasswordResetEmail } from "firebase/auth";
+import { toast } from "@/components/ui/sonner";
+
 export function PasswordRecoveryPage() {
   const [email, setEmail] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
   const navigate = useNavigate();
-  const handleSubmit = (e: React.FormEvent) => {
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Password recovery request for:", email);
-    // Handle password recovery logic here
-    setIsSubmitted(true);
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      toast.error("Please enter a valid email address.");
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setIsSubmitted(true);
+      toast.success("Recovery link sent! Please check your email.");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to send recovery link.");
+    }
   };
+
   const handleBackToLogin = () => {
     navigate("/login");
   };
+
   return <div className="min-h-screen flex bg-black">
       {/* Left Side - Logo and Branding */}
       <div className="flex-1 bg-[url('/lovable-uploads/login-signup-cover.png')] bg-cover">
@@ -44,7 +61,6 @@ export function PasswordRecoveryPage() {
                 </Button>
               </form> : <div className="text-center space-y-4">
                 <div className="text-green-600 font-medium">Recovery link sent successfully! Please check your email for further instructions.</div>
-                <p className="text-gray-600 text-sm">@youremail.com</p>
               </div>}
             
             <div className="text-center mt-6">

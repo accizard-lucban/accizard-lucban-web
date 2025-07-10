@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -12,6 +12,8 @@ import { Search, Plus, Edit, Trash2, Shield, ShieldOff, ShieldCheck, ShieldX, Ey
 import { Layout } from "./Layout";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
+import { db } from "@/lib/firebase";
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc } from "firebase/firestore";
 
 export function ManageUsersPage() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -28,12 +30,12 @@ export function ManageUsersPage() {
   const [showResidentPreview, setShowResidentPreview] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [confirmPermissionChange, setConfirmPermissionChange] = useState<any>(null);
-  const [selectedAdmins, setSelectedAdmins] = useState<number[]>([]);
-  const [selectedResidents, setSelectedResidents] = useState<number[]>([]);
+  const [selectedAdmins, setSelectedAdmins] = useState<string[]>([]);
+  const [selectedResidents, setSelectedResidents] = useState<string[]>([]);
   const [confirmBatchAction, setConfirmBatchAction] = useState<{
     type: 'delete' | 'permission' | 'verification';
     value?: boolean;
-    items: number[];
+    items: string[];
   } | null>(null);
   const [newAdmin, setNewAdmin] = useState({
     name: "",
@@ -42,54 +44,8 @@ export function ManageUsersPage() {
     username: "",
     password: ""
   });
-  const [adminUsers, setAdminUsers] = useState([{
-    id: 1,
-    name: "John Admin",
-    position: "System Admin",
-    idNumber: "ADM001",
-    username: "admin",
-    password: "admin123",
-    hasEditPermission: true
-  }, {
-    id: 2,
-    name: "Jane Manager",
-    position: "Manager",
-    idNumber: "ADM002",
-    username: "manager",
-    password: "manager456",
-    hasEditPermission: false
-  }]);
-  const [residents, setResidents] = useState([{
-    id: 1,
-    userId: "USR001",
-    fullName: "Maria Santos",
-    mobileNumber: "+63 912 345 6789",
-    homeAddress: "123 Main St, Barangay 1",
-    barangay: "Barangay 1",
-    cityTown: "Makati City",
-    email: "maria@email.com",
-    gender: "Female",
-    validId: "Driver's License",
-    validIdImage: "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=400",
-    profilePicture: "https://images.unsplash.com/photo-1494790108755-2616b612b47c?w=400",
-    verified: true,
-    createdDate: "01/10/24"
-  }, {
-    id: 2,
-    userId: "USR002",
-    fullName: "Juan Dela Cruz",
-    mobileNumber: "+63 917 876 5432",
-    homeAddress: "456 Oak Ave, Barangay 2",
-    barangay: "Barangay 2",
-    cityTown: "Quezon City",
-    email: "juan@email.com",
-    gender: "Male",
-    validId: "Passport",
-    validIdImage: "https://images.unsplash.com/photo-1649972904349-6e44c42644a7?w=400",
-    profilePicture: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400",
-    verified: false,
-    createdDate: "01/12/24"
-  }]);
+  const [adminUsers, setAdminUsers] = useState<any[]>([]);
+  const [residents, setResidents] = useState<any[]>([]);
   const [activityLogs] = useState([{
     id: 1,
     admin: "John Admin",
@@ -122,89 +78,216 @@ export function ManageUsersPage() {
     details: "Updated REP-001 status"
   }]);
 
+  useEffect(() => {
+    async function fetchAdmins() {
+      try {
+        const querySnapshot = await getDocs(collection(db, "admins"));
+        const admins = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setAdminUsers(admins);
+      } catch (error) {
+        console.error("Error fetching admins:", error);
+      }
+    }
+    
+    async function fetchResidents() {
+      try {
+        const querySnapshot = await getDocs(collection(db, "users"));
+        const users = querySnapshot.docs.map(doc => ({ 
+          id: doc.id, 
+          ...doc.data(),
+          // Ensure we have default values for missing fields
+          verified: doc.data().verified || false,
+          createdDate: doc.data().createdDate || new Date().toLocaleDateString(),
+          userId: doc.data().userId || `USR${doc.id.slice(-6)}`,
+          fullName: doc.data().fullName || doc.data().name || "Unknown",
+          mobileNumber: doc.data().mobileNumber || doc.data().phone || "N/A",
+          barangay: doc.data().barangay || "Unknown",
+          cityTown: doc.data().cityTown || doc.data().city || "Unknown"
+        }));
+        setResidents(users);
+      } catch (error) {
+        console.error("Error fetching residents:", error);
+        // If users collection doesn't exist, set empty array
+        setResidents([]);
+      }
+    }
+
+    fetchAdmins();
+    fetchResidents();
+  }, []);
+
   // Filter functions
   const filteredAdmins = adminUsers.filter(admin => {
-    const matchesSearch = admin.name.toLowerCase().includes(searchTerm.toLowerCase()) || admin.username.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = admin.name?.toLowerCase().includes(searchTerm.toLowerCase()) || admin.username?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesPosition = positionFilter === "all" || admin.position === positionFilter;
     const matchesPermission = permissionFilter === "all" || permissionFilter === "has_permission" && admin.hasEditPermission || permissionFilter === "no_permission" && !admin.hasEditPermission;
     return matchesSearch && matchesPosition && matchesPermission;
   });
+  
   const filteredResidents = residents.filter(resident => {
-    const matchesSearch = resident.fullName.toLowerCase().includes(searchTerm.toLowerCase()) || resident.userId.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = resident.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) || resident.userId?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesBarangay = barangayFilter === "all" || resident.barangay === barangayFilter;
-    const matchesGender = userFilter === "all" || resident.gender === userFilter;
-    return matchesSearch && matchesBarangay && matchesGender;
+    const matchesVerification = verificationFilter === "all" || 
+      (verificationFilter === "verified" && resident.verified) || 
+      (verificationFilter === "pending" && !resident.verified);
+    return matchesSearch && matchesBarangay && matchesVerification;
   });
-  const handleAddAdmin = () => {
-    const id = Math.max(...adminUsers.map(a => a.id)) + 1;
-    const newAdminWithId = {
-      ...newAdmin,
-      id,
-      hasEditPermission: false
-    };
-    setAdminUsers([...adminUsers, newAdminWithId]);
-    setIsAddAdminOpen(false);
-    setNewAdmin({
-      name: "",
-      position: "",
-      idNumber: "",
-      username: "",
-      password: ""
-    });
+
+  const handleAddAdmin = async () => {
+    try {
+      // Find the highest userId in the current adminUsers
+      const maxUserId = adminUsers.length > 0 ? Math.max(...adminUsers.map(a => Number(a.userId) || 0)) : 0;
+      const nextUserId = maxUserId + 1;
+      const docRef = await addDoc(collection(db, "admins"), {
+        userId: nextUserId,
+        name: newAdmin.name,
+        position: newAdmin.position,
+        idNumber: newAdmin.idNumber,
+        username: newAdmin.username,
+        password: newAdmin.password,
+        hasEditPermission: false,
+        role: "admin"
+      });
+      setAdminUsers(prev => [
+        ...prev,
+        {
+          id: docRef.id,
+          userId: nextUserId,
+          name: newAdmin.name,
+          position: newAdmin.position,
+          idNumber: newAdmin.idNumber,
+          username: newAdmin.username,
+          password: newAdmin.password,
+          hasEditPermission: false,
+          role: "admin"
+        }
+      ]);
+      setIsAddAdminOpen(false);
+      setNewAdmin({
+        name: "",
+        position: "",
+        idNumber: "",
+        username: "",
+        password: ""
+      });
+    } catch (error) {
+      console.error("Error adding admin:", error);
+    }
   };
+
   const handleEditAdmin = (admin: any) => {
     setEditingAdmin({
       ...admin
     });
   };
-  const handleSaveAdminEdit = () => {
-    setAdminUsers(adminUsers.map(a => a.id === editingAdmin.id ? editingAdmin : a));
-    setEditingAdmin(null);
+
+  const handleSaveAdminEdit = async () => {
+    try {
+      await updateDoc(doc(db, "admins", editingAdmin.id), {
+        name: editingAdmin.name,
+        position: editingAdmin.position,
+        idNumber: editingAdmin.idNumber,
+        username: editingAdmin.username
+      });
+      setAdminUsers(adminUsers.map(a => a.id === editingAdmin.id ? editingAdmin : a));
+      setEditingAdmin(null);
+    } catch (error) {
+      console.error("Error updating admin:", error);
+    }
   };
+
   const handleTogglePermission = (admin: any) => {
     setConfirmPermissionChange(admin);
   };
-  const confirmTogglePermission = () => {
-    setAdminUsers(adminUsers.map(admin => admin.id === confirmPermissionChange.id ? {
-      ...admin,
-      hasEditPermission: !admin.hasEditPermission
-    } : admin));
-    setConfirmPermissionChange(null);
+
+  const confirmTogglePermission = async () => {
+    try {
+      await updateDoc(doc(db, "admins", confirmPermissionChange.id), {
+        hasEditPermission: !confirmPermissionChange.hasEditPermission
+      });
+      setAdminUsers(adminUsers.map(admin => admin.id === confirmPermissionChange.id ? {
+        ...admin,
+        hasEditPermission: !admin.hasEditPermission
+      } : admin));
+      setConfirmPermissionChange(null);
+    } catch (error) {
+      console.error("Error updating permission:", error);
+    }
   };
-  const handleDeleteAdmin = (adminId: number) => {
-    setAdminUsers(adminUsers.filter(a => a.id !== adminId));
+
+  const handleDeleteAdmin = async (adminId: string) => {
+    try {
+      await deleteDoc(doc(db, "admins", adminId));
+      setAdminUsers(adminUsers.filter(a => a.id !== adminId));
+    } catch (error) {
+      console.error("Error deleting admin:", error);
+    }
   };
+
   const handleEditResident = (resident: any) => {
     setSelectedResident({
       ...resident
     });
     setIsEditResidentOpen(true);
   };
+
   const handlePreviewResident = (resident: any) => {
     setSelectedResident(resident);
     setShowResidentPreview(true);
   };
-  const handleSaveResidentEdit = () => {
-    setResidents(residents.map(r => r.id === selectedResident.id ? selectedResident : r));
-    setIsEditResidentOpen(false);
-    setSelectedResident(null);
+
+  const handleSaveResidentEdit = async () => {
+    try {
+      await updateDoc(doc(db, "users", selectedResident.id), {
+        fullName: selectedResident.fullName,
+        mobileNumber: selectedResident.mobileNumber,
+        barangay: selectedResident.barangay,
+        cityTown: selectedResident.cityTown,
+        homeAddress: selectedResident.homeAddress,
+        email: selectedResident.email
+      });
+      setResidents(residents.map(r => r.id === selectedResident.id ? selectedResident : r));
+      setIsEditResidentOpen(false);
+      setSelectedResident(null);
+    } catch (error) {
+      console.error("Error updating resident:", error);
+    }
   };
-  const handleDeleteResident = (residentId: number) => {
-    setResidents(residents.filter(r => r.id !== residentId));
+
+  const handleDeleteResident = async (residentId: string) => {
+    try {
+      await deleteDoc(doc(db, "users", residentId));
+      setResidents(residents.filter(r => r.id !== residentId));
+    } catch (error) {
+      console.error("Error deleting resident:", error);
+    }
   };
-  const handleToggleVerification = (residentId: number) => {
-    setResidents(residents.map(resident => resident.id === residentId ? {
-      ...resident,
-      verified: !resident.verified
-    } : resident));
+
+  const handleToggleVerification = async (residentId: string) => {
+    try {
+      const resident = residents.find(r => r.id === residentId);
+      if (resident) {
+        await updateDoc(doc(db, "users", residentId), {
+          verified: !resident.verified
+        });
+        setResidents(residents.map(resident => resident.id === residentId ? {
+          ...resident,
+          verified: !resident.verified
+        } : resident));
+      }
+    } catch (error) {
+      console.error("Error updating verification:", error);
+    }
   };
-  const handleSelectAdmin = (adminId: number) => {
+
+  const handleSelectAdmin = (adminId: string) => {
     setSelectedAdmins(prev => 
       prev.includes(adminId) 
         ? prev.filter(id => id !== adminId)
         : [...prev, adminId]
     );
   };
+
   const handleSelectAllAdmins = () => {
     setSelectedAdmins(prev => 
       prev.length === adminUsers.length 
@@ -212,13 +295,15 @@ export function ManageUsersPage() {
         : adminUsers.map(admin => admin.id)
     );
   };
-  const handleSelectResident = (residentId: number) => {
+
+  const handleSelectResident = (residentId: string) => {
     setSelectedResidents(prev => 
       prev.includes(residentId) 
         ? prev.filter(id => id !== residentId)
         : [...prev, residentId]
     );
   };
+
   const handleSelectAllResidents = () => {
     setSelectedResidents(prev => 
       prev.length === residents.length 
@@ -226,6 +311,7 @@ export function ManageUsersPage() {
         : residents.map(resident => resident.id)
     );
   };
+
   const handleBatchDelete = (type: 'admin' | 'resident') => {
     const items = type === 'admin' ? selectedAdmins : selectedResidents;
     setConfirmBatchAction({
@@ -233,6 +319,7 @@ export function ManageUsersPage() {
       items
     });
   };
+
   const handleBatchPermission = (value: boolean) => {
     setConfirmBatchAction({
       type: 'permission',
@@ -240,6 +327,7 @@ export function ManageUsersPage() {
       items: selectedAdmins
     });
   };
+
   const handleBatchVerification = (value: boolean) => {
     setConfirmBatchAction({
       type: 'verification',
@@ -247,39 +335,64 @@ export function ManageUsersPage() {
       items: selectedResidents
     });
   };
-  const executeBatchAction = () => {
+
+  const executeBatchAction = async () => {
     if (!confirmBatchAction) return;
 
     const { type, value, items } = confirmBatchAction;
 
-    switch (type) {
-      case 'delete':
-        if (items === selectedAdmins) {
-          setAdminUsers(prev => prev.filter(admin => !items.includes(admin.id)));
+    try {
+      switch (type) {
+        case 'delete':
+          if (items === selectedAdmins) {
+            // Delete admins
+            for (const adminId of items) {
+              await deleteDoc(doc(db, "admins", adminId));
+            }
+            setAdminUsers(prev => prev.filter(admin => !items.includes(admin.id)));
+            setSelectedAdmins([]);
+          } else {
+            // Delete residents
+            for (const residentId of items) {
+              await deleteDoc(doc(db, "users", residentId));
+            }
+            setResidents(prev => prev.filter(resident => !items.includes(resident.id)));
+            setSelectedResidents([]);
+          }
+          break;
+
+        case 'permission':
+          // Update admin permissions
+          for (const adminId of items) {
+            await updateDoc(doc(db, "admins", adminId), {
+              hasEditPermission: value
+            });
+          }
+          setAdminUsers(prev => prev.map(admin => 
+            items.includes(admin.id) 
+              ? { ...admin, hasEditPermission: value }
+              : admin
+          ));
           setSelectedAdmins([]);
-        } else {
-          setResidents(prev => prev.filter(resident => !items.includes(resident.id)));
+          break;
+
+        case 'verification':
+          // Update resident verification
+          for (const residentId of items) {
+            await updateDoc(doc(db, "users", residentId), {
+              verified: value
+            });
+          }
+          setResidents(prev => prev.map(resident => 
+            items.includes(resident.id) 
+              ? { ...resident, verified: value }
+              : resident
+          ));
           setSelectedResidents([]);
-        }
-        break;
-
-      case 'permission':
-        setAdminUsers(prev => prev.map(admin => 
-          items.includes(admin.id) 
-            ? { ...admin, hasEditPermission: value }
-            : admin
-        ));
-        setSelectedAdmins([]);
-        break;
-
-      case 'verification':
-        setResidents(prev => prev.map(resident => 
-          items.includes(resident.id) 
-            ? { ...resident, verified: value }
-            : resident
-        ));
-        setSelectedResidents([]);
-        break;
+          break;
+      }
+    } catch (error) {
+      console.error("Error executing batch action:", error);
     }
 
     setConfirmBatchAction(null);
@@ -315,9 +428,9 @@ export function ManageUsersPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Positions</SelectItem>
-                        <SelectItem value="System Admin">System Admin</SelectItem>
-                        <SelectItem value="Manager">Manager</SelectItem>
-                        <SelectItem value="Operator">Operator</SelectItem>
+                        <SelectItem value="Responder">Responder</SelectItem>
+                        <SelectItem value="Rider">Rider</SelectItem>
+                        
                       </SelectContent>
                     </Select>
 
@@ -351,7 +464,7 @@ export function ManageUsersPage() {
                   </DialogHeader>
                   <div className="space-y-4">
                     <div>
-                      <Label>Name</Label>
+                      <Label>Full Name</Label>
                       <Input value={newAdmin.name} onChange={e => setNewAdmin({...newAdmin, name: e.target.value})} />
                     </div>
                     <div>
@@ -361,9 +474,9 @@ export function ManageUsersPage() {
                           <SelectValue placeholder="Select position" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="System Admin">System Admin</SelectItem>
-                          <SelectItem value="Manager">Manager</SelectItem>
-                          <SelectItem value="Operator">Operator</SelectItem>
+                          <SelectItem value="Responder">Responder</SelectItem>
+                          <SelectItem value="Rider">Rider</SelectItem>
+                    
                         </SelectContent>
                       </Select>
                     </div>
@@ -372,7 +485,7 @@ export function ManageUsersPage() {
                       <Input value={newAdmin.idNumber} onChange={e => setNewAdmin({...newAdmin, idNumber: e.target.value})} />
                     </div>
                     <div>
-                      <Label>Username</Label>
+                      <Label>Account Username</Label>
                       <Input value={newAdmin.username} onChange={e => setNewAdmin({...newAdmin, username: e.target.value})} />
                     </div>
                     <div>
@@ -382,7 +495,7 @@ export function ManageUsersPage() {
                   </div>
                   <DialogFooter>
                     <Button onClick={handleAddAdmin} className="bg-[#FF4F0B] hover:bg-[#FF4F0B]/90 text-white">
-                      Add Admin
+                      Add New Admin
                     </Button>
                   </DialogFooter>
                 </DialogContent>
@@ -427,10 +540,11 @@ export function ManageUsersPage() {
                       <TableRow>
                         <TableHead className="w-[50px]">
                           <Checkbox
-                            checked={selectedAdmins.length === adminUsers.length}
+                            checked={selectedAdmins.length === adminUsers.length && adminUsers.length > 0}
                             onCheckedChange={handleSelectAllAdmins}
                           />
                         </TableHead>
+                        <TableHead>User ID</TableHead>
                         <TableHead>Name</TableHead>
                         <TableHead>Position</TableHead>
                         <TableHead>ID Number</TableHead>
@@ -440,132 +554,140 @@ export function ManageUsersPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredAdmins.map(admin => (
-                        <TableRow key={admin.id}>
-                          <TableCell>
-                            <Checkbox
-                              checked={selectedAdmins.includes(admin.id)}
-                              onCheckedChange={() => handleSelectAdmin(admin.id)}
-                            />
-                          </TableCell>
-                          <TableCell className="font-medium">{admin.name}</TableCell>
-                          <TableCell>{admin.position}</TableCell>
-                          <TableCell>{admin.idNumber}</TableCell>
-                          <TableCell>{admin.username}</TableCell>
-                          <TableCell>{admin.password}</TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Dialog>
-                                <DialogTrigger asChild>
-                                  <Button size="sm" variant="outline" onClick={() => handleEditAdmin(admin)}>
-                                    <Edit className="h-4 w-4" />
-                                  </Button>
-                                </DialogTrigger>
-                                <DialogContent>
-                                  <DialogHeader>
-                                    <DialogTitle>Edit Admin Account</DialogTitle>
-                                  </DialogHeader>
-                                  {editingAdmin && (
-                                    <div className="space-y-4">
-                                      <div>
-                                        <Label>Name</Label>
-                                        <Input
-                                          value={editingAdmin.name}
-                                          onChange={e => setEditingAdmin({
-                                            ...editingAdmin,
-                                            name: e.target.value
-                                          })}
-                                        />
-                                      </div>
-                                      <div>
-                                        <Label>Position</Label>
-                                        <Select
-                                          value={editingAdmin.position}
-                                          onValueChange={value => setEditingAdmin({
-                                            ...editingAdmin,
-                                            position: value
-                                          })}
-                                        >
-                                          <SelectTrigger>
-                                            <SelectValue />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            <SelectItem value="System Admin">System Admin</SelectItem>
-                                            <SelectItem value="Manager">Manager</SelectItem>
-                                            <SelectItem value="Operator">Operator</SelectItem>
-                                          </SelectContent>
-                                        </Select>
-                                      </div>
-                                      <div>
-                                        <Label>ID Number</Label>
-                                        <Input
-                                          value={editingAdmin.idNumber}
-                                          onChange={e => setEditingAdmin({
-                                            ...editingAdmin,
-                                            idNumber: e.target.value
-                                          })}
-                                        />
-                                      </div>
-                                      <div>
-                                        <Label>Username</Label>
-                                        <Input
-                                          value={editingAdmin.username}
-                                          onChange={e => setEditingAdmin({
-                                            ...editingAdmin,
-                                            username: e.target.value
-                                          })}
-                                        />
-                                      </div>
-                                    </div>
-                                  )}
-                                  <DialogFooter>
-                                    <Button onClick={handleSaveAdminEdit}>Save Changes</Button>
-                                  </DialogFooter>
-                                </DialogContent>
-                              </Dialog>
-
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleTogglePermission(admin)}
-                                title={admin.hasEditPermission ? "Revoke Permission" : "Grant Permission"}
-                                className={admin.hasEditPermission ? "text-green-600" : "text-yellow-600"}
-                              >
-                                {admin.hasEditPermission ? (
-                                  <Shield className="h-4 w-4" />
-                                ) : (
-                                  <ShieldOff className="h-4 w-4" />
-                                )}
-                              </Button>
-
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button size="sm" variant="outline" className="text-red-600">
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Delete Admin Account</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      Are you sure you want to delete {admin.name}'s admin account? This action cannot be undone.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction
-                                      onClick={() => handleDeleteAdmin(admin.id)}
-                                      className="bg-red-600 hover:bg-red-700"
-                                    >
-                                      Delete
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-                            </div>
+                      {filteredAdmins.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center text-gray-500 py-8">
+                            No results found.
                           </TableCell>
                         </TableRow>
-                      ))}
+                      ) : (
+                        filteredAdmins.map(admin => (
+                          <TableRow key={admin.id}>
+                            <TableCell>
+                              <Checkbox
+                                checked={selectedAdmins.includes(admin.id)}
+                                onCheckedChange={() => handleSelectAdmin(admin.id)}
+                              />
+                            </TableCell>
+                            <TableCell className="font-medium">{admin.userId}</TableCell>
+                            <TableCell className="font-medium">{admin.name}</TableCell>
+                            <TableCell>{admin.position}</TableCell>
+                            <TableCell>{admin.idNumber}</TableCell>
+                            <TableCell>{admin.username}</TableCell>
+                            <TableCell>{admin.password}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Dialog>
+                                  <DialogTrigger asChild>
+                                    <Button size="sm" variant="outline" onClick={() => handleEditAdmin(admin)}>
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                  </DialogTrigger>
+                                  <DialogContent>
+                                    <DialogHeader>
+                                      <DialogTitle>Edit Admin Account</DialogTitle>
+                                    </DialogHeader>
+                                    {editingAdmin && (
+                                      <div className="space-y-4">
+                                        <div>
+                                          <Label>Name</Label>
+                                          <Input
+                                            value={editingAdmin.name}
+                                            onChange={e => setEditingAdmin({
+                                              ...editingAdmin,
+                                              name: e.target.value
+                                            })}
+                                          />
+                                        </div>
+                                        <div>
+                                          <Label>Position</Label>
+                                          <Select
+                                            value={editingAdmin.position}
+                                            onValueChange={value => setEditingAdmin({
+                                              ...editingAdmin,
+                                              position: value
+                                            })}
+                                          >
+                                            <SelectTrigger>
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="Responder">Responder</SelectItem>
+                                              <SelectItem value="Rider">Rider</SelectItem>
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                        <div>
+                                          <Label>ID Number</Label>
+                                          <Input
+                                            value={editingAdmin.idNumber}
+                                            onChange={e => setEditingAdmin({
+                                              ...editingAdmin,
+                                              idNumber: e.target.value
+                                            })}
+                                          />
+                                        </div>
+                                        <div>
+                                          <Label>Username</Label>
+                                          <Input
+                                            value={editingAdmin.username}
+                                            onChange={e => setEditingAdmin({
+                                              ...editingAdmin,
+                                              username: e.target.value
+                                            })}
+                                          />
+                                        </div>
+                                      </div>
+                                    )}
+                                    <DialogFooter>
+                                      <Button onClick={handleSaveAdminEdit}>Save Changes</Button>
+                                    </DialogFooter>
+                                  </DialogContent>
+                                </Dialog>
+
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleTogglePermission(admin)}
+                                  title={admin.hasEditPermission ? "Revoke Permission" : "Grant Permission"}
+                                  className={admin.hasEditPermission ? "text-green-600" : "text-yellow-600"}
+                                >
+                                  {admin.hasEditPermission ? (
+                                    <Shield className="h-4 w-4" />
+                                  ) : (
+                                    <ShieldOff className="h-4 w-4" />
+                                  )}
+                                </Button>
+
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button size="sm" variant="outline" className="text-red-600">
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Delete Admin Account</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        Are you sure you want to delete {admin.name}'s admin account? This action cannot be undone.
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                      <AlertDialogAction
+                                        onClick={() => handleDeleteAdmin(admin.id)}
+                                        className="bg-red-600 hover:bg-red-700"
+                                      >
+                                        Delete
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
                 </div>
@@ -657,9 +779,9 @@ export function ManageUsersPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Barangays</SelectItem>
-                        <SelectItem value="Barangay 1">Barangay 1</SelectItem>
-                        <SelectItem value="Barangay 2">Barangay 2</SelectItem>
-                        <SelectItem value="Barangay 3">Barangay 3</SelectItem>
+                        {Array.from(new Set(residents.map(r => r.barangay).filter(Boolean))).map(barangay => (
+                          <SelectItem key={barangay} value={barangay}>{barangay}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
 
@@ -716,7 +838,7 @@ export function ManageUsersPage() {
                       <TableRow>
                         <TableHead className="w-[50px]">
                           <Checkbox
-                            checked={selectedResidents.length === residents.length}
+                            checked={selectedResidents.length === residents.length && residents.length > 0}
                             onCheckedChange={handleSelectAllResidents}
                           />
                         </TableHead>
@@ -731,160 +853,164 @@ export function ManageUsersPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredResidents.map(resident => (
-                        <TableRow key={resident.id}>
-                          <TableCell>
-                            <Checkbox
-                              checked={selectedResidents.includes(resident.id)}
-                              onCheckedChange={() => handleSelectResident(resident.id)}
-                            />
+                      {filteredResidents.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center text-gray-500 py-8">
+                            No residents found. {residents.length === 0 ? "No residents have been registered yet." : "No residents match your search criteria."}
                           </TableCell>
-                          <TableCell className="font-medium">{resident.userId}</TableCell>
-                          <TableCell>{resident.fullName}</TableCell>
-                          <TableCell>{resident.mobileNumber}</TableCell>
-                          <TableCell>{resident.barangay}</TableCell>
-                          <TableCell>{resident.cityTown}</TableCell>
-                          <TableCell>{resident.createdDate}</TableCell>
-                          <TableCell>
-                            <Badge
-                              className={resident.verified ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}
-                            >
-                              {resident.verified ? 'Verified' : 'Pending'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handlePreviewResident(resident)}
+                        </TableRow>
+                      ) : (
+                        filteredResidents.map(resident => (
+                          <TableRow key={resident.id}>
+                            <TableCell>
+                              <Checkbox
+                                checked={selectedResidents.includes(resident.id)}
+                                onCheckedChange={() => handleSelectResident(resident.id)}
+                              />
+                            </TableCell>
+                            <TableCell className="font-medium">{resident.userId}</TableCell>
+                            <TableCell>{resident.fullName}</TableCell>
+                            <TableCell>{resident.mobileNumber}</TableCell>
+                            <TableCell>{resident.barangay}</TableCell>
+                            <TableCell>{resident.cityTown}</TableCell>
+                            <TableCell>{resident.createdDate}</TableCell>
+                            <TableCell>
+                              <Badge
+                                className={resident.verified ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}
                               >
-                                <Eye className="h-4 w-4" />
-                              </Button>
+                                {resident.verified ? 'Verified' : 'Pending'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handlePreviewResident(resident)}
+                                  title="View Details"
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
 
-                              <Dialog>
-                                <DialogTrigger asChild>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handleEditResident(resident)}
-                                  >
-                                    <Edit className="h-4 w-4" />
-                                  </Button>
-                                </DialogTrigger>
-                                <DialogContent>
-                                  <DialogHeader>
-                                    <DialogTitle>Edit Resident Information</DialogTitle>
-                                  </DialogHeader>
-                                  {selectedResident && (
-                                    <div className="space-y-4">
-                                      <div>
-                                        <Label>User ID</Label>
-                                        <Input value={selectedResident.userId} onChange={e => setSelectedResident({
-                                    ...selectedResident,
-                                    userId: e.target.value
-                                  })} />
-                                      </div>
-                                      <div>
-                                        <Label>Full Name</Label>
-                                        <Input value={selectedResident.fullName} onChange={e => setSelectedResident({
+                                <Dialog>
+                                  <DialogTrigger asChild>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => handleEditResident(resident)}
+                                      title="Edit Resident"
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                  </DialogTrigger>
+                                  <DialogContent>
+                                    <DialogHeader>
+                                      <DialogTitle>Edit Resident Information</DialogTitle>
+                                    </DialogHeader>
+                                    {selectedResident && (
+                                      <div className="space-y-4">
+                                        <div>
+                                          <Label>Full Name</Label>
+                                          <Input value={selectedResident.fullName} onChange={e => setSelectedResident({
                                     ...selectedResident,
                                     fullName: e.target.value
                                   })} />
-                                      </div>
-                                      <div>
-                                        <Label>Mobile Number</Label>
-                                        <Input value={selectedResident.mobileNumber} onChange={e => setSelectedResident({
+                                        </div>
+                                        <div>
+                                          <Label>Mobile Number</Label>
+                                          <Input value={selectedResident.mobileNumber} onChange={e => setSelectedResident({
                                     ...selectedResident,
                                     mobileNumber: e.target.value
                                   })} />
-                                      </div>
-                                      <div>
-                                        <Label>Barangay</Label>
-                                        <Select value={selectedResident.barangay} onValueChange={value => setSelectedResident({
+                                        </div>
+                                        <div>
+                                          <Label>Barangay</Label>
+                                          <Select value={selectedResident.barangay} onValueChange={value => setSelectedResident({
                                     ...selectedResident,
                                     barangay: value
                                   })}>
-                                          <SelectTrigger>
-                                            <SelectValue />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            <SelectItem value="Barangay 1">Barangay 1</SelectItem>
-                                            <SelectItem value="Barangay 2">Barangay 2</SelectItem>
-                                            <SelectItem value="Barangay 3">Barangay 3</SelectItem>
-                                          </SelectContent>
-                                        </Select>
-                                      </div>
-                                      <div>
-                                        <Label>City/Town</Label>
-                                        <Input value={selectedResident.cityTown} onChange={e => setSelectedResident({
+                                            <SelectTrigger>
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="Barangay 1">Barangay 1</SelectItem>
+                                              <SelectItem value="Barangay 2">Barangay 2</SelectItem>
+                                              <SelectItem value="Barangay 3">Barangay 3</SelectItem>
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                        <div>
+                                          <Label>City/Town</Label>
+                                          <Input value={selectedResident.cityTown} onChange={e => setSelectedResident({
                                     ...selectedResident,
                                     cityTown: e.target.value
                                   })} />
-                                      </div>
-                                      <div>
-                                        <Label>Home Address</Label>
-                                        <Input value={selectedResident.homeAddress} onChange={e => setSelectedResident({
+                                        </div>
+                                        <div>
+                                          <Label>Home Address</Label>
+                                          <Input value={selectedResident.homeAddress} onChange={e => setSelectedResident({
                                     ...selectedResident,
                                     homeAddress: e.target.value
                                   })} />
-                                      </div>
-                                      <div>
-                                        <Label>Email Address</Label>
-                                        <Input value={selectedResident.email} onChange={e => setSelectedResident({
+                                        </div>
+                                        <div>
+                                          <Label>Email Address</Label>
+                                          <Input value={selectedResident.email} onChange={e => setSelectedResident({
                                     ...selectedResident,
                                     email: e.target.value
                                   })} />
+                                        </div>
                                       </div>
-                                    </div>
+                                    )}
+                                    <DialogFooter>
+                                      <Button onClick={handleSaveResidentEdit}>Save Changes</Button>
+                                    </DialogFooter>
+                                  </DialogContent>
+                                </Dialog>
+
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button size="sm" variant="outline" className="text-red-600" title="Delete Resident">
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Delete Resident Account</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        Are you sure you want to delete {resident.fullName}'s account? This action cannot be undone.
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                      <AlertDialogAction
+                                        onClick={() => handleDeleteResident(resident.id)}
+                                        className="bg-red-600 hover:bg-red-700"
+                                      >
+                                        Delete
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className={resident.verified ? "text-red-600" : "text-green-600"}
+                                  onClick={() => handleToggleVerification(resident.id)}
+                                  title={resident.verified ? "Revoke Verification" : "Verify Resident"}
+                                >
+                                  {resident.verified ? (
+                                    <ShieldX className="h-4 w-4" />
+                                  ) : (
+                                    <ShieldCheck className="h-4 w-4" />
                                   )}
-                                  <DialogFooter>
-                                    <Button onClick={handleSaveResidentEdit}>Save Changes</Button>
-                                  </DialogFooter>
-                                </DialogContent>
-                              </Dialog>
-
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button size="sm" variant="outline" className="text-red-600">
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Delete Resident Account</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      Are you sure you want to delete {resident.fullName}'s account? This action cannot be undone.
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction
-                                      onClick={() => handleDeleteResident(resident.id)}
-                                      className="bg-red-600 hover:bg-red-700"
-                                    >
-                                      Delete
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
-
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className={resident.verified ? "text-red-600" : "text-green-600"}
-                                onClick={() => handleToggleVerification(resident.id)}
-                              >
-                                {resident.verified ? (
-                                  <ShieldX className="h-4 w-4" />
-                                ) : (
-                                  <ShieldCheck className="h-4 w-4" />
-                                )}
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
                 </div>
@@ -995,6 +1121,32 @@ export function ManageUsersPage() {
           </TabsContent>
         </Tabs>
 
+        {/* Permission Change Confirmation Dialog */}
+        <AlertDialog
+          open={!!confirmPermissionChange}
+          onOpenChange={() => setConfirmPermissionChange(null)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {confirmPermissionChange?.hasEditPermission ? 'Revoke Permission' : 'Grant Permission'}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                Are you sure you want to {confirmPermissionChange?.hasEditPermission ? 'revoke' : 'grant'} edit permission for {confirmPermissionChange?.name}?
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={confirmTogglePermission}
+                className={confirmPermissionChange?.hasEditPermission ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-green-600 hover:bg-green-700'}
+              >
+                Confirm
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
         {/* Batch Action Confirmation Dialog */}
         <AlertDialog
           open={!!confirmBatchAction}
@@ -1042,7 +1194,7 @@ export function ManageUsersPage() {
         <Dialog open={showResidentPreview} onOpenChange={setShowResidentPreview}>
           <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Resident Preview</DialogTitle>
+              <DialogTitle>Resident Details</DialogTitle>
             </DialogHeader>
             <div className="py-4">
               <Table>
@@ -1050,47 +1202,65 @@ export function ManageUsersPage() {
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Profile Picture</TableCell>
                     <TableCell>
-                      <img src={selectedResident?.profilePicture} alt="Profile" className="w-16 h-16 rounded-full object-cover" />
+                      {selectedResident?.profilePicture ? (
+                        <img src={selectedResident.profilePicture} alt="Profile" className="w-16 h-16 rounded-full object-cover" />
+                      ) : (
+                        <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center">
+                          <User className="h-8 w-8 text-gray-400" />
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">User ID</TableCell>
-                    <TableCell>{selectedResident?.userId}</TableCell>
+                    <TableCell>{selectedResident?.userId || 'N/A'}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Full Name</TableCell>
-                    <TableCell>{selectedResident?.fullName}</TableCell>
+                    <TableCell>{selectedResident?.fullName || 'N/A'}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Mobile Number</TableCell>
-                    <TableCell>{selectedResident?.mobileNumber}</TableCell>
+                    <TableCell>{selectedResident?.mobileNumber || 'N/A'}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Email</TableCell>
-                    <TableCell>{selectedResident?.email}</TableCell>
+                    <TableCell>{selectedResident?.email || 'N/A'}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Gender</TableCell>
-                    <TableCell>{selectedResident?.gender}</TableCell>
+                    <TableCell>{selectedResident?.gender || 'N/A'}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Barangay</TableCell>
-                    <TableCell>{selectedResident?.barangay}</TableCell>
+                    <TableCell>{selectedResident?.barangay || 'N/A'}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">City/Town</TableCell>
-                    <TableCell>{selectedResident?.cityTown}</TableCell>
+                    <TableCell>{selectedResident?.cityTown || 'N/A'}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Home Address</TableCell>
-                    <TableCell>{selectedResident?.homeAddress}</TableCell>
+                    <TableCell>{selectedResident?.homeAddress || 'N/A'}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Valid ID</TableCell>
+                    <TableCell className="font-medium text-gray-700 align-top">Valid ID Type</TableCell>
+                    <TableCell>{selectedResident?.validId || 'N/A'}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-medium text-gray-700 align-top">Valid ID Image</TableCell>
                     <TableCell>
-                      <Button variant="link" className="p-0 h-auto text-blue-600 hover:text-blue-800" onClick={() => setPreviewImage(selectedResident?.validIdImage)}>
-                        {selectedResident?.validId}
-                      </Button>
+                      {selectedResident?.validIdImage ? (
+                        <Button 
+                          variant="link" 
+                          className="p-0 h-auto text-blue-600 hover:text-blue-800" 
+                          onClick={() => setPreviewImage(selectedResident.validIdImage)}
+                        >
+                          View ID Image
+                        </Button>
+                      ) : (
+                        <span className="text-gray-500">No image uploaded</span>
+                      )}
                     </TableCell>
                   </TableRow>
                   <TableRow>
@@ -1103,7 +1273,19 @@ export function ManageUsersPage() {
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Created Date</TableCell>
-                    <TableCell>{selectedResident?.createdDate}</TableCell>
+                    <TableCell>{selectedResident?.createdDate || 'N/A'}</TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-medium text-gray-700 align-top">Additional Info</TableCell>
+                    <TableCell>
+                      {selectedResident?.additionalInfo ? (
+                        <div className="text-sm text-gray-600">
+                          {selectedResident.additionalInfo}
+                        </div>
+                      ) : (
+                        <span className="text-gray-500">No additional information</span>
+                      )}
+                    </TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
