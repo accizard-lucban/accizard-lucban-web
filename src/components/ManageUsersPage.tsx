@@ -8,12 +8,13 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Search, Plus, Edit, Trash2, Shield, ShieldOff, ShieldCheck, ShieldX, Eye, User, FileText, Calendar, CheckSquare, Square, UserPlus, EyeOff } from "lucide-react";
+import { Search, Plus, Edit, Trash2, Shield, ShieldOff, ShieldCheck, ShieldX, Eye, User, FileText, Calendar, CheckSquare, Square, UserPlus, EyeOff, ChevronUp, ChevronDown } from "lucide-react";
 import { Layout } from "./Layout";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc } from "firebase/firestore";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export function ManageUsersPage() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -89,8 +90,38 @@ export function ManageUsersPage() {
   const [showAdminPasswords, setShowAdminPasswords] = useState<{ [id: string]: boolean }>({});
   const [showAllAdminPasswords, setShowAllAdminPasswords] = useState(false);
 
+  // Validation function for new admin
+  const isNewAdminValid = () => {
+    return newAdmin.name.trim() !== "" && 
+           newAdmin.position.trim() !== "" && 
+           newAdmin.idNumber.trim() !== "" && 
+           newAdmin.username.trim() !== "" && 
+           newAdmin.password.trim() !== "" &&
+           passwordError === "";
+  };
+
   // Add state for residentReportsCount
   const [residentReportsCount, setResidentReportsCount] = useState(0);
+
+  // Add sorting state for admin table
+  const [adminSortField, setAdminSortField] = useState<string>('');
+  const [adminSortDirection, setAdminSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  // Add sorting state for resident table
+  const [residentSortField, setResidentSortField] = useState<string>('');
+  const [residentSortDirection, setResidentSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  // Add pagination state
+  const [adminPage, setAdminPage] = useState(1);
+  const [residentPage, setResidentPage] = useState(1);
+  const [activityPage, setActivityPage] = useState(1);
+  const PAGE_SIZE = 20;
+
+  // Add rows per page state
+  const [adminRowsPerPage, setAdminRowsPerPage] = useState(20);
+  const [residentRowsPerPage, setResidentRowsPerPage] = useState(20);
+  const [activityRowsPerPage, setActivityRowsPerPage] = useState(20);
+  const ROWS_OPTIONS = [10, 20, 50, 100];
 
   useEffect(() => {
     async function fetchAdmins() {
@@ -153,16 +184,84 @@ export function ManageUsersPage() {
     fetchResidents();
   }, []);
 
+  // Sorting function for admin table
+  const handleAdminSort = (field: string) => {
+    if (adminSortField === field) {
+      setAdminSortDirection(adminSortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setAdminSortField(field);
+      setAdminSortDirection('asc');
+    }
+  };
+
+  // Sort admin data
+  const sortedAdmins = [...adminUsers].sort((a, b) => {
+    if (!adminSortField) return 0;
+    
+    let aValue = a[adminSortField as keyof typeof a];
+    let bValue = b[adminSortField as keyof typeof b];
+    
+    // Handle date sorting
+    if (adminSortField === 'createdDate') {
+      aValue = a.createdDate || '';
+      bValue = b.createdDate || '';
+    }
+    
+    // Convert to strings for comparison
+    const aStr = String(aValue || '').toLowerCase();
+    const bStr = String(bValue || '').toLowerCase();
+    
+    if (adminSortDirection === 'asc') {
+      return aStr.localeCompare(bStr);
+    } else {
+      return bStr.localeCompare(aStr);
+    }
+  });
+
   // Filter functions
-  const filteredAdmins = adminUsers.filter(admin => {
+  const filteredAdmins = sortedAdmins.filter(admin => {
     const matchesSearch = admin.name?.toLowerCase().includes(searchTerm.toLowerCase()) || admin.username?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesPosition = positionFilter === "all" || admin.position === positionFilter;
     const matchesPermission = permissionFilter === "all" || permissionFilter === "has_permission" && admin.hasEditPermission || permissionFilter === "no_permission" && !admin.hasEditPermission;
     return matchesSearch && matchesPosition && matchesPermission;
   });
+
+  // Sorting function for resident table
+  const handleResidentSort = (field: string) => {
+    if (residentSortField === field) {
+      setResidentSortDirection(residentSortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setResidentSortField(field);
+      setResidentSortDirection('asc');
+    }
+  };
+
+  // Sort resident data
+  const sortedResidents = [...residents].sort((a, b) => {
+    if (!residentSortField) return 0;
+    
+    let aValue = a[residentSortField as keyof typeof a];
+    let bValue = b[residentSortField as keyof typeof b];
+    
+    // Handle date sorting
+    if (residentSortField === 'createdDate') {
+      aValue = a.createdDate || '';
+      bValue = b.createdDate || '';
+    }
+    
+    // Convert to strings for comparison
+    const aStr = String(aValue || '').toLowerCase();
+    const bStr = String(bValue || '').toLowerCase();
+    
+    if (residentSortDirection === 'asc') {
+      return aStr.localeCompare(bStr);
+    } else {
+      return bStr.localeCompare(aStr);
+    }
+  });
   
   // Enhanced search: match any field
-  const filteredResidents = residents.filter(resident => {
+  const filteredResidents = sortedResidents.filter(resident => {
     const search = searchTerm.toLowerCase();
     const matchesAnyField = [
       resident.fullName,
@@ -179,7 +278,8 @@ export function ManageUsersPage() {
     const matchesBarangay = barangayFilter === "all" || resident.barangay === barangayFilter;
     const matchesVerification = verificationFilter === "all" || 
       (verificationFilter === "verified" && resident.verified) || 
-      (verificationFilter === "pending" && !resident.verified);
+      (verificationFilter === "pending" && !resident.verified && !resident.suspended) ||
+      (verificationFilter === "suspended" && resident.suspended);
     return matchesAnyField && matchesBarangay && matchesVerification;
   });
 
@@ -198,6 +298,7 @@ export function ManageUsersPage() {
         : 0;
       const nextUserId = maxUserId + 1;
       const formattedUserId = `AID-${nextUserId}`;
+      const now = new Date();
       const docRef = await addDoc(collection(db, "admins"), {
         userId: formattedUserId,
         name: newAdmin.name,
@@ -206,7 +307,9 @@ export function ManageUsersPage() {
         username: newAdmin.username,
         password: newAdmin.password,
         hasEditPermission: false,
-        role: "admin"
+        role: "admin",
+        createdDate: now.toLocaleDateString(),
+        createdTime: now.toLocaleTimeString()
       });
       setAdminUsers(prev => [
         ...prev,
@@ -219,7 +322,9 @@ export function ManageUsersPage() {
           username: newAdmin.username,
           password: newAdmin.password,
           hasEditPermission: false,
-          role: "admin"
+            role: "admin",
+            createdDate: now.toLocaleDateString(),
+            createdTime: now.toLocaleTimeString()
         }
       ]);
       setIsAddAdminOpen(false);
@@ -586,6 +691,16 @@ export function ManageUsersPage() {
     fetchReportCount();
   }, [showResidentPreview, selectedResident]);
 
+  // Admins pagination
+  const pagedAdmins = filteredAdmins.slice((adminPage - 1) * adminRowsPerPage, adminPage * adminRowsPerPage);
+  const adminTotalPages = Math.ceil(filteredAdmins.length / adminRowsPerPage);
+  // Residents pagination
+  const pagedResidents = filteredResidents.slice((residentPage - 1) * residentRowsPerPage, residentPage * residentRowsPerPage);
+  const residentTotalPages = Math.ceil(filteredResidents.length / residentRowsPerPage);
+  // Activity logs pagination
+  const pagedActivityLogs = activityLogs.slice((activityPage - 1) * activityRowsPerPage, activityPage * activityRowsPerPage);
+  const activityTotalPages = Math.ceil(activityLogs.length / activityRowsPerPage);
+
   return <Layout>
       <div className="">
 
@@ -599,6 +714,65 @@ export function ManageUsersPage() {
           
           
           <TabsContent value="admins">
+
+            {/* Admin Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Total Admins</p>
+                      <p className="text-2xl font-bold text-gray-900">{adminUsers.length}</p>
+                    </div>
+                    <div className="h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
+                      <User className="h-4 w-4 text-blue-600" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Online Admins</p>
+                      <p className="text-2xl font-bold text-gray-900">{adminUsers.filter(admin => admin.isOnline).length}</p>
+                    </div>
+                    <div className="h-8 w-8 bg-green-100 rounded-full flex items-center justify-center">
+                      <div className="h-2 w-2 bg-green-600 rounded-full"></div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">With Edit Permission</p>
+                      <p className="text-2xl font-bold text-gray-900">{adminUsers.filter(admin => admin.hasEditPermission).length}</p>
+                    </div>
+                    <div className="h-8 w-8 bg-green-100 rounded-full flex items-center justify-center">
+                      <ShieldCheck className="h-4 w-4 text-green-600" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-600">Without Edit Permission</p>
+                      <p className="text-2xl font-bold text-gray-900">{adminUsers.filter(admin => !admin.hasEditPermission).length}</p>
+                    </div>
+                    <div className="h-8 w-8 bg-yellow-100 rounded-full flex items-center justify-center">
+                      <ShieldOff className="h-4 w-4 text-yellow-600" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
 
             {/* Admin Filters */}
             <Card className="mb-6">
@@ -654,12 +828,20 @@ export function ManageUsersPage() {
                   <div className="space-y-4">
                     <div>
                       <Label>Full Name</Label>
-                      <Input value={newAdmin.name} onChange={e => setNewAdmin({...newAdmin, name: e.target.value})} />
+                      <Input 
+                        value={newAdmin.name} 
+                        onChange={e => setNewAdmin({...newAdmin, name: e.target.value})} 
+                        className={newAdmin.name.trim() === "" ? "border-red-500" : ""}
+                        placeholder="Enter full name"
+                      />
+                      {newAdmin.name.trim() === "" && (
+                        <div className="text-xs text-red-600 mt-1">Full name is required</div>
+                      )}
                     </div>
                     <div>
                       <Label>Position</Label>
                       <Select value={newAdmin.position} onValueChange={value => setNewAdmin({ ...newAdmin, position: value })}>
-                        <SelectTrigger>
+                        <SelectTrigger className={newAdmin.position.trim() === "" ? "border-red-500" : ""}>
                           <SelectValue placeholder="Select position" />
                         </SelectTrigger>
                         <SelectContent>
@@ -684,14 +866,33 @@ export function ManageUsersPage() {
                           </div>
                         </SelectContent>
                       </Select>
+                      {newAdmin.position.trim() === "" && (
+                        <div className="text-xs text-red-600 mt-1">Position is required</div>
+                      )}
                     </div>
                     <div>
                       <Label>ID Number</Label>
-                      <Input value={newAdmin.idNumber} onChange={e => setNewAdmin({...newAdmin, idNumber: e.target.value})} />
+                      <Input 
+                        value={newAdmin.idNumber} 
+                        onChange={e => setNewAdmin({...newAdmin, idNumber: e.target.value})} 
+                        className={newAdmin.idNumber.trim() === "" ? "border-red-500" : ""}
+                        placeholder="Enter ID number"
+                      />
+                      {newAdmin.idNumber.trim() === "" && (
+                        <div className="text-xs text-red-600 mt-1">ID number is required</div>
+                      )}
                     </div>
                     <div>
                       <Label>Account Username</Label>
-                      <Input value={newAdmin.username} onChange={e => setNewAdmin({...newAdmin, username: e.target.value})} />
+                      <Input 
+                        value={newAdmin.username} 
+                        onChange={e => setNewAdmin({...newAdmin, username: e.target.value})} 
+                        className={newAdmin.username.trim() === "" ? "border-red-500" : ""}
+                        placeholder="Enter username"
+                      />
+                      {newAdmin.username.trim() === "" && (
+                        <div className="text-xs text-red-600 mt-1">Username is required</div>
+                      )}
                     </div>
                     <div>
                       <Label>Password</Label>
@@ -703,7 +904,7 @@ export function ManageUsersPage() {
                             setNewAdmin({ ...newAdmin, password: e.target.value });
                             setPasswordError(validatePassword(e.target.value));
                           }}
-                          className={passwordError ? "pr-10 border-red-500" : "pr-10"}
+                          className={`pr-10 ${passwordError || newAdmin.password.trim() === "" ? "border-red-500" : ""}`}
                           placeholder="Enter password"
                         />
                         <button
@@ -715,11 +916,18 @@ export function ManageUsersPage() {
                           {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                         </button>
                       </div>
+                      {newAdmin.password.trim() === "" && (
+                        <div className="text-xs text-red-600 mt-1">Password is required</div>
+                      )}
                       {passwordError && <div className="text-xs text-red-600 mt-1">{passwordError}</div>}
                     </div>
                   </div>
                   <DialogFooter>
-                    <Button onClick={handleAddAdminClick} className="bg-[#FF4F0B] hover:bg-[#FF4F0B]/90 text-white">
+                    <Button 
+                      onClick={handleAddAdminClick} 
+                      disabled={!isNewAdminValid()}
+                      className={`${isNewAdminValid() ? 'bg-[#FF4F0B] hover:bg-[#FF4F0B]/90' : 'bg-gray-300 cursor-not-allowed'} text-white`}
+                    >
                       Add New Admin
                     </Button>
                   </DialogFooter>
@@ -769,11 +977,72 @@ export function ManageUsersPage() {
                             onCheckedChange={handleSelectAllAdmins}
                           />
                         </TableHead>
-                        <TableHead>User ID</TableHead>
-                        <TableHead>Name</TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-gray-50"
+                          onClick={() => handleAdminSort('userId')}
+                        >
+                          <div className="flex items-center gap-1">
+                            User ID
+                            {adminSortField === 'userId' ? (
+                              adminSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                            )}
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-gray-50"
+                          onClick={() => handleAdminSort('name')}
+                        >
+                          <div className="flex items-center gap-1">
+                            Name
+                            {adminSortField === 'name' ? (
+                              adminSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                            )}
+                          </div>
+                        </TableHead>
                         <TableHead>Position</TableHead>
-                        <TableHead>ID Number</TableHead>
-                        <TableHead>Username</TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-gray-50"
+                          onClick={() => handleAdminSort('idNumber')}
+                        >
+                          <div className="flex items-center gap-1">
+                            ID Number
+                            {adminSortField === 'idNumber' ? (
+                              adminSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                            )}
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-gray-50"
+                          onClick={() => handleAdminSort('username')}
+                        >
+                          <div className="flex items-center gap-1">
+                            Username
+                            {adminSortField === 'username' ? (
+                              adminSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                            )}
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-gray-50"
+                          onClick={() => handleAdminSort('createdDate')}
+                        >
+                          <div className="flex items-center gap-1">
+                            Created Date
+                            {adminSortField === 'createdDate' ? (
+                              adminSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                            )}
+                          </div>
+                        </TableHead>
                         <TableHead>
                           <div className="flex items-center gap-1">
                             Password
@@ -793,14 +1062,14 @@ export function ManageUsersPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredAdmins.length === 0 ? (
+                      {pagedAdmins.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center text-gray-500 py-8">
+                          <TableCell colSpan={9} className="text-center text-gray-500 py-8">
                             No results found.
                           </TableCell>
                         </TableRow>
                       ) : (
-                        filteredAdmins.map(admin => (
+                        pagedAdmins.map(admin => (
                           <TableRow key={admin.id}>
                             <TableCell>
                               <Checkbox
@@ -813,6 +1082,12 @@ export function ManageUsersPage() {
                             <TableCell>{admin.position}</TableCell>
                             <TableCell>{admin.idNumber}</TableCell>
                             <TableCell>{admin.username}</TableCell>
+                            <TableCell>
+                              <div className="flex flex-col">
+                                <span>{admin.createdDate || 'N/A'}</span>
+                                <span className="text-xs text-gray-500">{admin.createdTime || 'N/A'}</span>
+                              </div>
+                            </TableCell>
                             <TableCell>
                               {showAllAdminPasswords ? (
                                 <span>{admin.password}</span>
@@ -939,14 +1214,24 @@ export function ManageUsersPage() {
 
                 {/* Pagination */}
                 <div className="border-t border-gray-200 px-6 py-3 flex items-center justify-between">
-                  <div className="text-sm text-gray-700">
-                    Showing 1 to {filteredAdmins.length} of {filteredAdmins.length} results
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm text-gray-700">Page {adminTotalPages === 0 ? 0 : adminPage} of {adminTotalPages}</span>
+                    <label className="text-sm text-gray-700 flex items-center gap-1">
+                      Rows per page:
+                      <select
+                        className="border rounded px-2 py-1 text-sm"
+                        value={adminRowsPerPage}
+                        onChange={e => { setAdminRowsPerPage(Number(e.target.value)); setAdminPage(1); }}
+                      >
+                        {ROWS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                    </label>
                   </div>
                   <div className="flex space-x-2">
-                    <Button variant="outline" size="sm" disabled>
+                    <Button variant="outline" size="sm" onClick={() => setAdminPage(p => Math.max(1, p - 1))} disabled={adminPage === 1}>
                       Previous
                     </Button>
-                    <Button variant="outline" size="sm" disabled>
+                    <Button variant="outline" size="sm" onClick={() => setAdminPage(p => Math.min(adminTotalPages, p + 1))} disabled={adminPage === adminTotalPages || adminTotalPages === 0}>
                       Next
                     </Button>
                   </div>
@@ -1013,6 +1298,8 @@ export function ManageUsersPage() {
                   </div>
                 </CardContent>
               </Card>
+
+              
             </div>
 
             {/* Resident Filters */}
@@ -1051,6 +1338,7 @@ export function ManageUsersPage() {
                         <SelectItem value="all">All Status</SelectItem>
                         <SelectItem value="verified">Verified</SelectItem>
                         <SelectItem value="pending">Pending Verification</SelectItem>
+                        <SelectItem value="suspended">Suspended</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -1100,25 +1388,85 @@ export function ManageUsersPage() {
                             onCheckedChange={handleSelectAllResidents}
                           />
                         </TableHead>
-                        <TableHead>User ID</TableHead>
-                        <TableHead>Full Name</TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-gray-50"
+                          onClick={() => handleResidentSort('userId')}
+                        >
+                          <div className="flex items-center gap-1">
+                            User ID
+                            {residentSortField === 'userId' ? (
+                              residentSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                            )}
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-gray-50"
+                          onClick={() => handleResidentSort('fullName')}
+                        >
+                          <div className="flex items-center gap-1">
+                            Full Name
+                            {residentSortField === 'fullName' ? (
+                              residentSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                            )}
+                          </div>
+                        </TableHead>
                         <TableHead>Mobile Number</TableHead>
-                        <TableHead>Barangay</TableHead>
-                        <TableHead>City/Town</TableHead>
-                        <TableHead>Created Date</TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-gray-50"
+                          onClick={() => handleResidentSort('barangay')}
+                        >
+                          <div className="flex items-center gap-1">
+                            Barangay
+                            {residentSortField === 'barangay' ? (
+                              residentSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                            )}
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-gray-50"
+                          onClick={() => handleResidentSort('cityTown')}
+                        >
+                          <div className="flex items-center gap-1">
+                            City/Town
+                            {residentSortField === 'cityTown' ? (
+                              residentSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                            )}
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-gray-50"
+                          onClick={() => handleResidentSort('createdDate')}
+                        >
+                          <div className="flex items-center gap-1">
+                            Created Date
+                            {residentSortField === 'createdDate' ? (
+                              residentSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                            )}
+                          </div>
+                        </TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredResidents.length === 0 ? (
+                      {pagedResidents.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center text-gray-500 py-8">
+                          <TableCell colSpan={9} className="text-center text-gray-500 py-8">
                             No residents found. {residents.length === 0 ? "No residents have been registered yet." : "No residents match your search criteria."}
                           </TableCell>
                         </TableRow>
                       ) : (
-                        filteredResidents.map(resident => (
+                        pagedResidents.map(resident => (
                           <TableRow key={resident.id}>
                             <TableCell>
                               <Checkbox
@@ -1126,20 +1474,33 @@ export function ManageUsersPage() {
                                 onCheckedChange={() => handleSelectResident(resident.id)}
                               />
                             </TableCell>
-                            <TableCell className="font-medium">{resident.userId}</TableCell>
-                            <TableCell>{resident.fullName}</TableCell>
+                            <TableCell className="font-medium">{
+                              resident.userId && resident.userId.startsWith('RID-')
+                                ? resident.userId
+                                : `RID-${resident.userId || resident.id?.slice(-6) || ''}`
+                            }</TableCell>
+                            <TableCell>
+                              <span className="flex items-center gap-2">
+                                {resident.fullName}
+                                {resident.isOnline && <span className="inline-block h-2 w-2 rounded-full bg-green-500" title="Online"></span>}
+                              </span>
+                            </TableCell>
                             <TableCell>{resident.mobileNumber}</TableCell>
                             <TableCell>{resident.barangay}</TableCell>
                             <TableCell>{resident.cityTown}</TableCell>
                             <TableCell>{resident.createdDate}</TableCell>
                             <TableCell>
                               <Badge
-                                className={resident.verified ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}
+                                className={
+                                  resident.suspended ? 'bg-red-100 text-red-800' :
+                                  resident.verified ? 'bg-green-100 text-green-800' : 
+                                  'bg-yellow-100 text-yellow-800'
+                                }
                               >
-                                {resident.verified ? 'Verified' : 'Pending'}
+                                {resident.suspended ? 'Suspended' : resident.verified ? 'Verified' : 'Pending'}
                               </Badge>
                             </TableCell>
-                            <TableCell>
+                                                        <TableCell>
                               <div className="flex items-center gap-2">
                                 <Button
                                   size="sm"
@@ -1170,23 +1531,23 @@ export function ManageUsersPage() {
                                         <div>
                                           <Label>Full Name</Label>
                                           <Input value={selectedResident.fullName} onChange={e => setSelectedResident({
-                                    ...selectedResident,
-                                    fullName: e.target.value
-                                  })} />
+                                            ...selectedResident,
+                                            fullName: e.target.value
+                                          })} />
                                         </div>
                                         <div>
                                           <Label>Mobile Number</Label>
                                           <Input value={selectedResident.mobileNumber} onChange={e => setSelectedResident({
-                                    ...selectedResident,
-                                    mobileNumber: e.target.value
-                                  })} />
+                                            ...selectedResident,
+                                            mobileNumber: e.target.value
+                                          })} />
                                         </div>
                                         <div>
                                           <Label>Barangay</Label>
                                           <Select value={selectedResident.barangay} onValueChange={value => setSelectedResident({
-                                    ...selectedResident,
-                                    barangay: value
-                                  })}>
+                                            ...selectedResident,
+                                            barangay: value
+                                          })}>
                                             <SelectTrigger>
                                               <SelectValue />
                                             </SelectTrigger>
@@ -1200,23 +1561,23 @@ export function ManageUsersPage() {
                                         <div>
                                           <Label>City/Town</Label>
                                           <Input value={selectedResident.cityTown} onChange={e => setSelectedResident({
-                                    ...selectedResident,
-                                    cityTown: e.target.value
-                                  })} />
+                                            ...selectedResident,
+                                            cityTown: e.target.value
+                                          })} />
                                         </div>
                                         <div>
                                           <Label>Home Address</Label>
                                           <Input value={selectedResident.homeAddress} onChange={e => setSelectedResident({
-                                    ...selectedResident,
-                                    homeAddress: e.target.value
-                                  })} />
+                                            ...selectedResident,
+                                            homeAddress: e.target.value
+                                          })} />
                                         </div>
                                         <div>
                                           <Label>Email Address</Label>
                                           <Input value={selectedResident.email} onChange={e => setSelectedResident({
-                                    ...selectedResident,
-                                    email: e.target.value
-                                  })} />
+                                            ...selectedResident,
+                                            email: e.target.value
+                                          })} />
                                         </div>
                                         <div>
                                           <Label>Valid ID Type</Label>
@@ -1226,7 +1587,6 @@ export function ManageUsersPage() {
                                           <Label>Valid ID Image URL</Label>
                                           <Input value={selectedResident.validIdImage || ''} onChange={e => setSelectedResident({ ...selectedResident, validIdImage: e.target.value })} />
                                         </div>
-    
                                       </div>
                                     )}
                                     <DialogFooter>
@@ -1280,14 +1640,24 @@ export function ManageUsersPage() {
 
                 {/* Pagination */}
                 <div className="border-t border-gray-200 px-6 py-3 flex items-center justify-between">
-                  <div className="text-sm text-gray-700">
-                    Showing 1 to {filteredResidents.length} of {filteredResidents.length} results
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm text-gray-700">Page {residentTotalPages === 0 ? 0 : residentPage} of {residentTotalPages}</span>
+                    <label className="text-sm text-gray-700 flex items-center gap-1">
+                      Rows per page:
+                      <select
+                        className="border rounded px-2 py-1 text-sm"
+                        value={residentRowsPerPage}
+                        onChange={e => { setResidentRowsPerPage(Number(e.target.value)); setResidentPage(1); }}
+                      >
+                        {ROWS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                    </label>
                   </div>
                   <div className="flex space-x-2">
-                    <Button variant="outline" size="sm" disabled>
+                    <Button variant="outline" size="sm" onClick={() => setResidentPage(p => Math.max(1, p - 1))} disabled={residentPage === 1}>
                       Previous
                     </Button>
-                    <Button variant="outline" size="sm" disabled>
+                    <Button variant="outline" size="sm" onClick={() => setResidentPage(p => Math.min(residentTotalPages, p + 1))} disabled={residentPage === residentTotalPages || residentTotalPages === 0}>
                       Next
                     </Button>
                   </div>
@@ -1346,35 +1716,57 @@ export function ManageUsersPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Admin ID</TableHead>
-                      <TableHead>User</TableHead>
-                      <TableHead>Action</TableHead>
+                      <TableHead>Actor</TableHead>
+                      <TableHead>Role</TableHead>
                       <TableHead>Timestamp</TableHead>
-                      <TableHead>Details</TableHead>
+                      <TableHead>Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {activityLogs.map(log => (
-                      <TableRow key={log.id}>
-                        <TableCell className="font-medium">ADM-{log.id}</TableCell>
-                        <TableCell>{log.admin}</TableCell>
-                        <TableCell>{log.action}</TableCell>
-                        <TableCell>{log.timestamp}</TableCell>
-                        <TableCell>{log.details}</TableCell>
+                    {pagedActivityLogs.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-gray-500 py-8">
+                          No activity logs found.
+                        </TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      pagedActivityLogs.map(log => {
+                        // Try to find the admin user by name
+                        const admin = adminUsers.find(a => a.name === log.admin);
+                        return (
+                          <TableRow key={log.id}>
+                            <TableCell className="font-medium">{admin ? admin.userId : "-"}</TableCell>
+                            <TableCell>{log.admin || (admin ? admin.name : "-")}</TableCell>
+                            <TableCell>{admin ? admin.position || admin.role || "-" : "-"}</TableCell>
+                            <TableCell>{log.timestamp ? log.timestamp : "-"}</TableCell>
+                            <TableCell>{log.action}</TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
                   </TableBody>
                 </Table>
 
                 {/* Pagination */}
                 <div className="border-t border-gray-200 px-6 py-3 flex items-center justify-between">
-                  <div className="text-sm text-gray-700">
-                    Showing 1 to {activityLogs.length} of {activityLogs.length} results
+                  <div className="flex items-center gap-4">
+                    <span className="text-sm text-gray-700">Page {activityTotalPages === 0 ? 0 : activityPage} of {activityTotalPages}</span>
+                    <label className="text-sm text-gray-700 flex items-center gap-1">
+                      Rows per page:
+                      <select
+                        className="border rounded px-2 py-1 text-sm"
+                        value={activityRowsPerPage}
+                        onChange={e => { setActivityRowsPerPage(Number(e.target.value)); setActivityPage(1); }}
+                      >
+                        {ROWS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                      </select>
+                    </label>
                   </div>
                   <div className="flex space-x-2">
-                    <Button variant="outline" size="sm" disabled>
+                    <Button variant="outline" size="sm" onClick={() => setActivityPage(p => Math.max(1, p - 1))} disabled={activityPage === 1}>
                       Previous
                     </Button>
-                    <Button variant="outline" size="sm" disabled>
+                    <Button variant="outline" size="sm" onClick={() => setActivityPage(p => Math.min(activityTotalPages, p + 1))} disabled={activityPage === activityTotalPages || activityTotalPages === 0}>
                       Next
                     </Button>
                   </div>
@@ -1484,7 +1876,7 @@ export function ManageUsersPage() {
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Mobile Number</TableCell>
-                    <TableCell>{selectedResident?.mobileNumber || 'N/A'}</TableCell>
+                    <TableCell>{selectedResident?.mobileNumber || selectedResident?.phone || 'N/A'}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Email</TableCell>
@@ -1499,8 +1891,8 @@ export function ManageUsersPage() {
                     <TableCell>{selectedResident?.cityTown || 'N/A'}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Home Address</TableCell>
-                    <TableCell>{selectedResident?.homeAddress || 'N/A'}</TableCell>
+                    <TableCell className="font-medium text-gray-700 align-top">Province</TableCell>
+                    <TableCell>{selectedResident?.province || '-'}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Valid ID Type</TableCell>
@@ -1532,7 +1924,11 @@ export function ManageUsersPage() {
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Created Date</TableCell>
-                    <TableCell>{selectedResident?.createdDate || 'N/A'}</TableCell>
+                    <TableCell>{
+                      selectedResident?.createdDate && (selectedResident?.createdTimestamp || selectedResident?.createdAt)
+                        ? `${selectedResident.createdDate}, ${new Date(selectedResident.createdTimestamp || selectedResident.createdAt).toLocaleTimeString()}`
+                        : selectedResident?.createdDate || 'N/A'
+                    }</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Additional Info</TableCell>
@@ -1627,7 +2023,11 @@ export function ManageUsersPage() {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={confirmAddAdminAction} className="bg-[#FF4F0B] hover:bg-[#FF4F0B]/90">
+              <AlertDialogAction 
+                onClick={confirmAddAdminAction} 
+                disabled={!isNewAdminValid()}
+                className={`${isNewAdminValid() ? 'bg-[#FF4F0B] hover:bg-[#FF4F0B]/90' : 'bg-gray-300 cursor-not-allowed'}`}
+              >
                 Confirm
               </AlertDialogAction>
             </AlertDialogFooter>

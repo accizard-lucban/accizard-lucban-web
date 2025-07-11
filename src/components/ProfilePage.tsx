@@ -11,7 +11,7 @@ import { PageHeader } from "./PageHeader";
 import { useNavigate } from "react-router-dom";
 import { db, auth } from "@/lib/firebase";
 import { getAuth, updateProfile, updateEmail } from "firebase/auth";
-import { collection, query, where, getDocs, doc, updateDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, updateDoc, orderBy, limit } from "firebase/firestore";
 import { toast } from "@/components/ui/sonner";
 import {
   AlertDialog,
@@ -24,6 +24,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel
 } from "@/components/ui/alert-dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 export function ProfilePage() {
   const navigate = useNavigate();
@@ -37,6 +38,9 @@ export function ProfilePage() {
   });
   const [showConfirm, setShowConfirm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [activityLogs, setActivityLogs] = useState<any[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+
   const handleSaveProfile = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setShowConfirm(false);
@@ -179,14 +183,29 @@ export function ProfilePage() {
     fetchProfile();
   }, []);
 
+  // Fetch personal activity logs
+  useEffect(() => {
+    async function fetchLogs() {
+      if (!profile.username) return;
+      setLogsLoading(true);
+      const q = query(
+        collection(db, "activityLogs"),
+        where("username", "==", profile.username),
+        orderBy("timestamp", "desc"),
+        limit(10)
+      );
+      const snap = await getDocs(q);
+      setActivityLogs(snap.docs.map(doc => doc.data()));
+      setLogsLoading(false);
+    }
+    fetchLogs();
+  }, [profile.username]);
+
   return <Layout>
         
       <div className="max-w-4xl mx-auto">
 
         <Tabs defaultValue="profile" className="w-full">
-          <TabsList className="bg-accizard-light">
-            <TabsTrigger value="profile" className="data-[state=active]:bg-[#FF4F0B] data-[state=active]:text-white">Edit Profile</TabsTrigger>
-          </TabsList>
           
           <TabsContent value="profile">
             <Card>
@@ -270,6 +289,40 @@ export function ProfilePage() {
                     </AlertDialogContent>
                   </AlertDialog>
                 </form>
+              </CardContent>
+            </Card>
+            {/* Personal Activity Log Section */}
+            <Card className="mt-8">
+              <CardHeader>
+                <CardTitle>Personal Activity Log</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {logsLoading ? (
+                  <div className="text-center text-gray-500 py-8">Loading activity logs...</div>
+                ) : activityLogs.length === 0 ? (
+                  <div className="text-center text-gray-500 py-8">No activity logs found.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Action</TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Timestamp</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {activityLogs.map((log, idx) => (
+                          <TableRow key={idx}>
+                            <TableCell className="font-medium">{log.action}</TableCell>
+                            <TableCell>{log.details || log.description || '-'}</TableCell>
+                            <TableCell>{log.timestamp ? new Date(log.timestamp).toLocaleString() : '-'}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
