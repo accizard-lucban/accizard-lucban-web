@@ -9,6 +9,7 @@ import { getAuth, signOut } from "firebase/auth";
 interface SidebarProps {
   isCollapsed: boolean;
   onCollapse: (collapsed: boolean) => void;
+  manageUsersBadge?: number;
 }
 
 const menuItems = [{
@@ -35,8 +36,7 @@ const menuItems = [{
 }, {
   title: "Manage Users",
   icon: Users,
-  path: "/manage-users",
-  badge: "5"
+  path: "/manage-users"
 }];
 
 const otherItems = [{
@@ -45,7 +45,7 @@ const otherItems = [{
   path: "/profile"
 }];
 
-export function Sidebar({ isCollapsed, onCollapse }: SidebarProps) {
+export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge }: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [showSignOut, setShowSignOut] = useState(false);
@@ -97,9 +97,16 @@ export function Sidebar({ isCollapsed, onCollapse }: SidebarProps) {
                   <item.icon className="h-5 w-5 mr-3 flex-shrink-0" />
                   {!isCollapsed && <span>{item.title}</span>}
                 </div>
-                {!isCollapsed && item.badge && <Badge className="text-[#FF4F0B] text-xs border-0 bg-slate-50">
+                {!isCollapsed && item.title === "Manage Users" && manageUsersBadge > 0 && (
+                  <Badge className="text-[#FF4F0B] text-xs border-0 bg-slate-50">
+                    {manageUsersBadge}
+                  </Badge>
+                )}
+                {!isCollapsed && item.title !== "Manage Users" && item.badge && (
+                  <Badge className="text-[#FF4F0B] text-xs border-0 bg-slate-50">
                     {item.badge}
-                  </Badge>}
+                  </Badge>
+                )}
               </button>)}
           </nav>
         </div>

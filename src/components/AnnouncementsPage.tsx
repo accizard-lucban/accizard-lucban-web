@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,14 +8,31 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Plus, Edit, Trash2, Calendar, AlertTriangle, Info } from "lucide-react";
+import { Search, Plus, Edit, Trash2, Calendar, AlertTriangle, Info, X } from "lucide-react";
 import { Layout } from "./Layout";
 import { DateRange } from "react-day-picker";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { db } from "@/lib/firebase";
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore";
   
+function formatTimeNoSeconds(time: string | number | null | undefined) {
+  if (!time) return '-';
+  let dateObj;
+  if (typeof time === 'number') {
+    dateObj = new Date(time);
+  } else if (/\d{1,2}:\d{2}(:\d{2})?/.test(time)) {
+    const today = new Date();
+    dateObj = new Date(`${today.toDateString()} ${time}`);
+  } else {
+    dateObj = new Date(time);
+  }
+  if (isNaN(dateObj.getTime())) return '-';
+  return dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+}
+
 export function AnnouncementsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -28,31 +45,30 @@ export function AnnouncementsPage() {
     description: "",
     priority: ""
   });
-  const [announcements, setAnnouncements] = useState([{
-    id: 1,
-    type: "Weather Warning",
-    description: "Heavy rainfall expected. Residents near riverbanks should evacuate.",
-    date: "01/15/24",
-    priority: "high"
-  }, {
-    id: 2,
-    type: "Informational",
-    description: "Emergency response system will be under maintenance from 2-4 AM.",
-    date: "01/14/24",
-    priority: "medium"
-  }, {
-    id: 3,
-    type: "Evacuation Order",
-    description: "Immediate evacuation required for Barangay Santo Niño due to flood risk.",
-    date: "01/13/24",
-    priority: "high"
-  }]);
+  const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [announcementPage, setAnnouncementPage] = useState(1);
+  const [announcementRowsPerPage, setAnnouncementRowsPerPage] = useState(10);
+  const ANNOUNCEMENT_ROWS_OPTIONS = [10, 20, 50, 100];
+  const [announcementTypes, setAnnouncementTypes] = useState([
+    "Weather Warning",
+    "Flood",
+    "Landslide/Earthquake",
+    "Road Closure",
+    "Evacuation Order",
+    "Missing Person",
+    "Informational"
+  ]);
+  const [newTypeInput, setNewTypeInput] = useState("");
+
   const filteredAnnouncements = announcements.filter(announcement => {
     const matchesSearch = announcement.description.toLowerCase().includes(searchTerm.toLowerCase()) || announcement.type.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = typeFilter === "all" || announcement.type === typeFilter;
     const matchesPriority = priorityFilter === "all" || announcement.priority === priorityFilter;
     return matchesSearch && matchesType && matchesPriority;
   });
+
+  const pagedAnnouncements = filteredAnnouncements.slice((announcementPage - 1) * announcementRowsPerPage, announcementPage * announcementRowsPerPage);
+  const announcementTotalPages = Math.ceil(filteredAnnouncements.length / announcementRowsPerPage);
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case "high":
@@ -65,18 +81,19 @@ export function AnnouncementsPage() {
         return "bg-gray-500";
     }
   };
-  const handleAddAnnouncement = () => {
-    const id = Math.max(...announcements.map(a => a.id)) + 1;
-    const newAnnouncementWithId = {
+  const handleAddAnnouncement = async () => {
+    const newAnnouncementWithDate = {
       ...newAnnouncement,
-      id,
       date: new Date().toLocaleDateString('en-US', {
         month: '2-digit',
         day: '2-digit',
         year: '2-digit'
-      })
+      }),
+      createdTime: Date.now(),
+      createdBy: 'admin' // Replace with actual user if available
     };
-    setAnnouncements([...announcements, newAnnouncementWithId]);
+    const docRef = await addDoc(collection(db, "announcements"), newAnnouncementWithDate);
+    setAnnouncements(prev => [...prev, { ...newAnnouncementWithDate, id: docRef.id }]);
     setNewAnnouncement({
       type: "",
       description: "",
@@ -89,11 +106,19 @@ export function AnnouncementsPage() {
       ...announcement
     });
   };
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
+    if (!editingAnnouncement) return;
+    await updateDoc(doc(db, "announcements", editingAnnouncement.id), {
+      type: editingAnnouncement.type,
+      description: editingAnnouncement.description,
+      priority: editingAnnouncement.priority,
+      date: editingAnnouncement.date
+    });
     setAnnouncements(announcements.map(a => a.id === editingAnnouncement.id ? editingAnnouncement : a));
     setEditingAnnouncement(null);
   };
-  const handleDeleteAnnouncement = (id: number) => {
+  const handleDeleteAnnouncement = async (id: string) => {
+    await deleteDoc(doc(db, "announcements", id));
     setAnnouncements(announcements.filter(a => a.id !== id));
   };
   return <Layout>
@@ -249,20 +274,54 @@ export function AnnouncementsPage() {
                 <div>
                   <Label htmlFor="new-type">Type</Label>
                   <Select value={newAnnouncement.type} onValueChange={value => setNewAnnouncement({
-                  ...newAnnouncement,
-                  type: value
-                })}>
+                    ...newAnnouncement,
+                    type: value
+                  })}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select announcement type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Weather Warning">Weather Warning</SelectItem>
-                      <SelectItem value="Flood">Flood</SelectItem>
-                      <SelectItem value="Landslide/Earthquake">Landslide/Earthquake</SelectItem>
-                      <SelectItem value="Road Closure">Road Closure</SelectItem>
-                      <SelectItem value="Evacuation Order">Evacuation Order</SelectItem>
-                      <SelectItem value="Missing Person">Missing Person</SelectItem>
-                      <SelectItem value="Informational">Informational</SelectItem>
+                      {announcementTypes.map(type => (
+                        <div key={type} className="flex items-center justify-between pr-2">
+                          <SelectItem value={type}>{type}</SelectItem>
+                          {announcementTypes.length > 1 && (
+                            <Button type="button" size="icon" variant="ghost" onClick={() => {
+                              setAnnouncementTypes(types => types.filter(t => t !== type));
+                              if (newAnnouncement.type === type) {
+                                setNewAnnouncement({ ...newAnnouncement, type: "" });
+                              }
+                            }} className="ml-2 text-red-500">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                      <div className="flex gap-2 p-2 border-t border-gray-100 mt-2">
+                        <Input
+                          value={newTypeInput}
+                          onChange={e => setNewTypeInput(e.target.value)}
+                          placeholder="Add new type"
+                          className="flex-1"
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' && newTypeInput.trim()) {
+                              if (!announcementTypes.includes(newTypeInput.trim())) {
+                                setAnnouncementTypes([...announcementTypes, newTypeInput.trim()]);
+                                setNewAnnouncement({ ...newAnnouncement, type: newTypeInput.trim() });
+                              }
+                              setNewTypeInput("");
+                            }
+                          }}
+                        />
+                        <Button type="button" onClick={() => {
+                          if (newTypeInput.trim() && !announcementTypes.includes(newTypeInput.trim())) {
+                            setAnnouncementTypes([...announcementTypes, newTypeInput.trim()]);
+                            setNewAnnouncement({ ...newAnnouncement, type: newTypeInput.trim() });
+                          }
+                          setNewTypeInput("");
+                        }} disabled={!newTypeInput.trim()} className="bg-[#FF4F0B] hover:bg-[#FF4F0B]/90 text-white">
+                          Add
+                        </Button>
+                      </div>
                     </SelectContent>
                   </Select>
                 </div>
@@ -270,9 +329,9 @@ export function AnnouncementsPage() {
                 <div>
                   <Label htmlFor="new-priority">Priority</Label>
                   <Select value={newAnnouncement.priority} onValueChange={value => setNewAnnouncement({
-                  ...newAnnouncement,
-                  priority: value
-                })}>
+                    ...newAnnouncement,
+                    priority: value
+                  })}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select priority" />
                     </SelectTrigger>
@@ -287,9 +346,9 @@ export function AnnouncementsPage() {
                 <div>
                   <Label htmlFor="new-description">Description</Label>
                   <Textarea id="new-description" value={newAnnouncement.description} onChange={e => setNewAnnouncement({
-                  ...newAnnouncement,
-                  description: e.target.value
-                })} placeholder="Announcement description" />
+                    ...newAnnouncement,
+                    description: e.target.value
+                  })} placeholder="Announcement description" />
                 </div>
               </div>
               <DialogFooter>
@@ -314,118 +373,142 @@ export function AnnouncementsPage() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredAnnouncements.map(announcement => <tr key={announcement.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{announcement.type}</td>
-                      <td className="px-6 py-4 text-sm text-gray-900">
-                        <div className="max-w-xs">{announcement.description}</div>
+                  {pagedAnnouncements.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="text-center text-gray-500 py-8">
+                        No announcements found.
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{announcement.date}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <Badge className={`${getPriorityColor(announcement.priority)} text-white`}>
-                          {announcement.priority}
-                        </Badge>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button size="sm" variant="outline" onClick={() => handleEditAnnouncement(announcement)}>
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>Edit Announcement</DialogTitle>
-                            </DialogHeader>
-                            {editingAnnouncement && <div className="space-y-4">
-                                <div>
-                                  <Label>Type</Label>
-                                  <Select value={editingAnnouncement.type} onValueChange={value => setEditingAnnouncement({
-                              ...editingAnnouncement,
-                              type: value
-                            })}>
-                                    <SelectTrigger>
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="Weather Warning">Weather Warning</SelectItem>
-                                      <SelectItem value="Flood">Flood</SelectItem>
-                                      <SelectItem value="Landslide/Earthquake">Landslide/Earthquake</SelectItem>
-                                      <SelectItem value="Road Closure">Road Closure</SelectItem>
-                                      <SelectItem value="Evacuation Order">Evacuation Order</SelectItem>
-                                      <SelectItem value="Missing Person">Missing Person</SelectItem>
-                                      <SelectItem value="Informational">Informational</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                
-                                <div>
-                                  <Label>Priority</Label>
-                                  <Select value={editingAnnouncement.priority} onValueChange={value => setEditingAnnouncement({
-                              ...editingAnnouncement,
-                              priority: value
-                            })}>
-                                    <SelectTrigger>
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="high">High</SelectItem>
-                                      <SelectItem value="medium">Medium</SelectItem>
-                                      <SelectItem value="low">Low</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                                
-                                <div>
-                                  <Label>Description</Label>
-                                  <Textarea value={editingAnnouncement.description} onChange={e => setEditingAnnouncement({
-                              ...editingAnnouncement,
-                              description: e.target.value
-                            })} />
-                                </div>
-                              </div>}
-                            <DialogFooter>
-                              <Button onClick={handleSaveEdit}>Save Changes</Button>
-                            </DialogFooter>
-                          </DialogContent>
-                        </Dialog>
-                        
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button size="sm" variant="outline" className="text-red-600">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete Announcement</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Are you sure you want to delete this announcement? This action cannot be undone.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => handleDeleteAnnouncement(announcement.id)} className="bg-red-600 hover:bg-red-700">
-                                Delete
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </td>
-                    </tr>)}
+                    </tr>
+                  ) : (
+                    pagedAnnouncements.map(announcement => (
+                      <tr key={announcement.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{announcement.type}</td>
+                        <td className="px-6 py-4 text-sm text-gray-900">
+                          <div className="max-w-xs">{announcement.description}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <span>{announcement.date}</span>
+                          <br />
+                          <span className="text-xs text-gray-500">{formatTimeNoSeconds(announcement.createdTime)}</span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <Badge className={`${getPriorityColor(announcement.priority)} text-white`}>
+                            {announcement.priority}
+                          </Badge>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                          <Dialog>
+                            <DialogTrigger asChild>
+                              <Button size="sm" variant="outline" onClick={() => handleEditAnnouncement(announcement)}>
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Edit Announcement</DialogTitle>
+                              </DialogHeader>
+                              {editingAnnouncement && <div className="space-y-4">
+                                  <div>
+                                    <Label>Type</Label>
+                                    <Select value={editingAnnouncement.type} onValueChange={value => setEditingAnnouncement({
+                                ...editingAnnouncement,
+                                type: value
+                              })}>
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="Weather Warning">Weather Warning</SelectItem>
+                                        <SelectItem value="Flood">Flood</SelectItem>
+                                        <SelectItem value="Landslide/Earthquake">Landslide/Earthquake</SelectItem>
+                                        <SelectItem value="Road Closure">Road Closure</SelectItem>
+                                        <SelectItem value="Evacuation Order">Evacuation Order</SelectItem>
+                                        <SelectItem value="Missing Person">Missing Person</SelectItem>
+                                        <SelectItem value="Informational">Informational</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  
+                                  <div>
+                                    <Label>Priority</Label>
+                                    <Select value={editingAnnouncement.priority} onValueChange={value => setEditingAnnouncement({
+                                ...editingAnnouncement,
+                                priority: value
+                              })}>
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="high">High</SelectItem>
+                                        <SelectItem value="medium">Medium</SelectItem>
+                                        <SelectItem value="low">Low</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  
+                                  <div>
+                                    <Label>Description</Label>
+                                    <Textarea value={editingAnnouncement.description} onChange={e => setEditingAnnouncement({
+                                ...editingAnnouncement,
+                                description: e.target.value
+                              })} />
+                                  </div>
+                                </div>}
+                              <DialogFooter>
+                                <Button onClick={handleSaveEdit}>Save Changes</Button>
+                              </DialogFooter>
+                            </DialogContent>
+                          </Dialog>
+                          
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button size="sm" variant="outline" className="text-red-600">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Announcement</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Are you sure you want to delete this announcement? This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => handleDeleteAnnouncement(announcement.id)} className="bg-red-600 hover:bg-red-700">
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
             
             {/* Pagination */}
             <div className="border-t border-gray-200 px-6 py-3 flex items-center justify-between">
-              <div className="text-sm text-gray-700">
-                Showing 1 to {filteredAnnouncements.length} of {filteredAnnouncements.length} results
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-gray-700">Page {announcementTotalPages === 0 ? 0 : announcementPage} of {announcementTotalPages}</span>
+                <label className="text-sm text-gray-700 flex items-center gap-1">
+                  Rows per page:
+                  <select
+                    className="border rounded px-2 py-1 text-sm"
+                    value={announcementRowsPerPage}
+                    onChange={e => { setAnnouncementRowsPerPage(Number(e.target.value)); setAnnouncementPage(1); }}
+                  >
+                    {ANNOUNCEMENT_ROWS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                </label>
               </div>
               <div className="flex space-x-2">
-                <Button variant="outline" size="sm" disabled>
+                <Button variant="outline" size="sm" onClick={() => setAnnouncementPage(p => Math.max(1, p - 1))} disabled={announcementPage === 1}>
                   Previous
                 </Button>
-                <Button variant="outline" size="sm" disabled>
+                <Button variant="outline" size="sm" onClick={() => setAnnouncementPage(p => Math.min(announcementTotalPages, p + 1))} disabled={announcementPage === announcementTotalPages || announcementTotalPages === 0}>
                   Next
                 </Button>
               </div>

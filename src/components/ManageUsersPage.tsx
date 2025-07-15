@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -13,8 +13,25 @@ import { Layout } from "./Layout";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc } from "firebase/firestore";
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, onSnapshot, query, orderBy } from "firebase/firestore";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useToast } from "@/components/ui/use-toast";
+
+// Add this helper at the top (after imports):
+function formatTimeNoSeconds(time: string | number | null | undefined) {
+  if (!time) return '-';
+  let dateObj;
+  if (typeof time === 'number') {
+    dateObj = new Date(time);
+  } else if (/\d{1,2}:\d{2}:\d{2}/.test(time)) { // e.g. '14:23:45'
+    const today = new Date();
+    dateObj = new Date(`${today.toDateString()} ${time}`);
+  } else {
+    dateObj = new Date(time);
+  }
+  if (isNaN(dateObj.getTime())) return '-';
+  return dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+}
 
 export function ManageUsersPage() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -47,48 +64,21 @@ export function ManageUsersPage() {
   });
   const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [residents, setResidents] = useState<any[]>([]);
-  const [activityLogs] = useState([{
-    id: 1,
-    admin: "John Admin",
-    action: "Added new pin",
-    timestamp: "01/15/24 - 10:30",
-    details: "Emergency pin at Main Street"
-  }, {
-    id: 2,
-    admin: "Jane Manager",
-    action: "Edited resident info",
-    timestamp: "01/15/24 - 09:15",
-    details: "Updated Maria Santos profile"
-  }, {
-    id: 3,
-    admin: "John Admin",
-    action: "Added announcement",
-    timestamp: "01/14/24 - 14:20",
-    details: "Emergency drill schedule"
-  }, {
-    id: 4,
-    admin: "Jane Manager",
-    action: "Logged in",
-    timestamp: "01/14/24 - 08:00",
-    details: "System access granted"
-  }, {
-    id: 5,
-    admin: "John Admin",
-    action: "Edited report",
-    timestamp: "01/13/24 - 16:45",
-    details: "Updated REP-001 status"
-  }]);
+  const [activityLogs, setActivityLogs] = useState([]);
 
   // Add new state for account status modal
   const [accountStatusModal, setAccountStatusModal] = useState<{ open: boolean, resident: any | null }>({ open: false, resident: null });
   const [positions, setPositions] = useState<string[]>(["Responder", "Rider"]);
   const [newPosition, setNewPosition] = useState("");
   const [confirmDeletePosition, setConfirmDeletePosition] = useState<string | null>(null);
-  const [confirmAddAdmin, setConfirmAddAdmin] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [passwordError, setPasswordError] = useState("");
   const [showAdminPasswords, setShowAdminPasswords] = useState<{ [id: string]: boolean }>({});
   const [showAllAdminPasswords, setShowAllAdminPasswords] = useState(false);
+  const [showAdminFormErrors, setShowAdminFormErrors] = useState(false);
+  const [showEditAdminErrors, setShowEditAdminErrors] = useState(false);
+
+  const { toast } = useToast();
 
   // Validation function for new admin
   const isNewAdminValid = () => {
@@ -122,6 +112,29 @@ export function ManageUsersPage() {
   const [residentRowsPerPage, setResidentRowsPerPage] = useState(20);
   const [activityRowsPerPage, setActivityRowsPerPage] = useState(20);
   const ROWS_OPTIONS = [10, 20, 50, 100];
+
+  // Add state to force re-render after resetting badge counts
+  const [badgeResetKey, setBadgeResetKey] = useState(0);
+
+  // Add after other sort states:
+  const [activitySortDirection, setActivitySortDirection] = useState<'asc' | 'desc'>('desc');
+
+  // Add handler:
+  const handleActivitySort = () => {
+    setActivitySortDirection(activitySortDirection === 'asc' ? 'desc' : 'asc');
+  };
+
+  // Add sortedActivityLogs before pagedActivityLogs:
+  const sortedActivityLogs = [...activityLogs].sort((a, b) => {
+    const aTime = typeof a.timestamp === 'number' ? a.timestamp : Date.parse(a.timestamp);
+    const bTime = typeof b.timestamp === 'number' ? b.timestamp : Date.parse(b.timestamp);
+    if (activitySortDirection === 'asc') {
+      return aTime - bTime;
+    } else {
+      return bTime - aTime;
+    }
+  });
+  const pagedActivityLogs = sortedActivityLogs.slice((activityPage - 1) * activityRowsPerPage, activityPage * activityRowsPerPage);
 
   useEffect(() => {
     async function fetchAdmins() {
@@ -165,9 +178,10 @@ export function ManageUsersPage() {
             ...doc.data(),
             verified: doc.data().verified || false,
             createdDate: doc.data().createdDate || new Date().toLocaleDateString(),
+            createdTime: doc.data().createdTime || null,
             userId: userId || `RID-${doc.id.slice(-6)}`,
             fullName: doc.data().fullName || doc.data().name || "Unknown",
-            mobileNumber: doc.data().mobileNumber || doc.data().phone || "N/A",
+            phoneNumber: doc.data().phoneNumber || doc.data().phone || "N/A",
             barangay: doc.data().barangay || "Unknown",
             cityTown: doc.data().cityTown || doc.data().city || "Unknown"
           };
@@ -197,20 +211,22 @@ export function ManageUsersPage() {
   // Sort admin data
   const sortedAdmins = [...adminUsers].sort((a, b) => {
     if (!adminSortField) return 0;
-    
     let aValue = a[adminSortField as keyof typeof a];
     let bValue = b[adminSortField as keyof typeof b];
-    
     // Handle date sorting
     if (adminSortField === 'createdDate') {
-      aValue = a.createdDate || '';
-      bValue = b.createdDate || '';
+      // Prefer createdTime if it's a number (timestamp)
+      const aTime = typeof a.createdTime === 'number' ? a.createdTime : Date.parse(a.createdDate + (a.createdTime ? ' ' + a.createdTime : ''));
+      const bTime = typeof b.createdTime === 'number' ? b.createdTime : Date.parse(b.createdDate + (b.createdTime ? ' ' + b.createdTime : ''));
+      if (adminSortDirection === 'asc') {
+        return aTime - bTime;
+      } else {
+        return bTime - aTime;
+      }
     }
-    
-    // Convert to strings for comparison
+    // Convert to strings for comparison for other fields
     const aStr = String(aValue || '').toLowerCase();
     const bStr = String(bValue || '').toLowerCase();
-    
     if (adminSortDirection === 'asc') {
       return aStr.localeCompare(bStr);
     } else {
@@ -266,7 +282,7 @@ export function ManageUsersPage() {
     const matchesAnyField = [
       resident.fullName,
       resident.userId,
-      resident.mobileNumber,
+      resident.phoneNumber,
       resident.email,
       resident.barangay,
       resident.cityTown,
@@ -335,6 +351,30 @@ export function ManageUsersPage() {
         username: "",
         password: ""
       });
+      // Helper to log activity
+      const logActivity = async ({ adminId, actor, role, actionType, action }) => {
+        await addDoc(collection(db, "activityLogs"), {
+          adminId,
+          actor,
+          role,
+          actionType,
+          action,
+          timestamp: new Date().toLocaleString(),
+        });
+      };
+      // Placeholder: get current admin info from your auth provider or context
+      const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
+      await logActivity({
+        adminId: currentAdmin.userId,
+        actor: currentAdmin.name,
+        role: currentAdmin.position || currentAdmin.role,
+        actionType: 'create',
+        action: `Added new admin: ${newAdmin.name}`,
+      });
+      toast({
+        title: 'Success',
+        description: 'Admin account added successfully!'
+      });
     } catch (error) {
       console.error("Error adding admin:", error);
     }
@@ -356,6 +396,26 @@ export function ManageUsersPage() {
       });
       setAdminUsers(adminUsers.map(a => a.id === editingAdmin.id ? editingAdmin : a));
       setEditingAdmin(null);
+      // Helper to log activity
+      const logActivity = async ({ adminId, actor, role, actionType, action }) => {
+        await addDoc(collection(db, "activityLogs"), {
+          adminId,
+          actor,
+          role,
+          actionType,
+          action,
+          timestamp: new Date().toLocaleString(),
+        });
+      };
+      // Placeholder: get current admin info from your auth provider or context
+      const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
+      await logActivity({
+        adminId: currentAdmin.userId,
+        actor: currentAdmin.name,
+        role: currentAdmin.position || currentAdmin.role,
+        actionType: 'edit',
+        action: `Edited admin: ${editingAdmin.name}`,
+      });
     } catch (error) {
       console.error("Error updating admin:", error);
     }
@@ -375,6 +435,26 @@ export function ManageUsersPage() {
         hasEditPermission: !admin.hasEditPermission
       } : admin));
       setConfirmPermissionChange(null);
+      // Helper to log activity
+      const logActivity = async ({ adminId, actor, role, actionType, action }) => {
+        await addDoc(collection(db, "activityLogs"), {
+          adminId,
+          actor,
+          role,
+          actionType,
+          action,
+          timestamp: new Date().toLocaleString(),
+        });
+      };
+      // Placeholder: get current admin info from your auth provider or context
+      const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
+      await logActivity({
+        adminId: currentAdmin.userId,
+        actor: currentAdmin.name,
+        role: currentAdmin.position || currentAdmin.role,
+        actionType: 'permission',
+        action: `${confirmPermissionChange.hasEditPermission ? 'Revoked' : 'Granted'} edit permission for: ${confirmPermissionChange.name}`,
+      });
     } catch (error) {
       console.error("Error updating permission:", error);
     }
@@ -384,6 +464,26 @@ export function ManageUsersPage() {
     try {
       await deleteDoc(doc(db, "admins", adminId));
       setAdminUsers(adminUsers.filter(a => a.id !== adminId));
+      // Helper to log activity
+      const logActivity = async ({ adminId, actor, role, actionType, action }) => {
+        await addDoc(collection(db, "activityLogs"), {
+          adminId,
+          actor,
+          role,
+          actionType,
+          action,
+          timestamp: new Date().toLocaleString(),
+        });
+      };
+      // Placeholder: get current admin info from your auth provider or context
+      const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
+      await logActivity({
+        adminId: currentAdmin.userId,
+        actor: currentAdmin.name,
+        role: currentAdmin.position || currentAdmin.role,
+        actionType: 'delete',
+        action: `Deleted admin: ${adminId}`,
+      });
     } catch (error) {
       console.error("Error deleting admin:", error);
     }
@@ -405,7 +505,7 @@ export function ManageUsersPage() {
     try {
       await updateDoc(doc(db, "users", selectedResident.id), {
         fullName: selectedResident.fullName,
-        mobileNumber: selectedResident.mobileNumber,
+        phoneNumber: selectedResident.phoneNumber,
         barangay: selectedResident.barangay,
         cityTown: selectedResident.cityTown,
         homeAddress: selectedResident.homeAddress,
@@ -417,6 +517,26 @@ export function ManageUsersPage() {
       setResidents(residents.map(r => r.id === selectedResident.id ? selectedResident : r));
       setIsEditResidentOpen(false);
       setSelectedResident(null);
+      // Helper to log activity
+      const logActivity = async ({ adminId, actor, role, actionType, action }) => {
+        await addDoc(collection(db, "activityLogs"), {
+          adminId,
+          actor,
+          role,
+          actionType,
+          action,
+          timestamp: new Date().toLocaleString(),
+        });
+      };
+      // Placeholder: get current admin info from your auth provider or context
+      const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
+      await logActivity({
+        adminId: currentAdmin.userId,
+        actor: currentAdmin.name,
+        role: currentAdmin.position || currentAdmin.role,
+        actionType: 'edit',
+        action: `Edited resident: ${selectedResident.fullName}`,
+      });
     } catch (error) {
       console.error("Error updating resident:", error);
     }
@@ -426,6 +546,26 @@ export function ManageUsersPage() {
     try {
       await deleteDoc(doc(db, "users", residentId));
       setResidents(residents.filter(r => r.id !== residentId));
+      // Helper to log activity
+      const logActivity = async ({ adminId, actor, role, actionType, action }) => {
+        await addDoc(collection(db, "activityLogs"), {
+          adminId,
+          actor,
+          role,
+          actionType,
+          action,
+          timestamp: new Date().toLocaleString(),
+        });
+      };
+      // Placeholder: get current admin info from your auth provider or context
+      const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
+      await logActivity({
+        adminId: currentAdmin.userId,
+        actor: currentAdmin.name,
+        role: currentAdmin.position || currentAdmin.role,
+        actionType: 'delete',
+        action: `Deleted resident: ${residentId}`,
+      });
     } catch (error) {
       console.error("Error deleting resident:", error);
     }
@@ -442,6 +582,26 @@ export function ManageUsersPage() {
           ...resident,
           verified: !resident.verified
         } : resident));
+        // Helper to log activity
+        const logActivity = async ({ adminId, actor, role, actionType, action }) => {
+          await addDoc(collection(db, "activityLogs"), {
+            adminId,
+            actor,
+            role,
+            actionType,
+            action,
+            timestamp: new Date().toLocaleString(),
+          });
+        };
+        // Placeholder: get current admin info from your auth provider or context
+        const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
+        await logActivity({
+          adminId: currentAdmin.userId,
+          actor: currentAdmin.name,
+          role: currentAdmin.position || currentAdmin.role,
+          actionType: 'verification',
+          action: `Toggled verification for resident: ${residentId}`,
+        });
       }
     } catch (error) {
       console.error("Error updating verification:", error);
@@ -559,6 +719,26 @@ export function ManageUsersPage() {
           setSelectedResidents([]);
           break;
       }
+      // Helper to log activity
+      const logActivity = async ({ adminId, actor, role, actionType, action }) => {
+        await addDoc(collection(db, "activityLogs"), {
+          adminId,
+          actor,
+          role,
+          actionType,
+          action,
+          timestamp: new Date().toLocaleString(),
+        });
+      };
+      // Placeholder: get current admin info from your auth provider or context
+      const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
+      await logActivity({
+        adminId: currentAdmin.userId,
+        actor: currentAdmin.name,
+        role: currentAdmin.position || currentAdmin.role,
+        actionType: type,
+        action: `${value ? 'Granted' : 'Revoked'} ${type === 'delete' ? 'admin' : type === 'permission' ? 'permissions' : 'verification'} for ${items.length} ${items === selectedAdmins ? 'admin' : 'resident'} accounts`,
+      });
     } catch (error) {
       console.error("Error executing batch action:", error);
     }
@@ -584,12 +764,14 @@ export function ManageUsersPage() {
       const maxUserId = userIds.length > 0 ? Math.max(...userIds) : 0;
       const nextUserId = maxUserId + 1;
       const formattedUserId = `RID-${nextUserId}`;
+      const now = new Date();
       const docRef = await addDoc(collection(db, "users"), {
         ...newResident,
         userId: formattedUserId,
         verified: false,
         suspended: false,
-        createdDate: new Date().toLocaleDateString()
+        createdDate: now.toLocaleDateString(),
+        createdTime: now.getTime()
       });
       setResidents(prev => [
         ...prev,
@@ -599,9 +781,30 @@ export function ManageUsersPage() {
           userId: formattedUserId,
           verified: false,
           suspended: false,
-          createdDate: new Date().toLocaleDateString()
+          createdDate: now.toLocaleDateString(),
+          createdTime: now.getTime()
         }
       ]);
+      // Helper to log activity
+      const logActivity = async ({ adminId, actor, role, actionType, action }) => {
+        await addDoc(collection(db, "activityLogs"), {
+          adminId,
+          actor,
+          role,
+          actionType,
+          action,
+          timestamp: new Date().toLocaleString(),
+        });
+      };
+      // Placeholder: get current admin info from your auth provider or context
+      const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
+      await logActivity({
+        adminId: currentAdmin.userId,
+        actor: currentAdmin.name,
+        role: currentAdmin.position || currentAdmin.role,
+        actionType: 'create',
+        action: `Added new resident: ${newResident.fullName}`,
+      });
     } catch (error) {
       console.error("Error adding resident:", error);
     }
@@ -625,6 +828,26 @@ export function ManageUsersPage() {
       await updateDoc(doc(db, "users", residentId), updates);
       setResidents(residents.map(r => r.id === residentId ? { ...r, ...updates } : r));
       closeAccountStatusModal();
+      // Helper to log activity
+      const logActivity = async ({ adminId, actor, role, actionType, action }) => {
+        await addDoc(collection(db, "activityLogs"), {
+          adminId,
+          actor,
+          role,
+          actionType,
+          action,
+          timestamp: new Date().toLocaleString(),
+        });
+      };
+      // Placeholder: get current admin info from your auth provider or context
+      const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
+      await logActivity({
+        adminId: currentAdmin.userId,
+        actor: currentAdmin.name,
+        role: currentAdmin.position || currentAdmin.role,
+        actionType: status,
+        action: `Account status changed to '${status}' for resident: ${accountStatusModal.resident.fullName}`,
+      });
     } catch (error) {
       console.error("Error updating account status:", error);
     }
@@ -652,10 +875,9 @@ export function ManageUsersPage() {
   };
 
   // Add New Admin confirmation
-  const handleAddAdminClick = () => setConfirmAddAdmin(true);
-  const confirmAddAdminAction = () => {
-    setConfirmAddAdmin(false);
-    handleAddAdmin();
+  const handleAddAdminClick = () => {
+    setShowAdminFormErrors(true);
+    if (isNewAdminValid()) setIsAddAdminOpen(true);
   };
 
   // Password validation
@@ -698,8 +920,37 @@ export function ManageUsersPage() {
   const pagedResidents = filteredResidents.slice((residentPage - 1) * residentRowsPerPage, residentPage * residentRowsPerPage);
   const residentTotalPages = Math.ceil(filteredResidents.length / residentRowsPerPage);
   // Activity logs pagination
-  const pagedActivityLogs = activityLogs.slice((activityPage - 1) * activityRowsPerPage, activityPage * activityRowsPerPage);
   const activityTotalPages = Math.ceil(activityLogs.length / activityRowsPerPage);
+
+  // In useEffect, add real-time listener for activity logs
+  useEffect(() => {
+    const q = query(collection(db, "activityLogs"), orderBy("timestamp", "desc"));
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const logs = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setActivityLogs(logs);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Tab click handlers to update last seen timestamps
+  const handleResidentsTabClick = () => {
+    localStorage.setItem('lastSeenResidentsTab', Date.now().toString());
+    setBadgeResetKey(k => k + 1); // force re-render
+  };
+  const handleActivityTabClick = () => {
+    localStorage.setItem('lastSeenActivityTab', Date.now().toString());
+    setBadgeResetKey(k => k + 1); // force re-render
+  };
+
+  // Calculate badge counts (depend on badgeResetKey)
+  const lastSeenResidents = Number(localStorage.getItem('lastSeenResidentsTab') || 0);
+  const lastSeenActivity = Number(localStorage.getItem('lastSeenActivityTab') || 0);
+  const newResidentsCount = useMemo(() => residents.filter(r => Number(r.createdTime) > lastSeenResidents).length, [residents, lastSeenResidents, badgeResetKey]);
+  const newLogsCount = useMemo(() => activityLogs.filter(log => {
+    const t = typeof log.timestamp === 'number' ? log.timestamp : Date.parse(log.timestamp);
+    return t > lastSeenActivity;
+  }).length, [activityLogs, lastSeenActivity, badgeResetKey]);
+  const manageUsersBadge = newResidentsCount + newLogsCount;
 
   return <Layout>
       <div className="">
@@ -707,8 +958,18 @@ export function ManageUsersPage() {
         <Tabs defaultValue="admins" className="w-full">
           <TabsList>
             <TabsTrigger value="admins">Admin Accounts</TabsTrigger>
-            <TabsTrigger value="residents">Resident Accounts</TabsTrigger>
-            <TabsTrigger value="activity">System Activity Logs</TabsTrigger>
+            <TabsTrigger value="residents" onClick={handleResidentsTabClick}>
+              Residents
+              {newResidentsCount > 0 && (
+                <Badge className="ml-2 text-[#FF4F0B] text-xs border-0 bg-slate-50">{newResidentsCount}</Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="activity" onClick={handleActivityTabClick}>
+              System Activity Logs
+              {newLogsCount > 0 && (
+                <Badge className="ml-2 text-[#FF4F0B] text-xs border-0 bg-slate-50">{newLogsCount}</Badge>
+              )}
+            </TabsTrigger>
           </TabsList>
 
           
@@ -827,21 +1088,21 @@ export function ManageUsersPage() {
                   </DialogHeader>
                   <div className="space-y-4">
                     <div>
-                      <Label>Full Name</Label>
+                      <Label>Full Name{(showAdminFormErrors && newAdmin.name.trim() === "") && <span className="text-red-500"> *</span>}</Label>
                       <Input 
                         value={newAdmin.name} 
                         onChange={e => setNewAdmin({...newAdmin, name: e.target.value})} 
-                        className={newAdmin.name.trim() === "" ? "border-red-500" : ""}
+                        className={showAdminFormErrors && newAdmin.name.trim() === "" ? "border-red-500" : ""}
                         placeholder="Enter full name"
                       />
-                      {newAdmin.name.trim() === "" && (
+                      {showAdminFormErrors && newAdmin.name.trim() === "" && (
                         <div className="text-xs text-red-600 mt-1">Full name is required</div>
                       )}
                     </div>
                     <div>
-                      <Label>Position</Label>
+                      <Label>Position{(showAdminFormErrors && newAdmin.position.trim() === "") && <span className="text-red-500"> *</span>}</Label>
                       <Select value={newAdmin.position} onValueChange={value => setNewAdmin({ ...newAdmin, position: value })}>
-                        <SelectTrigger className={newAdmin.position.trim() === "" ? "border-red-500" : ""}>
+                        <SelectTrigger className={showAdminFormErrors && newAdmin.position.trim() === "" ? "border-red-500" : ""}>
                           <SelectValue placeholder="Select position" />
                         </SelectTrigger>
                         <SelectContent>
@@ -866,36 +1127,36 @@ export function ManageUsersPage() {
                           </div>
                         </SelectContent>
                       </Select>
-                      {newAdmin.position.trim() === "" && (
+                      {showAdminFormErrors && newAdmin.position.trim() === "" && (
                         <div className="text-xs text-red-600 mt-1">Position is required</div>
                       )}
                     </div>
                     <div>
-                      <Label>ID Number</Label>
+                      <Label>ID Number{(showAdminFormErrors && newAdmin.idNumber.trim() === "") && <span className="text-red-500"> *</span>}</Label>
                       <Input 
                         value={newAdmin.idNumber} 
                         onChange={e => setNewAdmin({...newAdmin, idNumber: e.target.value})} 
-                        className={newAdmin.idNumber.trim() === "" ? "border-red-500" : ""}
+                        className={showAdminFormErrors && newAdmin.idNumber.trim() === "" ? "border-red-500" : ""}
                         placeholder="Enter ID number"
                       />
-                      {newAdmin.idNumber.trim() === "" && (
+                      {showAdminFormErrors && newAdmin.idNumber.trim() === "" && (
                         <div className="text-xs text-red-600 mt-1">ID number is required</div>
                       )}
                     </div>
                     <div>
-                      <Label>Account Username</Label>
+                      <Label>Account Username{(showAdminFormErrors && newAdmin.username.trim() === "") && <span className="text-red-500"> *</span>}</Label>
                       <Input 
                         value={newAdmin.username} 
                         onChange={e => setNewAdmin({...newAdmin, username: e.target.value})} 
-                        className={newAdmin.username.trim() === "" ? "border-red-500" : ""}
+                        className={showAdminFormErrors && newAdmin.username.trim() === "" ? "border-red-500" : ""}
                         placeholder="Enter username"
                       />
-                      {newAdmin.username.trim() === "" && (
+                      {showAdminFormErrors && newAdmin.username.trim() === "" && (
                         <div className="text-xs text-red-600 mt-1">Username is required</div>
                       )}
                     </div>
                     <div>
-                      <Label>Password</Label>
+                      <Label>Password{showAdminFormErrors && newAdmin.password.trim() === "" && <span className="text-red-500"> *</span>}</Label>
                       <div className="relative flex items-center">
                         <Input
                           type={showPassword ? "text" : "password"}
@@ -904,7 +1165,7 @@ export function ManageUsersPage() {
                             setNewAdmin({ ...newAdmin, password: e.target.value });
                             setPasswordError(validatePassword(e.target.value));
                           }}
-                          className={`pr-10 ${passwordError || newAdmin.password.trim() === "" ? "border-red-500" : ""}`}
+                          className={`pr-10 ${(passwordError || (showAdminFormErrors && newAdmin.password.trim() === "")) ? "border-red-500" : ""}`}
                           placeholder="Enter password"
                         />
                         <button
@@ -916,7 +1177,7 @@ export function ManageUsersPage() {
                           {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                         </button>
                       </div>
-                      {newAdmin.password.trim() === "" && (
+                      {showAdminFormErrors && newAdmin.password.trim() === "" && (
                         <div className="text-xs text-red-600 mt-1">Password is required</div>
                       )}
                       {passwordError && <div className="text-xs text-red-600 mt-1">{passwordError}</div>}
@@ -924,9 +1185,8 @@ export function ManageUsersPage() {
                   </div>
                   <DialogFooter>
                     <Button 
-                      onClick={handleAddAdminClick} 
-                      disabled={!isNewAdminValid()}
-                      className={`${isNewAdminValid() ? 'bg-[#FF4F0B] hover:bg-[#FF4F0B]/90' : 'bg-gray-300 cursor-not-allowed'} text-white`}
+                      onClick={handleAddAdmin} 
+                      className={`bg-[#FF4F0B] hover:bg-[#FF4F0B]/90 text-white`}
                     >
                       Add New Admin
                     </Button>
@@ -1085,7 +1345,7 @@ export function ManageUsersPage() {
                             <TableCell>
                               <div className="flex flex-col">
                                 <span>{admin.createdDate || 'N/A'}</span>
-                                <span className="text-xs text-gray-500">{admin.createdTime || 'N/A'}</span>
+                                <span className="text-xs text-gray-500">{formatTimeNoSeconds(admin.createdTime)}</span>
                               </div>
                             </TableCell>
                             <TableCell>
@@ -1097,73 +1357,9 @@ export function ManageUsersPage() {
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2">
-                                <Dialog>
-                                  <DialogTrigger asChild>
-                                    <Button size="sm" variant="outline" onClick={() => handleEditAdmin(admin)}>
-                                      <Edit className="h-4 w-4" />
-                                    </Button>
-                                  </DialogTrigger>
-                                  <DialogContent>
-                                    <DialogHeader>
-                                      <DialogTitle>Edit Admin Account</DialogTitle>
-                                    </DialogHeader>
-                                    {editingAdmin && (
-                                      <div className="space-y-4">
-                                        <div>
-                                          <Label>Name</Label>
-                                          <Input
-                                            value={editingAdmin.name}
-                                            onChange={e => setEditingAdmin({
-                                              ...editingAdmin,
-                                              name: e.target.value
-                                            })}
-                                          />
-                                        </div>
-                                        <div>
-                                          <Label>Position</Label>
-                                          <Select
-                                            value={editingAdmin.position}
-                                            onValueChange={value => setEditingAdmin({
-                                              ...editingAdmin,
-                                              position: value
-                                            })}
-                                          >
-                                            <SelectTrigger>
-                                              <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="Responder">Responder</SelectItem>
-                                              <SelectItem value="Rider">Rider</SelectItem>
-                                            </SelectContent>
-                                          </Select>
-                                        </div>
-                                        <div>
-                                          <Label>ID Number</Label>
-                                          <Input
-                                            value={editingAdmin.idNumber}
-                                            onChange={e => setEditingAdmin({
-                                              ...editingAdmin,
-                                              idNumber: e.target.value
-                                            })}
-                                          />
-                                        </div>
-                                        <div>
-                                          <Label>Username</Label>
-                                          <Input
-                                            value={editingAdmin.username}
-                                            onChange={e => setEditingAdmin({
-                                              ...editingAdmin,
-                                              username: e.target.value
-                                            })}
-                                          />
-                                        </div>
-                                      </div>
-                                    )}
-                                    <DialogFooter>
-                                      <Button onClick={handleSaveAdminEdit}>Save Changes</Button>
-                                    </DialogFooter>
-                                  </DialogContent>
-                                </Dialog>
+                                <Button size="sm" variant="outline" onClick={() => handleEditAdmin(admin)}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
 
                                 <Button
                                   size="sm"
@@ -1485,10 +1681,12 @@ export function ManageUsersPage() {
                                 {resident.isOnline && <span className="inline-block h-2 w-2 rounded-full bg-green-500" title="Online"></span>}
                               </span>
                             </TableCell>
-                            <TableCell>{resident.mobileNumber}</TableCell>
+                            <TableCell>{resident.phoneNumber}</TableCell>
                             <TableCell>{resident.barangay}</TableCell>
                             <TableCell>{resident.cityTown}</TableCell>
-                            <TableCell>{resident.createdDate}</TableCell>
+                            <TableCell>{resident.createdDate}<br />
+                              <span className="text-xs text-gray-500">{formatTimeNoSeconds(resident.createdTime)}</span>
+                            </TableCell>
                             <TableCell>
                               <Badge
                                 className={
@@ -1536,10 +1734,10 @@ export function ManageUsersPage() {
                                           })} />
                                         </div>
                                         <div>
-                                          <Label>Mobile Number</Label>
-                                          <Input value={selectedResident.mobileNumber} onChange={e => setSelectedResident({
+                                          <Label>Phone Number</Label>
+                                          <Input value={selectedResident.phoneNumber} onChange={e => setSelectedResident({
                                             ...selectedResident,
-                                            mobileNumber: e.target.value
+                                            phoneNumber: e.target.value
                                           })} />
                                         </div>
                                         <div>
@@ -1578,10 +1776,6 @@ export function ManageUsersPage() {
                                             ...selectedResident,
                                             email: e.target.value
                                           })} />
-                                        </div>
-                                        <div>
-                                          <Label>Valid ID Type</Label>
-                                          <Input value={selectedResident.validId || ''} onChange={e => setSelectedResident({ ...selectedResident, validId: e.target.value })} />
                                         </div>
                                         <div>
                                           <Label>Valid ID Image URL</Label>
@@ -1716,16 +1910,22 @@ export function ManageUsersPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Admin ID</TableHead>
-                      <TableHead>Actor</TableHead>
                       <TableHead>Role</TableHead>
-                      <TableHead>Timestamp</TableHead>
+                      <TableHead>Actor</TableHead>
+                      <TableHead className="cursor-pointer hover:bg-gray-50" onClick={handleActivitySort}>
+                        <div className="flex items-center gap-1">
+                          Created Date
+                          {activitySortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        </div>
+                      </TableHead>
+                      <TableHead>Action Type</TableHead>
                       <TableHead>Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {pagedActivityLogs.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center text-gray-500 py-8">
+                        <TableCell colSpan={6} className="text-center text-gray-500 py-8">
                           No activity logs found.
                         </TableCell>
                       </TableRow>
@@ -1736,9 +1936,18 @@ export function ManageUsersPage() {
                         return (
                           <TableRow key={log.id}>
                             <TableCell className="font-medium">{admin ? admin.userId : "-"}</TableCell>
-                            <TableCell>{log.admin || (admin ? admin.name : "-")}</TableCell>
                             <TableCell>{admin ? admin.position || admin.role || "-" : "-"}</TableCell>
-                            <TableCell>{log.timestamp ? log.timestamp : "-"}</TableCell>
+                            <TableCell>{log.admin || (admin ? admin.name : "-")}</TableCell>
+                            <TableCell>
+                              {log.timestamp ? (
+                                <>
+                                  <span>{new Date(log.timestamp).toLocaleDateString()}</span>
+                                  <br />
+                                  <span className="text-xs text-gray-500">{formatTimeNoSeconds(log.timestamp)}</span>
+                                </>
+                              ) : "-"}
+                            </TableCell>
+                            <TableCell>{log.actionType || '-'}</TableCell>
                             <TableCell>{log.action}</TableCell>
                           </TableRow>
                         );
@@ -1875,8 +2084,8 @@ export function ManageUsersPage() {
                     <TableCell>{selectedResident?.fullName || 'N/A'}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Mobile Number</TableCell>
-                    <TableCell>{selectedResident?.mobileNumber || selectedResident?.phone || 'N/A'}</TableCell>
+                    <TableCell className="font-medium text-gray-700 align-top">Phone Number</TableCell>
+                    <TableCell>{selectedResident?.phoneNumber || 'N/A'}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Email</TableCell>
@@ -1893,10 +2102,6 @@ export function ManageUsersPage() {
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Province</TableCell>
                     <TableCell>{selectedResident?.province || '-'}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Valid ID Type</TableCell>
-                    <TableCell>{selectedResident?.validId || 'N/A'}</TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Valid ID Image</TableCell>
@@ -1924,21 +2129,10 @@ export function ManageUsersPage() {
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Created Date</TableCell>
-                    <TableCell>{
-                      selectedResident?.createdDate && (selectedResident?.createdTimestamp || selectedResident?.createdAt)
-                        ? `${selectedResident.createdDate}, ${new Date(selectedResident.createdTimestamp || selectedResident.createdAt).toLocaleTimeString()}`
-                        : selectedResident?.createdDate || 'N/A'
-                    }</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Additional Info</TableCell>
                     <TableCell>
-                      {selectedResident?.additionalInfo ? (
-                        <div className="text-sm text-gray-600">
-                          {selectedResident.additionalInfo}
-                        </div>
-                      ) : (
-                        <span className="text-gray-500">No additional information</span>
+                      {selectedResident?.createdDate}
+                      {selectedResident?.createdTime && (
+                        <><br /><span className="text-xs text-gray-500">{formatTimeNoSeconds(selectedResident.createdTime)}</span></>
                       )}
                     </TableCell>
                   </TableRow>
@@ -2012,27 +2206,82 @@ export function ManageUsersPage() {
           </AlertDialogContent>
         </AlertDialog>
 
-        {/* Confirm Add Admin Modal */}
-        <AlertDialog open={confirmAddAdmin} onOpenChange={setConfirmAddAdmin}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Confirm Add Admin</AlertDialogTitle>
-              <AlertDialogDescription>
-                Are you sure you want to add this new admin account?
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction 
-                onClick={confirmAddAdminAction} 
-                disabled={!isNewAdminValid()}
-                className={`${isNewAdminValid() ? 'bg-[#FF4F0B] hover:bg-[#FF4F0B]/90' : 'bg-gray-300 cursor-not-allowed'}`}
+        {/* Edit Admin Account Modal */}
+        <Dialog open={!!editingAdmin} onOpenChange={open => { if (!open) { setEditingAdmin(null); setShowEditAdminErrors(false); } }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Admin Account</DialogTitle>
+            </DialogHeader>
+            {editingAdmin && (
+              <div className="space-y-4">
+                <div>
+                  <Label>Name{showEditAdminErrors && !editingAdmin.name?.trim() && <span className="text-red-500"> *</span>}</Label>
+                  <Input
+                    value={editingAdmin.name}
+                    onChange={e => setEditingAdmin({ ...editingAdmin, name: e.target.value })}
+                    className={showEditAdminErrors && !editingAdmin.name?.trim() ? "border-red-500" : ""}
+                  />
+                  {showEditAdminErrors && !editingAdmin.name?.trim() && <div className="text-xs text-red-600 mt-1">Name is required</div>}
+                </div>
+                <div>
+                  <Label>Position{showEditAdminErrors && !editingAdmin.position?.trim() && <span className="text-red-500"> *</span>}</Label>
+                  <Select
+                    value={editingAdmin.position}
+                    onValueChange={value => setEditingAdmin({ ...editingAdmin, position: value })}
+                  >
+                    <SelectTrigger className={showEditAdminErrors && !editingAdmin.position?.trim() ? "border-red-500" : ""}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Responder">Responder</SelectItem>
+                      <SelectItem value="Rider">Rider</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {showEditAdminErrors && !editingAdmin.position?.trim() && <div className="text-xs text-red-600 mt-1">Position is required</div>}
+                </div>
+                <div>
+                  <Label>ID Number{showEditAdminErrors && !editingAdmin.idNumber?.trim() && <span className="text-red-500"> *</span>}</Label>
+                  <Input
+                    value={editingAdmin.idNumber}
+                    onChange={e => setEditingAdmin({ ...editingAdmin, idNumber: e.target.value })}
+                    className={showEditAdminErrors && !editingAdmin.idNumber?.trim() ? "border-red-500" : ""}
+                  />
+                  {showEditAdminErrors && !editingAdmin.idNumber?.trim() && <div className="text-xs text-red-600 mt-1">ID number is required</div>}
+                </div>
+                <div>
+                  <Label>Username{showEditAdminErrors && !editingAdmin.username?.trim() && <span className="text-red-500"> *</span>}</Label>
+                  <Input
+                    value={editingAdmin.username}
+                    onChange={e => setEditingAdmin({ ...editingAdmin, username: e.target.value })}
+                    className={showEditAdminErrors && !editingAdmin.username?.trim() ? "border-red-500" : ""}
+                  />
+                  {showEditAdminErrors && !editingAdmin.username?.trim() && <div className="text-xs text-red-600 mt-1">Username is required</div>}
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button
+                onClick={async () => {
+                  setShowEditAdminErrors(true);
+                  if (
+                    editingAdmin.name?.trim() &&
+                    editingAdmin.position?.trim() &&
+                    editingAdmin.idNumber?.trim() &&
+                    editingAdmin.username?.trim()
+                  ) {
+                    await handleSaveAdminEdit();
+                    setEditingAdmin(null);
+                    setShowEditAdminErrors(false);
+                  }
+                }}
+                disabled={!(editingAdmin && editingAdmin.name?.trim() && editingAdmin.position?.trim() && editingAdmin.idNumber?.trim() && editingAdmin.username?.trim())}
               >
-                Confirm
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+                Save Changes
+              </Button>
+              <Button variant="secondary" onClick={() => { setEditingAdmin(null); setShowEditAdminErrors(false); }}>Cancel</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>;
 }

@@ -677,7 +677,7 @@ export function ManageReportsPage() {
               </div>
 
               <div>
-                <Label>Update Attached Document</Label>
+                <Label>Update Attached Document</ Label>
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
                   <FileIcon className="h-8 w-8 mx-auto text-gray-400 mb-2" />
                   <p className="text-sm text-gray-600">Upload new document</p>
