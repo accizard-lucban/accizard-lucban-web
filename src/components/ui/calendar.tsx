@@ -4,6 +4,7 @@ import { DayPicker } from "react-day-picker";
 
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
 
 export type CalendarProps = React.ComponentProps<typeof DayPicker>;
 
@@ -13,9 +14,45 @@ function Calendar({
   showOutsideDays = true,
   ...props
 }: CalendarProps) {
+  // Month/year dropdown logic
+  const months = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+  ];
+  const thisYear = new Date().getFullYear();
+  const years = Array.from({ length: 21 }, (_, i) => thisYear - 10 + i);
+
+  // Custom caption with dropdowns
+  function CustomCaption({ displayMonth, onMonthChange }) {
+    const month = displayMonth.getMonth();
+    const year = displayMonth.getFullYear();
+    return (
+      <div className="flex justify-center items-center gap-2 py-2">
+        <Select value={String(month)} onValueChange={val => onMonthChange(new Date(year, Number(val), 1))}>
+          <SelectTrigger className="w-28"><SelectValue>{months[month]}</SelectValue></SelectTrigger>
+          <SelectContent>
+            {months.map((m, i) => <SelectItem key={m} value={String(i)}>{m}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Select value={String(year)} onValueChange={val => onMonthChange(new Date(Number(val), month, 1))}>
+          <SelectTrigger className="w-24"><SelectValue>{year}</SelectValue></SelectTrigger>
+          <SelectContent>
+            {years.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+    );
+  }
+
   return (
     <DayPicker
       showOutsideDays={showOutsideDays}
+      captionLayout={undefined}
+      components={{
+        IconLeft: ({ ..._props }) => <ChevronLeft className="h-4 w-4" />,
+        IconRight: ({ ..._props }) => <ChevronRight className="h-4 w-4" />,
+        Caption: CustomCaption,
+      }}
       className={cn("p-3", className)}
       classNames={{
         months: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
@@ -50,10 +87,6 @@ function Calendar({
           "aria-selected:bg-accent aria-selected:text-accent-foreground",
         day_hidden: "invisible",
         ...classNames,
-      }}
-      components={{
-        IconLeft: ({ ..._props }) => <ChevronLeft className="h-4 w-4" />,
-        IconRight: ({ ..._props }) => <ChevronRight className="h-4 w-4" />,
       }}
       {...props}
     />

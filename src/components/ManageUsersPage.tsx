@@ -8,7 +8,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Search, Plus, Edit, Trash2, Shield, ShieldOff, ShieldCheck, ShieldX, Eye, User, FileText, Calendar, CheckSquare, Square, UserPlus, EyeOff, ChevronUp, ChevronDown } from "lucide-react";
+import { Search, Plus, Edit, Trash2, Shield, ShieldOff, ShieldCheck, ShieldX, Eye, User, FileText, Calendar, CheckSquare, Square, UserPlus, EyeOff, ChevronUp, ChevronDown, MessageCircle } from "lucide-react";
 import { Layout } from "./Layout";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -16,6 +16,7 @@ import { db } from "@/lib/firebase";
 import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, onSnapshot, query, orderBy } from "firebase/firestore";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/components/ui/use-toast";
+import { useLocation } from "react-router-dom";
 
 // Add this helper at the top (after imports):
 function formatTimeNoSeconds(time: string | number | null | undefined) {
@@ -79,6 +80,8 @@ export function ManageUsersPage() {
   const [showEditAdminErrors, setShowEditAdminErrors] = useState(false);
 
   const { toast } = useToast();
+
+  const location = useLocation();
 
   // Validation function for new admin
   const isNewAdminValid = () => {
@@ -952,10 +955,30 @@ export function ManageUsersPage() {
   }).length, [activityLogs, lastSeenActivity, badgeResetKey]);
   const manageUsersBadge = newResidentsCount + newLogsCount;
 
+  const handleChatUser = (user: any) => {
+    console.log('Chat with user:', user);
+    // You can replace this with navigation or chat modal logic
+  };
+
+  // On mount, prefill search bar and tab if redirected from chat
+  useEffect(() => {
+    if (location.state && (location.state as any).search) {
+      setSearchTerm((location.state as any).search);
+    }
+    if (location.state && (location.state as any).tab === "residents") {
+      // Simulate tab switch by clicking the Residents tab trigger
+      const residentsTab = document.querySelector('[data-state="residents"]');
+      if (residentsTab) (residentsTab as HTMLElement).click();
+    }
+  }, []);
+
+  // Determine default tab based on navigation state
+  const defaultTab = location.state && (location.state as any).tab === "residents" ? "residents" : "admins";
+
   return <Layout>
       <div className="">
 
-        <Tabs defaultValue="admins" className="w-full">
+        <Tabs defaultValue={defaultTab} className="w-full">
           <TabsList>
             <TabsTrigger value="admins">Admin Accounts</TabsTrigger>
             <TabsTrigger value="residents" onClick={handleResidentsTabClick}>
@@ -1357,10 +1380,86 @@ export function ManageUsersPage() {
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2">
+                                <Dialog>
+                                  <DialogTrigger asChild>
                                 <Button size="sm" variant="outline" onClick={() => handleEditAdmin(admin)}>
                                   <Edit className="h-4 w-4" />
                                 </Button>
-
+                                  </DialogTrigger>
+                                  <DialogContent>
+                                    <DialogHeader>
+                                      <DialogTitle>Edit Admin Account</DialogTitle>
+                                    </DialogHeader>
+                                    {editingAdmin && (
+                                      <div className="space-y-4">
+                                        <div>
+                                          <Label>Name{showEditAdminErrors && !editingAdmin.name?.trim() && <span className="text-red-500"> *</span>}</Label>
+                                          <Input
+                                            value={editingAdmin.name}
+                                            onChange={e => setEditingAdmin({ ...editingAdmin, name: e.target.value })}
+                                            className={showEditAdminErrors && !editingAdmin.name?.trim() ? "border-red-500" : ""}
+                                          />
+                                          {showEditAdminErrors && !editingAdmin.name?.trim() && <div className="text-xs text-red-600 mt-1">Name is required</div>}
+                                        </div>
+                                        <div>
+                                          <Label>Position{showEditAdminErrors && !editingAdmin.position?.trim() && <span className="text-red-500"> *</span>}</Label>
+                                          <Select
+                                            value={editingAdmin.position}
+                                            onValueChange={value => setEditingAdmin({ ...editingAdmin, position: value })}
+                                          >
+                                            <SelectTrigger className={showEditAdminErrors && !editingAdmin.position?.trim() ? "border-red-500" : ""}>
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="Responder">Responder</SelectItem>
+                                              <SelectItem value="Rider">Rider</SelectItem>
+                                            </SelectContent>
+                                          </Select>
+                                          {showEditAdminErrors && !editingAdmin.position?.trim() && <div className="text-xs text-red-600 mt-1">Position is required</div>}
+                                        </div>
+                                        <div>
+                                          <Label>ID Number{showEditAdminErrors && !editingAdmin.idNumber?.trim() && <span className="text-red-500"> *</span>}</Label>
+                                          <Input
+                                            value={editingAdmin.idNumber}
+                                            onChange={e => setEditingAdmin({ ...editingAdmin, idNumber: e.target.value })}
+                                            className={showEditAdminErrors && !editingAdmin.idNumber?.trim() ? "border-red-500" : ""}
+                                          />
+                                          {showEditAdminErrors && !editingAdmin.idNumber?.trim() && <div className="text-xs text-red-600 mt-1">ID number is required</div>}
+                                        </div>
+                                        <div>
+                                          <Label>Username{showEditAdminErrors && !editingAdmin.username?.trim() && <span className="text-red-500"> *</span>}</Label>
+                                          <Input
+                                            value={editingAdmin.username}
+                                            onChange={e => setEditingAdmin({ ...editingAdmin, username: e.target.value })}
+                                            className={showEditAdminErrors && !editingAdmin.username?.trim() ? "border-red-500" : ""}
+                                          />
+                                          {showEditAdminErrors && !editingAdmin.username?.trim() && <div className="text-xs text-red-600 mt-1">Username is required</div>}
+                                        </div>
+                                      </div>
+                                    )}
+                                    <DialogFooter>
+                                      <Button
+                                        onClick={async () => {
+                                          setShowEditAdminErrors(true);
+                                          if (
+                                            editingAdmin.name?.trim() &&
+                                            editingAdmin.position?.trim() &&
+                                            editingAdmin.idNumber?.trim() &&
+                                            editingAdmin.username?.trim()
+                                          ) {
+                                            await handleSaveAdminEdit();
+                                            setEditingAdmin(null);
+                                            setShowEditAdminErrors(false);
+                                          }
+                                        }}
+                                        disabled={!(editingAdmin && editingAdmin.name?.trim() && editingAdmin.position?.trim() && editingAdmin.idNumber?.trim() && editingAdmin.username?.trim())}
+                                      >
+                                        Save Changes
+                                      </Button>
+                                      <Button variant="secondary" onClick={() => { setEditingAdmin(null); setShowEditAdminErrors(false); }}>Cancel</Button>
+                                    </DialogFooter>
+                                  </DialogContent>
+                                </Dialog>
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -1374,7 +1473,6 @@ export function ManageUsersPage() {
                                     <ShieldOff className="h-4 w-4" />
                                   )}
                                 </Button>
-
                                 <AlertDialog>
                                   <AlertDialogTrigger asChild>
                                     <Button size="sm" variant="outline" className="text-red-600">
@@ -1399,6 +1497,15 @@ export function ManageUsersPage() {
                                     </AlertDialogFooter>
                                   </AlertDialogContent>
                                 </AlertDialog>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleChatUser(admin)}
+                                  title="Chat"
+                                  className="text-blue-600"
+                                >
+                                  <MessageCircle className="h-4 w-4" />
+                                </Button>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -1708,7 +1815,6 @@ export function ManageUsersPage() {
                                 >
                                   <Eye className="h-4 w-4" />
                                 </Button>
-
                                 <Dialog>
                                   <DialogTrigger asChild>
                                     <Button
@@ -1788,7 +1894,6 @@ export function ManageUsersPage() {
                                     </DialogFooter>
                                   </DialogContent>
                                 </Dialog>
-
                                 <AlertDialog>
                                   <AlertDialogTrigger asChild>
                                     <Button size="sm" variant="outline" className="text-red-600" title="Delete Resident">
@@ -1813,7 +1918,6 @@ export function ManageUsersPage() {
                                     </AlertDialogFooter>
                                   </AlertDialogContent>
                                 </AlertDialog>
-
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -1822,6 +1926,15 @@ export function ManageUsersPage() {
                                   title="Account Status"
                                 >
                                   {resident.suspended ? <ShieldOff className="h-4 w-4" /> : resident.verified ? <ShieldCheck className="h-4 w-4" /> : <ShieldX className="h-4 w-4" />}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleChatUser(resident)}
+                                  title="Chat"
+                                  className="text-blue-600"
+                                >
+                                  <MessageCircle className="h-4 w-4" />
                                 </Button>
                               </div>
                             </TableCell>

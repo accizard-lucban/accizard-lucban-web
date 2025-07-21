@@ -358,7 +358,21 @@ export function ManageReportsPage() {
                         />
                       </TableCell>
                       <TableCell className="font-medium">{report.id}</TableCell>
-                      <TableCell>{report.type}</TableCell>
+                      <TableCell>
+                        <Badge className={
+                          report.type === 'Fire'
+                            ? 'bg-red-100 text-red-800 hover:bg-red-50'
+                            : report.type === 'Flooding'
+                            ? 'bg-blue-100 text-blue-800 hover:bg-blue-50'
+                            : report.type === 'Medical Emergency'
+                            ? 'bg-green-100 text-green-800 hover:bg-green-50'
+                            : report.type === 'Earthquake'
+                            ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-50'
+                            : 'bg-gray-100 text-gray-800 hover:bg-gray-50'
+                        }>
+                          {report.type}
+                        </Badge>
+                      </TableCell>
                       <TableCell>
                         <Button
                           variant="link"
@@ -712,7 +726,7 @@ export function ManageReportsPage() {
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Report Type</TableCell>
                     <TableCell>
-                      <Badge className={selectedReport?.type === 'Fire' ? 'bg-red-100 text-red-800' : selectedReport?.type === 'Flooding' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}>
+                      <Badge className={selectedReport?.type === 'Fire' ? 'bg-red-100 text-red-800 hover:bg-red-50' : selectedReport?.type === 'Flooding' ? 'bg-blue-100 text-blue-800 hover:bg-blue-50' : 'bg-gray-100 text-gray-800 hover:bg-gray-50'}>
                         {selectedReport?.type}
                       </Badge>
                     </TableCell>
@@ -754,11 +768,11 @@ export function ManageReportsPage() {
                     <TableCell>
                       <Badge className={cn(
                         "capitalize",
-                        selectedReport?.status === "Pending" && "bg-yellow-100 text-yellow-800",
-                        selectedReport?.status === "Ongoing" && "bg-blue-100 text-blue-800",
-                        selectedReport?.status === "Not Responded" && "bg-red-100 text-red-800",
-                        selectedReport?.status === "Responded" && "bg-green-100 text-green-800",
-                        selectedReport?.status === "False Report" && "bg-gray-100 text-gray-800"
+                        selectedReport?.status === "Pending" && "bg-yellow-100 text-yellow-800 hover:bg-yellow-50",
+                        selectedReport?.status === "Ongoing" && "bg-blue-100 text-blue-800 hover:bg-blue-50",
+                        selectedReport?.status === "Not Responded" && "bg-red-100 text-red-800 hover:bg-red-50",
+                        selectedReport?.status === "Responded" && "bg-green-100 text-green-800 hover:bg-green-50",
+                        selectedReport?.status === "False Report" && "bg-gray-100 text-gray-800 hover:bg-gray-50"
                       )}>
                         {selectedReport?.status}
                       </Badge>

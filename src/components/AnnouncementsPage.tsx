@@ -8,15 +8,18 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Plus, Edit, Trash2, Calendar, AlertTriangle, Info, X } from "lucide-react";
+import { Search, Plus, Edit, Trash2, Calendar, AlertTriangle, Info, X, Eye, ChevronUp, ChevronDown } from "lucide-react";
 import { Layout } from "./Layout";
 import { DateRange } from "react-day-picker";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { format } from "date-fns";
+import { format, addYears } from "date-fns";
 import { cn } from "@/lib/utils";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { toast } from "@/components/ui/use-toast";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
   
 function formatTimeNoSeconds(time: string | number | null | undefined) {
   if (!time) return '-';
@@ -49,25 +52,92 @@ export function AnnouncementsPage() {
   const [announcementPage, setAnnouncementPage] = useState(1);
   const [announcementRowsPerPage, setAnnouncementRowsPerPage] = useState(10);
   const ANNOUNCEMENT_ROWS_OPTIONS = [10, 20, 50, 100];
-  const [announcementTypes, setAnnouncementTypes] = useState([
-    "Weather Warning",
-    "Flood",
-    "Landslide/Earthquake",
-    "Road Closure",
-    "Evacuation Order",
-    "Missing Person",
-    "Informational"
-  ]);
+  const [announcementTypes, setAnnouncementTypes] = useState<string[]>([]);
   const [newTypeInput, setNewTypeInput] = useState("");
+  const [previewAnnouncement, setPreviewAnnouncement] = useState<any>(null);
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>("desc");
+  const [editDialogOpenId, setEditDialogOpenId] = useState<string | null>(null);
+
+  const today = new Date();
+  // For dual calendar date range picker
+  const [fromMonth, setFromMonth] = useState((dateRange?.from || today).getMonth());
+  const [fromYear, setFromYear] = useState((dateRange?.from || today).getFullYear());
+  const [toMonth, setToMonth] = useState((dateRange?.to || today).getMonth());
+  const [toYear, setToYear] = useState((dateRange?.to || today).getFullYear());
+  // For month/year dropdowns in date range picker
+  const currentMonth = (dateRange?.from || today).getMonth();
+  const currentYear = (dateRange?.from || today).getFullYear();
+  const months = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+  ];
+  const years = Array.from({ length: 21 }, (_, i) => today.getFullYear() - 10 + i);
+
+  // Fetch announcement types from Firestore on mount
+  useEffect(() => {
+    async function fetchTypes() {
+      try {
+        const querySnapshot = await getDocs(collection(db, "announcementTypes"));
+        const types = querySnapshot.docs.map(doc => doc.data().name);
+        setAnnouncementTypes(types);
+      } catch (error) {
+        console.error("Error fetching announcement types:", error);
+      }
+    }
+    fetchTypes();
+  }, []);
+
+  // Fetch announcements from Firestore on mount
+  useEffect(() => {
+    async function fetchAnnouncements() {
+      try {
+        const querySnapshot = await getDocs(collection(db, "announcements"));
+        const fetched = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setAnnouncements(fetched);
+      } catch (error) {
+        console.error("Error fetching announcements:", error);
+      }
+    }
+    fetchAnnouncements();
+  }, []);
 
   const filteredAnnouncements = announcements.filter(announcement => {
-    const matchesSearch = announcement.description.toLowerCase().includes(searchTerm.toLowerCase()) || announcement.type.toLowerCase().includes(searchTerm.toLowerCase());
+    const search = searchTerm.toLowerCase();
+    // Search matches any field
+    const matchesSearch =
+      (announcement.description?.toLowerCase().includes(search) ||
+      announcement.type?.toLowerCase().includes(search) ||
+      announcement.priority?.toLowerCase().includes(search) ||
+      announcement.createdBy?.toLowerCase().includes(search) ||
+      (announcement.date && announcement.date.toLowerCase().includes(search)));
+    // Type filter
     const matchesType = typeFilter === "all" || announcement.type === typeFilter;
+    // Priority filter
     const matchesPriority = priorityFilter === "all" || announcement.priority === priorityFilter;
-    return matchesSearch && matchesType && matchesPriority;
+    // Date range filter (createdTime)
+    let matchesDate = true;
+    if (dateRange?.from && dateRange?.to) {
+      const created = announcement.createdTime ? new Date(announcement.createdTime) : null;
+      if (created) {
+        // Set time to 0:00 for from, 23:59 for to
+        const from = new Date(dateRange.from);
+        from.setHours(0,0,0,0);
+        const to = new Date(dateRange.to);
+        to.setHours(23,59,59,999);
+        matchesDate = created >= from && created <= to;
+      }
+    }
+    return matchesSearch && matchesType && matchesPriority && matchesDate;
   });
 
-  const pagedAnnouncements = filteredAnnouncements.slice((announcementPage - 1) * announcementRowsPerPage, announcementPage * announcementRowsPerPage);
+  // Sort by createdTime, order based on sortOrder
+  const sortedAnnouncements = filteredAnnouncements.sort((a, b) => {
+    const aTime = a.createdTime || 0;
+    const bTime = b.createdTime || 0;
+    return sortOrder === 'desc' ? bTime - aTime : aTime - bTime;
+  });
+
+  const pagedAnnouncements = sortedAnnouncements.slice((announcementPage - 1) * announcementRowsPerPage, announcementPage * announcementRowsPerPage);
   const announcementTotalPages = Math.ceil(filteredAnnouncements.length / announcementRowsPerPage);
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -100,11 +170,14 @@ export function AnnouncementsPage() {
       priority: ""
     });
     setIsNewAnnouncementOpen(false);
+    toast({
+      title: "Announcement Created",
+      description: "The new announcement has been added successfully.",
+    });
   };
   const handleEditAnnouncement = (announcement: any) => {
-    setEditingAnnouncement({
-      ...announcement
-    });
+    setEditingAnnouncement({ ...announcement });
+    setEditDialogOpenId(announcement.id);
   };
   const handleSaveEdit = async () => {
     if (!editingAnnouncement) return;
@@ -116,11 +189,22 @@ export function AnnouncementsPage() {
     });
     setAnnouncements(announcements.map(a => a.id === editingAnnouncement.id ? editingAnnouncement : a));
     setEditingAnnouncement(null);
+    setEditDialogOpenId(null);
+    toast({
+      title: "Announcement Updated",
+      description: "The announcement has been updated successfully.",
+    });
   };
   const handleDeleteAnnouncement = async (id: string) => {
     await deleteDoc(doc(db, "announcements", id));
     setAnnouncements(announcements.filter(a => a.id !== id));
   };
+
+  // Helper to truncate description
+  function truncateDescription(desc: string, maxLength = 20) {
+    if (!desc) return '';
+    return desc.length > maxLength ? desc.slice(0, maxLength) + '…' : desc;
+  }
   return <Layout>
       <div className="">
         {/* Summary Cards */}
@@ -184,37 +268,64 @@ export function AnnouncementsPage() {
                   <Label className="text-sm font-medium">Date Range</Label>
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "w-full justify-start text-left font-normal",
-                          !dateRange && "text-muted-foreground"
-                        )}
-                      >
-                        <Calendar className="mr-2 h-4 w-4" />
-                        {dateRange?.from ? (
-                          dateRange.to ? (
-                            <>
-                              {format(dateRange.from, "LLL dd, y")} -{" "}
-                              {format(dateRange.to, "LLL dd, y")}
-                            </>
+                      <div className="relative w-full">
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !dateRange && "text-muted-foreground"
+                          )}
+                        >
+                          <Calendar className="mr-2 h-4 w-4" />
+                          {dateRange?.from ? (
+                            dateRange.to ? (
+                              <>
+                                {format(dateRange.from, "LLL dd, y")} -{" "}
+                                {format(dateRange.to, "LLL dd, y")}
+                              </>
+                            ) : (
+                              format(dateRange.from, "LLL dd, y")
+                            )
                           ) : (
-                            format(dateRange.from, "LLL dd, y")
-                          )
-                        ) : (
-                          <span>Pick a date range</span>
-                        )}
-                      </Button>
+                            <span>Pick a date range</span>
+                          )}
+                        </Button>
+                        {dateRange?.from || dateRange?.to ? (
+                          <X
+                            className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 hover:text-gray-600 cursor-pointer"
+                            onClick={e => {
+                              e.stopPropagation();
+                              setDateRange(undefined);
+                            }}
+                          />
+                        ) : null}
+                      </div>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="start">
-                      <CalendarComponent
-                        initialFocus
-                        mode="range"
-                        defaultMonth={dateRange?.from}
-                        selected={dateRange}
-                        onSelect={setDateRange}
-                        numberOfMonths={2}
-                      />
+                      <div className="flex gap-8 px-4 pt-4 pb-2 items-start">
+                        {/* FROM Calendar */}
+                        <div>
+                          <div className="mb-2 text-xs font-semibold text-gray-500 text-center">From</div>
+                          <CalendarComponent
+                            month={dateRange?.from || today}
+                            selected={dateRange}
+                            onSelect={range => setDateRange(r => ({ ...r, from: range?.from }))}
+                            mode="range"
+                            numberOfMonths={1}
+                          />
+                        </div>
+                        {/* TO Calendar */}
+                        <div>
+                          <div className="mb-2 text-xs font-semibold text-gray-500 text-center">To</div>
+                          <CalendarComponent
+                            month={dateRange?.to || today}
+                            selected={dateRange}
+                            onSelect={range => setDateRange(r => ({ ...r, to: range?.to }))}
+                            mode="range"
+                            numberOfMonths={1}
+                          />
+                        </div>
+                      </div>
                     </PopoverContent>
                   </Popover>
                 </div>
@@ -227,13 +338,9 @@ export function AnnouncementsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Types</SelectItem>
-                      <SelectItem value="Weather Warning">Weather Warning</SelectItem>
-                      <SelectItem value="Flood">Flood</SelectItem>
-                      <SelectItem value="Landslide/Earthquake">Landslide/Earthquake</SelectItem>
-                      <SelectItem value="Road Closure">Road Closure</SelectItem>
-                      <SelectItem value="Evacuation Order">Evacuation Order</SelectItem>
-                      <SelectItem value="Missing Person">Missing Person</SelectItem>
-                      <SelectItem value="Informational">Informational</SelectItem>
+                      {announcementTypes.map(type => (
+                        <SelectItem key={type} value={type}>{type}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -285,10 +392,20 @@ export function AnnouncementsPage() {
                         <div key={type} className="flex items-center justify-between pr-2">
                           <SelectItem value={type}>{type}</SelectItem>
                           {announcementTypes.length > 1 && (
-                            <Button type="button" size="icon" variant="ghost" onClick={() => {
+                            <Button type="button" size="icon" variant="ghost" onClick={async () => {
+                              // Remove type from Firestore
+                              try {
+                                const querySnapshot = await getDocs(collection(db, "announcementTypes"));
+                                const docToDelete = querySnapshot.docs.find(doc => doc.data().name === type);
+                                if (docToDelete) {
+                                  await deleteDoc(doc(db, "announcementTypes", docToDelete.id));
                               setAnnouncementTypes(types => types.filter(t => t !== type));
                               if (newAnnouncement.type === type) {
                                 setNewAnnouncement({ ...newAnnouncement, type: "" });
+                                  }
+                                }
+                              } catch (error) {
+                                console.error("Error deleting type:", error);
                               }
                             }} className="ml-2 text-red-500">
                               <Trash2 className="h-4 w-4" />
@@ -302,20 +419,30 @@ export function AnnouncementsPage() {
                           onChange={e => setNewTypeInput(e.target.value)}
                           placeholder="Add new type"
                           className="flex-1"
-                          onKeyDown={e => {
+                          onKeyDown={async e => {
                             if (e.key === 'Enter' && newTypeInput.trim()) {
                               if (!announcementTypes.includes(newTypeInput.trim())) {
+                                try {
+                                  const docRef = await addDoc(collection(db, "announcementTypes"), { name: newTypeInput.trim() });
                                 setAnnouncementTypes([...announcementTypes, newTypeInput.trim()]);
                                 setNewAnnouncement({ ...newAnnouncement, type: newTypeInput.trim() });
+                                } catch (error) {
+                                  console.error("Error adding type:", error);
+                                }
                               }
                               setNewTypeInput("");
                             }
                           }}
                         />
-                        <Button type="button" onClick={() => {
+                        <Button type="button" onClick={async () => {
                           if (newTypeInput.trim() && !announcementTypes.includes(newTypeInput.trim())) {
+                            try {
+                              const docRef = await addDoc(collection(db, "announcementTypes"), { name: newTypeInput.trim() });
                             setAnnouncementTypes([...announcementTypes, newTypeInput.trim()]);
                             setNewAnnouncement({ ...newAnnouncement, type: newTypeInput.trim() });
+                            } catch (error) {
+                              console.error("Error adding type:", error);
+                            }
                           }
                           setNewTypeInput("");
                         }} disabled={!newTypeInput.trim()} className="bg-[#FF4F0B] hover:bg-[#FF4F0B]/90 text-white">
@@ -362,42 +489,69 @@ export function AnnouncementsPage() {
           
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Announcement Type</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Priority</TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => setSortOrder(o => o === 'desc' ? 'asc' : 'desc')}>
+                      <div className="flex items-center gap-1">
+                        Created Date
+                        {sortOrder === 'desc' ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronUp className="h-4 w-4" />
+                        )}
+                      </div>
+                    </TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {pagedAnnouncements.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="text-center text-gray-500 py-8">
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-gray-500 py-8">
                         No announcements found.
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ) : (
                     pagedAnnouncements.map(announcement => (
-                      <tr key={announcement.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{announcement.type}</td>
-                        <td className="px-6 py-4 text-sm text-gray-900">
-                          <div className="max-w-xs">{announcement.description}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          <span>{announcement.date}</span>
-                          <br />
-                          <span className="text-xs text-gray-500">{formatTimeNoSeconds(announcement.createdTime)}</span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                      <TableRow key={announcement.id} className="hover:bg-gray-50">
+                        <TableCell>{announcement.type}</TableCell>
+                        <TableCell>
+                          <div className="max-w-xs">{truncateDescription(announcement.description)}</div>
+                        </TableCell>
+                        <TableCell>
                           <Badge className={`${getPriorityColor(announcement.priority)} text-white`}>
                             {announcement.priority}
                           </Badge>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                          <Dialog>
+                        </TableCell>
+                        <TableCell>
+                          <span>{announcement.date}</span>
+                          <br />
+                          <span className="text-xs text-gray-500">{formatTimeNoSeconds(announcement.createdTime)}</span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {/* Preview (Eye) Icon with Tooltip */}
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button size="sm" variant="outline" onClick={() => setPreviewAnnouncement(announcement)}>
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Preview</TooltipContent>
+                            </Tooltip>
+                            {/* Edit Icon with Tooltip */}
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Dialog open={editDialogOpenId === announcement.id} onOpenChange={open => {
+                                  if (!open) {
+                                    setEditDialogOpenId(null);
+                                    setEditingAnnouncement(null);
+                                  }
+                                }}>
                             <DialogTrigger asChild>
                               <Button size="sm" variant="outline" onClick={() => handleEditAnnouncement(announcement)}>
                                 <Edit className="h-4 w-4" />
@@ -407,7 +561,8 @@ export function AnnouncementsPage() {
                               <DialogHeader>
                                 <DialogTitle>Edit Announcement</DialogTitle>
                               </DialogHeader>
-                              {editingAnnouncement && <div className="space-y-4">
+                                    {editingAnnouncement && editingAnnouncement.id === announcement.id && (
+                                      <div className="space-y-4">
                                   <div>
                                     <Label>Type</Label>
                                     <Select value={editingAnnouncement.type} onValueChange={value => setEditingAnnouncement({
@@ -418,17 +573,12 @@ export function AnnouncementsPage() {
                                         <SelectValue />
                                       </SelectTrigger>
                                       <SelectContent>
-                                        <SelectItem value="Weather Warning">Weather Warning</SelectItem>
-                                        <SelectItem value="Flood">Flood</SelectItem>
-                                        <SelectItem value="Landslide/Earthquake">Landslide/Earthquake</SelectItem>
-                                        <SelectItem value="Road Closure">Road Closure</SelectItem>
-                                        <SelectItem value="Evacuation Order">Evacuation Order</SelectItem>
-                                        <SelectItem value="Missing Person">Missing Person</SelectItem>
-                                        <SelectItem value="Informational">Informational</SelectItem>
+                                              {announcementTypes.map(type => (
+                                                <SelectItem key={type} value={type}>{type}</SelectItem>
+                                              ))}
                                       </SelectContent>
                                     </Select>
                                   </div>
-                                  
                                   <div>
                                     <Label>Priority</Label>
                                     <Select value={editingAnnouncement.priority} onValueChange={value => setEditingAnnouncement({
@@ -445,7 +595,6 @@ export function AnnouncementsPage() {
                                       </SelectContent>
                                     </Select>
                                   </div>
-                                  
                                   <div>
                                     <Label>Description</Label>
                                     <Textarea value={editingAnnouncement.description} onChange={e => setEditingAnnouncement({
@@ -453,13 +602,19 @@ export function AnnouncementsPage() {
                                 description: e.target.value
                               })} />
                                   </div>
-                                </div>}
+                                      </div>
+                                    )}
                               <DialogFooter>
                                 <Button onClick={handleSaveEdit}>Save Changes</Button>
                               </DialogFooter>
                             </DialogContent>
                           </Dialog>
-                          
+                              </TooltipTrigger>
+                              <TooltipContent>Edit</TooltipContent>
+                            </Tooltip>
+                            {/* Delete Icon with Tooltip */}
+                            <Tooltip>
+                              <TooltipTrigger asChild>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button size="sm" variant="outline" className="text-red-600">
@@ -481,12 +636,16 @@ export function AnnouncementsPage() {
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
-                        </td>
-                      </tr>
+                              </TooltipTrigger>
+                              <TooltipContent>Delete</TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TableCell>
+                      </TableRow>
                     ))
                   )}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
             
             {/* Pagination */}
@@ -515,6 +674,43 @@ export function AnnouncementsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Preview Dialog */}
+        <Dialog open={!!previewAnnouncement} onOpenChange={open => !open && setPreviewAnnouncement(null)}>
+          <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Announcement Details</DialogTitle>
+            </DialogHeader>
+            {previewAnnouncement && (
+              <div className="py-4">
+                <Table>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell className="font-medium text-gray-700 align-top">Type</TableCell>
+                      <TableCell>{previewAnnouncement.type}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-medium text-gray-700 align-top">Priority</TableCell>
+                      <TableCell>{previewAnnouncement.priority}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-medium text-gray-700 align-top">Created Date</TableCell>
+                      <TableCell>
+                        {previewAnnouncement.date}
+                        <br />
+                        <span className="text-xs text-gray-500">{formatTimeNoSeconds(previewAnnouncement.createdTime)}</span>
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-medium text-gray-700 align-top">Description</TableCell>
+                      <TableCell className="whitespace-pre-line break-words">{previewAnnouncement.description}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>;
 }
