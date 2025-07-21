@@ -10,8 +10,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { db } from "@/lib/firebase";
 import { collection, getDocs } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
-import accizardLogo from "@/../public/lovable-uploads/accizard-logo-svg.svg";
-import accizardLogotype from "@/../public/lovable-uploads/accizard-logotype-svg.svg";
 
 interface ChatSession {
   id: string;
@@ -256,8 +254,8 @@ export function ChatSupportPage() {
                   <CardContent className="flex-1 overflow-auto p-4">
                     {/* Introduction section at the top of every chat session */}
                     <div className="flex flex-col items-center justify-center gap-6 w-full mb-6">
-                      <img src={accizardLogo} alt="Accizard Logo" className="w-32 h-32 mx-auto" />
-                      <img src={accizardLogotype} alt="Accizard Logotype" className="w-64 h-auto mx-auto" />
+                      <img src="/lovable-uploads/accizard-logo-svg.svg" alt="Accizard Logo" className="w-32 h-32 mx-auto" />
+                      <img src="/lovable-uploads/accizard-logotype-svg.svg" alt="Accizard Logotype" className="w-64 h-auto mx-auto" />
                       <div className="text-center mt-2">
                         <div className="text-gray-500 text-sm font-medium mb-2">Support Hours</div>
                         <div className="text-gray-500 text-sm">Office: 8:00 AM - 5:00 PM &bull; Emergency: 24/7</div>

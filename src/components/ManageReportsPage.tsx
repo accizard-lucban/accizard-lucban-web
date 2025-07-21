@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 export function ManageReportsPage() {
   const navigate = useNavigate();
@@ -32,6 +33,7 @@ export function ManageReportsPage() {
   const [selectedReports, setSelectedReports] = useState<string[]>([]);
   const mockReports = [{
     id: "REP-001",
+    userId: "USR-001",
     type: "Fire",
     reportedBy: "Juan dela Cruz",
     barangay: "Brgy. Poblacion",
@@ -46,6 +48,7 @@ export function ManageReportsPage() {
     mobileNumber: "+63 912 345 6789"
   }, {
     id: "REP-002",
+    userId: "USR-002",
     type: "Flooding",
     reportedBy: "Maria Santos",
     barangay: "Brgy. San Roque",
@@ -60,6 +63,7 @@ export function ManageReportsPage() {
     mobileNumber: "+63 917 876 5432"
   }, {
     id: "REP-003",
+    userId: "USR-003",
     type: "Medical Emergency",
     reportedBy: "Pedro Garcia",
     barangay: "Brgy. Magsaysay",
@@ -167,6 +171,11 @@ export function ManageReportsPage() {
       printWindow.print();
     }
   };
+  const [showDirectionsModal, setShowDirectionsModal] = useState(false);
+  const [directionsReport, setDirectionsReport] = useState<any>(null);
+  const [previewTab, setPreviewTab] = useState("details");
+  const [isPreviewEditMode, setIsPreviewEditMode] = useState(false);
+  const [previewEditData, setPreviewEditData] = useState<any>(null);
   return <Layout>
 
         {/* Summary Cards */}
@@ -342,9 +351,8 @@ export function ManageReportsPage() {
                     <TableHead>Report ID</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Reported By</TableHead>
-                    <TableHead>Date</TableHead>
+                    <TableHead>Date Submitted</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Location</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -374,26 +382,36 @@ export function ManageReportsPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Button
-                          variant="link"
-                          onClick={() => handleReportedByClick(report.reportedBy)}
-                          className="p-0 h-auto text-orange-500"
+                        <button
+                          type="button"
+                          className="text-blue-600 hover:underline focus:outline-none"
+                          onClick={() => navigate("/manage-users", { state: { tab: "residents", search: report.userId } })}
+                          title="View Resident Account"
                         >
-                          {report.reportedBy}
-                        </Button>
-                      </TableCell>
-                      <TableCell>{report.dateSubmitted}</TableCell>
-                      <TableCell>
-                        {report.status}
+                          {report.userId}
+                        </button>
                       </TableCell>
                       <TableCell>
-                        <Button
-                          variant="link"
-                          onClick={() => handleViewLocation(report.location)}
-                          className="p-0 h-auto text-left text-orange-500"
-                        >
-                          {truncateLocation(report.location)}
-                        </Button>
+                        {report.dateSubmitted}
+                        <br />
+                        <span className="text-xs text-gray-500">{report.timeSubmitted}</span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={
+                          report.status === 'Pending'
+                            ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-50'
+                            : report.status === 'Ongoing'
+                            ? 'bg-blue-100 text-blue-800 hover:bg-blue-50'
+                            : report.status === 'Not Responded'
+                            ? 'bg-red-100 text-red-800 hover:bg-red-50'
+                            : report.status === 'Responded'
+                            ? 'bg-green-100 text-green-800 hover:bg-green-50'
+                            : report.status === 'False Report'
+                            ? 'bg-gray-100 text-gray-800 hover:bg-gray-50'
+                            : 'bg-gray-100 text-gray-800 hover:bg-gray-50'
+                        }>
+                          {report.status}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -716,101 +734,259 @@ export function ManageReportsPage() {
                 View details of the selected report.
               </DialogDescription>
             </DialogHeader>
-            <div className="py-4" id="report-preview-content">
-              <Table>
-                <TableBody>
-                  <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Report ID</TableCell>
-                    <TableCell>{selectedReport?.id}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Report Type</TableCell>
-                    <TableCell>
-                      <Badge className={selectedReport?.type === 'Fire' ? 'bg-red-100 text-red-800 hover:bg-red-50' : selectedReport?.type === 'Flooding' ? 'bg-blue-100 text-blue-800 hover:bg-blue-50' : 'bg-gray-100 text-gray-800 hover:bg-gray-50'}>
-                        {selectedReport?.type}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Reported By</TableCell>
-                    <TableCell>
-                      <Button variant="link" className="p-0 h-auto text-blue-600 hover:text-blue-800" onClick={() => handleReportedByClick(selectedReport?.reportedBy)}>
-                        {selectedReport?.reportedBy}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Mobile Number</TableCell>
-                    <TableCell>{selectedReport?.mobileNumber}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Barangay</TableCell>
-                    <TableCell>{selectedReport?.barangay}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Description</TableCell>
-                    <TableCell>{selectedReport?.description}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Responders</TableCell>
-                    <TableCell>{selectedReport?.responders}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Location</TableCell>
-                    <TableCell>
-                      <Button variant="link" className="p-0 h-auto text-blue-600 hover:text-blue-800" onClick={() => handleViewLocation(selectedReport?.location)}>
-                        {selectedReport?.location}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Status</TableCell>
-                    <TableCell>
-                      <Badge className={cn(
-                        "capitalize",
-                        selectedReport?.status === "Pending" && "bg-yellow-100 text-yellow-800 hover:bg-yellow-50",
-                        selectedReport?.status === "Ongoing" && "bg-blue-100 text-blue-800 hover:bg-blue-50",
-                        selectedReport?.status === "Not Responded" && "bg-red-100 text-red-800 hover:bg-red-50",
-                        selectedReport?.status === "Responded" && "bg-green-100 text-green-800 hover:bg-green-50",
-                        selectedReport?.status === "False Report" && "bg-gray-100 text-gray-800 hover:bg-gray-50"
-                      )}>
-                        {selectedReport?.status}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Date Submitted</TableCell>
-                    <TableCell>{selectedReport?.dateSubmitted}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Time Submitted</TableCell>
-                    <TableCell>{selectedReport?.timeSubmitted}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Attached Media</TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-2">
-                        {selectedReport?.attachedMedia?.map((media: string, index: number) => (
-                          <div key={index} className="flex items-center gap-2 bg-gray-100 p-2 rounded">
-                            <Image className="h-4 w-4" />
-                            <span className="text-sm">{media}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Attached Document</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2 bg-gray-100 p-2 rounded">
-                        <FileIcon className="h-4 w-4" />
-                        <span className="text-sm">{selectedReport?.attachedDocument}</span>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
+            <div className="flex justify-end mb-2">
+              {!isPreviewEditMode ? (
+                <Button size="sm" variant="outline" onClick={() => {
+                  setIsPreviewEditMode(true);
+                  setPreviewEditData({ ...selectedReport });
+                }}>
+                  <Edit className="h-4 w-4 mr-1" /> Edit
+                </Button>
+              ) : (
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => {
+                    // Save logic (mock)
+                    setIsPreviewEditMode(false);
+                    setSelectedReport({ ...previewEditData });
+                  }}>
+                    Save
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => {
+                    setIsPreviewEditMode(false);
+                    setPreviewEditData(null);
+                  }}>
+                    Cancel
+                  </Button>
+                </div>
+              )}
             </div>
+            <Tabs value={previewTab} onValueChange={setPreviewTab} className="w-full mt-2">
+              <TabsList className="mb-4">
+                <TabsTrigger value="details">Report Details</TabsTrigger>
+                <TabsTrigger value="directions">Directions</TabsTrigger>
+              </TabsList>
+              <TabsContent value="details">
+                <div className="py-4" id="report-preview-content">
+                  <Table>
+                    <TableBody>
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-700 align-top">Report ID</TableCell>
+                        <TableCell>{selectedReport?.id}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-700 align-top">Report Type</TableCell>
+                        <TableCell>
+                          {isPreviewEditMode ? (
+                            <Select value={previewEditData?.type} onValueChange={v => setPreviewEditData((d: any) => ({ ...d, type: v }))}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Fire">Fire</SelectItem>
+                                <SelectItem value="Flooding">Flooding</SelectItem>
+                                <SelectItem value="Medical Emergency">Medical Emergency</SelectItem>
+                                <SelectItem value="Earthquake">Earthquake</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Badge className={selectedReport?.type === 'Fire' ? 'bg-red-100 text-red-800 hover:bg-red-50' : selectedReport?.type === 'Flooding' ? 'bg-blue-100 text-blue-800 hover:bg-blue-50' : 'bg-gray-100 text-gray-800 hover:bg-gray-50'}>
+                              {selectedReport?.type}
+                            </Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-700 align-top">Reported By</TableCell>
+                        <TableCell>
+                          {isPreviewEditMode ? (
+                            <Input value={previewEditData?.reportedBy} onChange={e => setPreviewEditData((d: any) => ({ ...d, reportedBy: e.target.value }))} />
+                          ) : (
+                            <Button variant="link" className="p-0 h-auto text-blue-600 hover:text-blue-800" onClick={() => handleReportedByClick(selectedReport?.reportedBy)}>
+                              {selectedReport?.reportedBy}
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-700 align-top">Mobile Number</TableCell>
+                        <TableCell>
+                          {isPreviewEditMode ? (
+                            <Input value={previewEditData?.mobileNumber} onChange={e => setPreviewEditData((d: any) => ({ ...d, mobileNumber: e.target.value }))} />
+                          ) : (
+                            selectedReport?.mobileNumber
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-700 align-top">Barangay</TableCell>
+                        <TableCell>
+                          {isPreviewEditMode ? (
+                            <Select value={previewEditData?.barangay} onValueChange={v => setPreviewEditData((d: any) => ({ ...d, barangay: v }))}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {barangayOptions.map(barangay => <SelectItem key={barangay} value={barangay}>{barangay}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            selectedReport?.barangay
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-700 align-top">Description</TableCell>
+                        <TableCell>
+                          {isPreviewEditMode ? (
+                            <Textarea value={previewEditData?.description} onChange={e => setPreviewEditData((d: any) => ({ ...d, description: e.target.value }))} />
+                          ) : (
+                            selectedReport?.description
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-700 align-top">Responders</TableCell>
+                        <TableCell>
+                          {isPreviewEditMode ? (
+                            <Input value={previewEditData?.responders} onChange={e => setPreviewEditData((d: any) => ({ ...d, responders: e.target.value }))} />
+                          ) : (
+                            selectedReport?.responders
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-700 align-top">Location</TableCell>
+                        <TableCell>
+                          {isPreviewEditMode ? (
+                            <Input value={previewEditData?.location} onChange={e => setPreviewEditData((d: any) => ({ ...d, location: e.target.value }))} />
+                          ) : (
+                            <Button variant="link" className="p-0 h-auto text-blue-600 hover:text-blue-800" onClick={() => handleViewLocation(selectedReport?.location)}>
+                              {selectedReport?.location}
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-700 align-top">Status</TableCell>
+                        <TableCell>
+                          {isPreviewEditMode ? (
+                            <Select value={previewEditData?.status} onValueChange={v => setPreviewEditData((d: any) => ({ ...d, status: v }))}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Pending">Pending</SelectItem>
+                                <SelectItem value="Ongoing">Ongoing</SelectItem>
+                                <SelectItem value="Not Responded">Not Responded</SelectItem>
+                                <SelectItem value="Responded">Responded</SelectItem>
+                                <SelectItem value="False Report">False Report</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Badge className={cn(
+                              "capitalize",
+                              selectedReport?.status === "Pending" && "bg-yellow-100 text-yellow-800 hover:bg-yellow-50",
+                              selectedReport?.status === "Ongoing" && "bg-blue-100 text-blue-800 hover:bg-blue-50",
+                              selectedReport?.status === "Not Responded" && "bg-red-100 text-red-800 hover:bg-red-50",
+                              selectedReport?.status === "Responded" && "bg-green-100 text-green-800 hover:bg-green-50",
+                              selectedReport?.status === "False Report" && "bg-gray-100 text-gray-800 hover:bg-gray-50"
+                            )}>
+                              {selectedReport?.status}
+                            </Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-700 align-top">Date Submitted</TableCell>
+                        <TableCell>
+                          {selectedReport?.dateSubmitted}
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-700 align-top">Time Submitted</TableCell>
+                        <TableCell>
+                          {selectedReport?.timeSubmitted}
+                        </TableCell>
+                      </TableRow>
+                      {/* Attached Media and Document fields can be made editable if needed */}
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-700 align-top">Attached Media</TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-2 mb-2">
+                            {selectedReport?.attachedMedia?.map((media: string, index: number) => (
+                              <div key={index} className="flex items-center gap-2 bg-gray-100 p-2 rounded">
+                                <Image className="h-4 w-4" />
+                                <span className="text-sm">{media}</span>
+                              </div>
+                            ))}
+                          </div>
+                          {isPreviewEditMode && (
+                            <div className="border-2 border-dashed border-gray-300 rounded-lg p-2 text-center mb-2">
+                              <Input type="file" multiple accept="image/*,video/*" onChange={e => {
+                                const files = Array.from(e.target.files || []);
+                                setPreviewEditData((d: any) => ({
+                                  ...d,
+                                  attachedMedia: [...(d.attachedMedia || []), ...files.map(f => f.name)]
+                                }));
+                              }} />
+                              <p className="text-xs text-gray-500 mt-1">Attach more photos or videos</p>
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-700 align-top">Attached Document</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2 bg-gray-100 p-2 rounded mb-2">
+                            <FileIcon className="h-4 w-4" />
+                            <span className="text-sm">{selectedReport?.attachedDocument}</span>
+                          </div>
+                          {isPreviewEditMode && (
+                            <div className="border-2 border-dashed border-gray-300 rounded-lg p-2 text-center">
+                              <Input type="file" accept=".pdf,.doc,.docx" onChange={e => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  setPreviewEditData((d: any) => ({
+                                    ...d,
+                                    attachedDocument: file.name
+                                  }));
+                                }
+                              }} />
+                              <p className="text-xs text-gray-500 mt-1">Attach a document</p>
+                            </div>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+              </TabsContent>
+              <TabsContent value="directions">
+                <div className="py-4">
+                  <Table>
+                    <TableBody>
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-700 align-top">Address</TableCell>
+                        <TableCell>{selectedReport?.location}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-700 align-top">Coordinates</TableCell>
+                        <TableCell>14.5995, 120.9842 {/* Mocked for now */}</TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-700 align-top">Estimated Time of Arrival</TableCell>
+                        <TableCell>15 min {/* Mocked for now */}</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                  <div className="mt-6">
+                    <div className="font-medium text-gray-700 mb-2">Map</div>
+                    <iframe
+                      width="100%"
+                      height="250"
+                      style={{ border: 0 }}
+                      loading="lazy"
+                      allowFullScreen
+                      src={`https://www.google.com/maps?q=${encodeURIComponent(selectedReport?.location || "")}&output=embed`}
+                    ></iframe>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
             <DialogFooter className="flex justify-between">
               <div className="flex gap-2">
                 <Button onClick={handlePrintPreview} variant="outline">
