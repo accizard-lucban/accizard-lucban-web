@@ -74,10 +74,10 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge }: SidebarPr
       <div className="p-4 border-b border-orange-400/30 flex items-center justify-between">
         {!isCollapsed && <div className="flex items-center space-x-3">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-transparent">
-              <img alt="ACCIZARD" className="w-8 h-8" src="/lovable-uploads/eec8f7ad-8565-42b0-8c5d-c8244ea20e43.png" />
+              <img alt="ACCIZARD" className="w-8 h-8" src="/accizard-uploads/accizard-logo-white-png.png" />
             </div>
             <div>
-            <img alt="ACCIZARD" className="h-8" src="/lovable-uploads/accizard-logotype-png.png" />
+            <img alt="ACCIZARD" className="h-8" src="/accizard-uploads/accizard-logotype-png.png" />
             </div>
           </div>}
         <button onClick={() => onCollapse(!isCollapsed)} className="p-2 hover:bg-orange-400/20 rounded-lg transition-colors">

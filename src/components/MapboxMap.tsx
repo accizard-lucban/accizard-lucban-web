@@ -22,6 +22,7 @@ interface MapboxMapProps {
     accidentTypes?: string[];
     facilityTypes?: string[];
   };
+  singleMarker?: Marker;
 }
 
 // Sample data for markers
@@ -343,7 +344,8 @@ export function MapboxMap({
   showHeatmap = false,
   center = [-122.4194, 37.7749],
   zoom = 12,
-  activeFilters
+  activeFilters,
+  singleMarker
 }: MapboxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -416,6 +418,47 @@ export function MapboxMap({
       popupRef.current.remove();
     }
 
+    // If singleMarker is provided, only show that marker
+    if (singleMarker) {
+      const el = createMarkerElement(singleMarker.type);
+      const markerInstance = new mapboxgl.Marker({
+        element: el,
+        anchor: 'bottom'
+      })
+        .setLngLat(singleMarker.coordinates)
+        .addTo(map.current!);
+
+      // Add click event to marker
+      el.addEventListener('click', () => {
+        if (popupRef.current) {
+          popupRef.current.remove();
+        }
+
+        popupRef.current = new mapboxgl.Popup({ 
+          offset: 25,
+          closeButton: false,
+          className: 'custom-popup'
+        })
+          .setLngLat(singleMarker.coordinates)
+          .setHTML(createPopupContent(singleMarker))
+          .addTo(map.current!);
+      });
+
+      markersRef.current.push(markerInstance);
+      
+      // Automatically show popup for single marker
+      popupRef.current = new mapboxgl.Popup({ 
+        offset: 25,
+        closeButton: false,
+        className: 'custom-popup'
+      })
+        .setLngLat(singleMarker.coordinates)
+        .setHTML(createPopupContent(singleMarker))
+        .addTo(map.current!);
+      
+      return;
+    }
+
     // Filter markers based on active filters
     const filteredMarkers = sampleMarkers.filter(marker => {
       if (!activeFilters) return true;
@@ -454,7 +497,7 @@ export function MapboxMap({
 
       markersRef.current.push(markerInstance);
     });
-  }, [mapLoaded, activeFilters]);
+  }, [mapLoaded, activeFilters, singleMarker]);
 
   // Handle heatmap
   useEffect(() => {
@@ -517,4 +560,4 @@ export function MapboxMap({
       style={{ position: 'absolute', top: 0, bottom: 0, width: '100%' }}
     />
   );
-} 
+}

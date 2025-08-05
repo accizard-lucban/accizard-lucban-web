@@ -5,15 +5,15 @@ import { getAnalytics } from "firebase/analytics";
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
-// TODO: Replace the following with your app's Firebase project configuration
+// Firebase configuration using environment variables
 const firebaseConfig = {
-  apiKey: "AIzaSyA5I-a7w1LnS9Ww7okoCsq4BO6ri3sJ8ro",
-  authDomain: "accizard-lucban.firebaseapp.com",
-  projectId: "accizard-lucban",
-  storageBucket: "accizard-lucban.firebasestorage.app",
-  messagingSenderId: "967856342376",
-  appId: "1:967856342376:web:e3b8db3a6fb8470c1802dd",
-  measurementId: "G-JDHN4P95S8"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase
