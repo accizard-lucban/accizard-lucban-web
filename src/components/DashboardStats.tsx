@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
-import { Download, Printer, AlertTriangle, Users, FileText, MapPin, CloudRain, Clock } from "lucide-react";
+import { Download, Printer, AlertTriangle, Users, FileText, MapPin, CloudRain, Clock, TrendingUp, PieChart as PieChartIcon, Building2 } from "lucide-react";
 
 export function DashboardStats() {
   const [totalReportsFilter, setTotalReportsFilter] = useState("this-week");
@@ -293,9 +293,12 @@ export function DashboardStats() {
         {/* Bar Chart - Reports per Barangay */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle>Reports per Barangay</CardTitle>
-              <CardDescription>Distribution of reports across barangays</CardDescription>
+            <div className="flex items-center space-x-2">
+              <Building2 className="h-5 w-5 text-brand-orange" />
+              <div>
+                <CardTitle>Reports per Barangay</CardTitle>
+                <CardDescription>Distribution of reports across barangays</CardDescription>
+              </div>
             </div>
             <Select value={barangayReportsFilter} onValueChange={setBarangayReportsFilter}>
               <SelectTrigger className="w-[120px]">
@@ -316,13 +319,13 @@ export function DashboardStats() {
             }
           }}>
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={reportsPerBarangay}>
+                <LineChart data={reportsPerBarangay}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  
+                  <XAxis dataKey="name" tick={false} />
                   <YAxis />
                   <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="reports" fill="#FF4F0B" />
-                </BarChart>
+                  <Line type="monotone" dataKey="reports" stroke="#FF4F0B" strokeWidth={2} dot={{ fill: "#FF4F0B" }} />
+                </LineChart>
               </ResponsiveContainer>
             </ChartContainer>
           </CardContent>
@@ -331,8 +334,13 @@ export function DashboardStats() {
         {/* Bar Chart - Users per Barangay */}
         <Card>
           <CardHeader>
-            <CardTitle>Users per Barangay</CardTitle>
-            <CardDescription>Distribution of users across barangays</CardDescription>
+            <div className="flex items-center space-x-2">
+              <Users className="h-5 w-5 text-brand-orange" />
+              <div>
+                <CardTitle>Users per Barangay</CardTitle>
+                <CardDescription>Distribution of users across barangays</CardDescription>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <ChartContainer config={{
@@ -342,13 +350,13 @@ export function DashboardStats() {
             }
           }}>
               <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={usersPerBarangay}>
+                <LineChart data={usersPerBarangay}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  
+                  <XAxis dataKey="name" tick={false} />
                   <YAxis />
                   <ChartTooltip content={<ChartTooltipContent />} />
-                  <Bar dataKey="users" fill="#FF4F0B" />
-                </BarChart>
+                  <Line type="monotone" dataKey="users" stroke="#FF4F0B" strokeWidth={2} dot={{ fill: "#FF4F0B" }} />
+                </LineChart>
               </ResponsiveContainer>
             </ChartContainer>
           </CardContent>
@@ -360,8 +368,13 @@ export function DashboardStats() {
         {/* Pie Chart - Report Type Distribution */}
         <Card>
           <CardHeader>
-            <CardTitle>Report Type Distribution</CardTitle>
-            <CardDescription>Breakdown of incident types</CardDescription>
+            <div className="flex items-center space-x-2">
+              <PieChartIcon className="h-5 w-5 text-brand-orange" />
+              <div>
+                <CardTitle>Report Type Distribution</CardTitle>
+                <CardDescription>Breakdown of incident types</CardDescription>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <ChartContainer config={{
@@ -393,8 +406,13 @@ export function DashboardStats() {
         {/* Peak Reporting Hours - Now as Line Chart */}
         <Card>
           <CardHeader>
-            <CardTitle>Peak Reporting Hours</CardTitle>
-            <CardDescription>When incidents are most commonly reported</CardDescription>
+            <div className="flex items-center space-x-2">
+              <TrendingUp className="h-5 w-5 text-brand-orange" />
+              <div>
+                <CardTitle>Peak Reporting Hours</CardTitle>
+                <CardDescription>When incidents are most commonly reported</CardDescription>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <ChartContainer config={{

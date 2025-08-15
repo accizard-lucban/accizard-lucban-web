@@ -92,9 +92,9 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge }: SidebarPr
               MENU
             </div>}
           <nav className="space-y-2">
-            {menuItems.map(item => <button key={item.title} onClick={() => handleMenuClick(item)} className={cn("w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200", isActive(item.path) ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white")}>
-                <div className="flex items-center">
-                  <item.icon className="h-5 w-5 mr-3 flex-shrink-0" />
+            {menuItems.map(item => <button key={item.title} onClick={() => handleMenuClick(item)} className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", isCollapsed ? "justify-center px-2 py-3" : "justify-between px-4 py-3", isActive(item.path) ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white")}>
+                <div className={cn("flex items-center", isCollapsed && "justify-center")}>
+                  <item.icon className={cn("h-5 w-5 flex-shrink-0", !isCollapsed && "mr-3")} />
                   {!isCollapsed && <span>{item.title}</span>}
                 </div>
                 {!isCollapsed && item.title === "Manage Users" && manageUsersBadge > 0 && (
@@ -116,8 +116,8 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge }: SidebarPr
               OTHERS
             </div>}
           <nav className="space-y-2">
-            {otherItems.map(item => <button key={item.title} onClick={() => navigate(item.path)} className={cn("w-full flex items-center px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200", isActive(item.path) ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white")}>
-                <item.icon className="h-5 w-5 mr-3 flex-shrink-0" />
+            {otherItems.map(item => <button key={item.title} onClick={() => navigate(item.path)} className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", isCollapsed ? "justify-center px-2 py-3" : "px-4 py-3", isActive(item.path) ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white")}>
+                <item.icon className={cn("h-5 w-5 flex-shrink-0", !isCollapsed && "mr-3")} />
                 {!isCollapsed && <span>{item.title}</span>}
               </button>)}
           </nav>
@@ -128,8 +128,8 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge }: SidebarPr
       <div className="p-3 border-t border-orange-400/30">
         <AlertDialog open={showSignOut} onOpenChange={setShowSignOut}>
           <AlertDialogTrigger asChild>
-            <button onClick={() => setShowSignOut(true)} className="w-full flex items-center px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 text-orange-100 hover:bg-red-500 hover:text-white">
-              <LogOut className="h-5 w-5 mr-3 flex-shrink-0" />
+            <button onClick={() => setShowSignOut(true)} className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200 text-orange-100 hover:bg-red-500 hover:text-white", isCollapsed ? "justify-center px-2 py-3" : "px-4 py-3")}>
+              <LogOut className={cn("h-5 w-5 flex-shrink-0", !isCollapsed && "mr-3")} />
               {!isCollapsed && <span>Sign Out</span>}
             </button>
           </AlertDialogTrigger>
