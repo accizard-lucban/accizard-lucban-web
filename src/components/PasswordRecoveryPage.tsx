@@ -37,7 +37,7 @@ export function PasswordRecoveryPage() {
 
   return <div className="min-h-screen flex bg-black">
       {/* Left Side - Logo and Branding */}
-      <div className="flex-1 bg-[url('/lovable-uploads/login-signup-cover.png')] bg-cover">
+      <div className="flex-1 bg-[url('/accizard-uploads/login-signup-cover.png')] bg-cover">
         <div className="text-center">
           
         </div>

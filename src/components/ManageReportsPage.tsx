@@ -225,7 +225,8 @@ export function ManageReportsPage() {
   const [previewTab, setPreviewTab] = useState("details");
   const [isPreviewEditMode, setIsPreviewEditMode] = useState(false);
   const [previewEditData, setPreviewEditData] = useState<any>(null);
-  return <Layout>
+  return (
+    <Layout>
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
@@ -758,7 +759,7 @@ export function ManageReportsPage() {
               </div>
 
               <div>
-                <Label>Update Attached Document</ Label>
+                <Label>Update Attached Document</Label>
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
                   <FileIcon className="h-8 w-8 mx-auto text-gray-400 mb-2" />
                   <p className="text-sm text-gray-600">Upload new document</p>
@@ -1113,5 +1114,6 @@ export function ManageReportsPage() {
           </DialogContent>
         </Dialog>
       </div>
-    </Layout>;
+    </Layout>
+  );
 }
