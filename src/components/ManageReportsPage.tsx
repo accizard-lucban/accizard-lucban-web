@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,8 @@ import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { MapboxMap } from "./MapboxMap";
+import { db } from "@/lib/firebase";
+import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
 
 export function ManageReportsPage() {
   const navigate = useNavigate();
@@ -32,6 +34,7 @@ export function ManageReportsPage() {
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [selectedReports, setSelectedReports] = useState<string[]>([]);
+  const [reports, setReports] = useState<any[]>([]);
   const mockReports = [{
     id: "REP-001",
     userId: "USR-001",
@@ -87,6 +90,65 @@ export function ManageReportsPage() {
     timeOfArrival: "23:05",
     coordinates: "14.5964, 120.9445"
   }];
+  
+  // Fetch reports from Firestore in real-time
+  useEffect(() => {
+    try {
+      const reportsQuery = query(collection(db, "reports"), orderBy("timestamp", "desc"));
+      const unsubscribe = onSnapshot(reportsQuery, (snapshot) => {
+        const fetched = snapshot.docs.map((doc) => {
+          const data: any = doc.data() || {};
+          
+          // Map timestamp to dateSubmitted and timeSubmitted
+          let dateSubmitted = "";
+          let timeSubmitted = "";
+          try {
+            const timestamp: any = data.timestamp;
+            if (timestamp && typeof timestamp.toDate === "function") {
+              const d = timestamp.toDate();
+              // MM/dd/yy and h:mm a formatting
+              const mm = String(d.getMonth() + 1).padStart(2, "0");
+              const dd = String(d.getDate()).padStart(2, "0");
+              const yy = String(d.getFullYear()).slice(-2);
+              dateSubmitted = `${mm}/${dd}/${yy}`;
+              const hours12 = d.getHours() % 12 || 12;
+              const minutes = String(d.getMinutes()).padStart(2, "0");
+              const ampm = d.getHours() >= 12 ? "PM" : "AM";
+              timeSubmitted = `${hours12}:${minutes} ${ampm}`;
+            }
+          } catch {}
+
+          // Map imageUrls to attachedMedia
+          const attachedMedia = Array.isArray(data.imageUrls) ? data.imageUrls : [];
+
+          return {
+            id: data.reportId || doc.id,
+            userId: data.userId || "",
+            type: data.category || "",
+            reportedBy: "", // Not in your schema, will show empty
+            barangay: "", // Not in your schema, will show empty
+            description: data.description || "",
+            responders: "", // Not in your schema, will show empty
+            location: data.location || "",
+            dateSubmitted,
+            timeSubmitted,
+            status: data.status || "Pending",
+            attachedMedia,
+            attachedDocument: "", // Not in your schema, will show empty
+            mobileNumber: "", // Not in your schema, will show empty
+            timeOfDispatch: "", // Not in your schema, will show empty
+            timeOfArrival: "", // Not in your schema, will show empty
+            coordinates: "" // Not in your schema, will show empty
+          };
+        });
+        console.log("Fetched reports:", fetched);
+        setReports(fetched);
+      });
+      return () => unsubscribe();
+    } catch (err) {
+      console.error("Error subscribing to reports:", err);
+    }
+  }, []);
   const [formData, setFormData] = useState({
     type: "",
     reportedBy: "",
@@ -155,7 +217,7 @@ export function ManageReportsPage() {
     );
   };
   const handleSelectAll = (checked: boolean) => {
-    setSelectedReports(checked ? mockReports.map(report => report.id) : []);
+    setSelectedReports(checked ? reports.map(report => report.id) : []);
   };
   const handlePrintTable = () => {
     window.print();
@@ -394,7 +456,7 @@ export function ManageReportsPage() {
                   <TableRow>
                     <TableHead className="w-12">
                       <Checkbox
-                        checked={selectedReports.length === mockReports.length}
+                        checked={reports.length > 0 && selectedReports.length === reports.length}
                         onCheckedChange={(checked: boolean) => handleSelectAll(checked)}
                       />
                     </TableHead>
@@ -407,7 +469,7 @@ export function ManageReportsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockReports.map(report => (
+                  {reports.map(report => (
                     <TableRow key={report.id}>
                       <TableCell>
                         <Checkbox
