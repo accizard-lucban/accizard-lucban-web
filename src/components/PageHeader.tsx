@@ -13,6 +13,7 @@ import { getAuth } from "firebase/auth";
 import { db } from "@/lib/firebase";
 import { collection, query, orderBy, limit, getDocs, where } from "firebase/firestore";
 import { Bell } from "lucide-react";
+import { SUPER_ADMIN_EMAIL } from "@/lib/utils";
 
 interface PageHeaderProps {
   title: string;
@@ -57,7 +58,7 @@ export function PageHeader({
       } else {
         const authUser = getAuth().currentUser;
         if (authUser) {
-          if (authUser.email === "accizardlucban@gmail.com") {
+          if (authUser.email === SUPER_ADMIN_EMAIL) {
             const q = query(collection(db, "superAdmin"), where("email", "==", authUser.email));
             const querySnapshot = await getDocs(q);
             if (!querySnapshot.empty) {

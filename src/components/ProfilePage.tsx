@@ -13,6 +13,7 @@ import { db, auth } from "@/lib/firebase";
 import { getAuth, updateProfile, updateEmail } from "firebase/auth";
 import { collection, query, where, getDocs, doc, updateDoc, orderBy, limit } from "firebase/firestore";
 import { toast } from "@/components/ui/sonner";
+import { SUPER_ADMIN_EMAIL } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogTrigger,
@@ -70,7 +71,7 @@ export function ProfilePage() {
         // Super-admin: use Firebase Auth
         const user = getAuth().currentUser;
         if (user) {
-          if (user.email === "accizardlucban@gmail.com") {
+          if (user.email === SUPER_ADMIN_EMAIL) {
             // Update superAdmin profile in Firestore by email
             const q = query(collection(db, "superAdmin"), where("email", "==", user.email));
             const querySnapshot = await getDocs(q);
@@ -151,7 +152,7 @@ export function ProfilePage() {
         // Super-admin: use Firebase Auth
         const user = getAuth().currentUser;
         if (user) {
-          if (user.email === "accizardlucban@gmail.com") {
+          if (user.email === SUPER_ADMIN_EMAIL) {
             // Fetch from superAdmin collection
             const q = query(collection(db, "superAdmin"), where("email", "==", user.email));
             const querySnapshot = await getDocs(q);

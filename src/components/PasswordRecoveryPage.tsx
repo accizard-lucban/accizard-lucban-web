@@ -8,6 +8,7 @@ import { ArrowLeft } from "lucide-react";
 import { auth } from "@/lib/firebase";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { toast } from "@/components/ui/sonner";
+import { SUPER_ADMIN_EMAIL } from "@/lib/utils";
 
 export function PasswordRecoveryPage() {
   const [email, setEmail] = useState("");
@@ -22,6 +23,13 @@ export function PasswordRecoveryPage() {
       toast.error("Please enter a valid email address.");
       return;
     }
+    
+    // Check if the email is the authorized super admin email
+    if (email !== SUPER_ADMIN_EMAIL) {
+      toast.error("Access denied. Password recovery is only available for authorized super admin accounts.");
+      return;
+    }
+    
     try {
       await sendPasswordResetEmail(auth, email);
       setIsSubmitted(true);

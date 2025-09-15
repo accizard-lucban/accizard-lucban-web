@@ -22,6 +22,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { MapboxMap } from "./MapboxMap";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { toast } from "@/components/ui/sonner";
 
 export function ManageReportsPage() {
   const navigate = useNavigate();
@@ -281,12 +283,141 @@ export function ManageReportsPage() {
       return 'Calculation error';
     }
   };
+
+  // Function to calculate response time in minutes only
+  const calculateResponseTimeMinutes = (dispatchTime: string, arrivalTime: string) => {
+    try {
+      const [dispatchHours, dispatchMinutes] = dispatchTime.split(':').map(Number);
+      const [arrivalHours, arrivalMinutes] = arrivalTime.split(':').map(Number);
+      
+      const dispatchTotalMinutes = dispatchHours * 60 + dispatchMinutes;
+      const arrivalTotalMinutes = arrivalHours * 60 + arrivalMinutes;
+      
+      let diffMinutes = arrivalTotalMinutes - dispatchTotalMinutes;
+      
+      if (diffMinutes < 0) {
+        diffMinutes += 24 * 60;
+      }
+      
+      return diffMinutes;
+    } catch (error) {
+      console.error('Error calculating response time:', error);
+      return 0;
+    }
+  };
   
   const [showDirectionsModal, setShowDirectionsModal] = useState(false);
   const [directionsReport, setDirectionsReport] = useState<any>(null);
   const [previewTab, setPreviewTab] = useState("details");
   const [isPreviewEditMode, setIsPreviewEditMode] = useState(false);
   const [previewEditData, setPreviewEditData] = useState<any>(null);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [dispatchData, setDispatchData] = useState({
+    receivedBy: "",
+    timeCallReceived: "",
+    timeOfDispatch: "",
+    timeOfArrival: "",
+    hospitalArrival: "",
+    returnedToOpcen: "",
+    disasterRelated: "",
+    agencyPresent: "",
+    typeOfEmergency: "",
+    // Road Crash / Medical Emergency fields
+    classificationOfInjury: "",
+    majorInjuryChecklist: {
+      airway: false,
+      breathing: false,
+      circulation: false,
+      fractures: false,
+      headInjury: false,
+      eyeInjury: false,
+      deepLacerations: false,
+      severeBurns: false,
+      severeSymptoms: false
+    },
+    minorInjuryChecklist: {
+      shallowCuts: false,
+      sprains: false,
+      bruises: false,
+      minorBurns: false
+    },
+    // Medical Assistance fields
+    chiefComplaint: "",
+    diagnosis: "",
+    natureOfIllness: "",
+    otherNatureOfIllness: ""
+  });
+
+  // Function to upload media files to Firebase Storage
+  const handleMediaUpload = async (files: FileList) => {
+    if (!files || files.length === 0) return;
+    
+    setUploadingMedia(true);
+    const storage = getStorage();
+    const uploadedUrls: string[] = [];
+    
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const fileName = `${Date.now()}_${file.name}`;
+        const storageRef = ref(storage, `reports/${selectedReport?.id}/media/${fileName}`);
+        
+        // Upload file
+        await uploadBytes(storageRef, file);
+        
+        // Get download URL
+        const downloadURL = await getDownloadURL(storageRef);
+        uploadedUrls.push(downloadURL);
+      }
+      
+      // Update the preview data with new URLs
+      setPreviewEditData((d: any) => ({
+        ...d,
+        attachedMedia: [...(d.attachedMedia || []), ...uploadedUrls]
+      }));
+      
+      toast.success(`${files.length} file(s) uploaded successfully!`);
+    } catch (error) {
+      console.error('Error uploading media files:', error);
+      toast.error('Failed to upload media files. Please try again.');
+    } finally {
+      setUploadingMedia(false);
+    }
+  };
+
+  // Function to upload document to Firebase Storage
+  const handleDocumentUpload = async (file: File) => {
+    if (!file) return;
+    
+    setUploadingDocument(true);
+    const storage = getStorage();
+    
+    try {
+      const fileName = `${Date.now()}_${file.name}`;
+      const storageRef = ref(storage, `reports/${selectedReport?.id}/documents/${fileName}`);
+      
+      // Upload file
+      await uploadBytes(storageRef, file);
+      
+      // Get download URL
+      const downloadURL = await getDownloadURL(storageRef);
+      
+      // Update the preview data with new URL
+      setPreviewEditData((d: any) => ({
+        ...d,
+        attachedDocument: downloadURL
+      }));
+      
+      toast.success('Document uploaded successfully!');
+    } catch (error) {
+      console.error('Error uploading document:', error);
+      toast.error('Failed to upload document. Please try again.');
+    } finally {
+      setUploadingDocument(false);
+    }
+  };
+
   return (
     <Layout>
 
@@ -847,11 +978,16 @@ export function ManageReportsPage() {
                 <div className="text-sm text-gray-700">{selectedReport?.id && `Report ID: ${selectedReport.id}`}</div>
               </div>
             </div>
-            <div className="flex flex-col md:flex-row gap-8 h-[540px] flex-1">
-              {/* Left: Map Section */}
-              <div className="flex-1 min-w-[320px] flex flex-col h-full">
-                <div className="text-lg font-semibold text-gray-900 mb-2">Directions</div>
-                <div className="bg-gray-200 rounded-lg flex-1 flex items-center justify-center w-full relative">
+            {/* Navigation Tabs */}
+            <Tabs value={previewTab} onValueChange={setPreviewTab} className="w-full">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="directions">Directions</TabsTrigger>
+                <TabsTrigger value="details">Report Details</TabsTrigger>
+                <TabsTrigger value="dispatch">Dispatch Form</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="directions" className="mt-4 h-[500px]">
+                <div className="bg-gray-200 rounded-lg h-full flex items-center justify-center w-full relative">
                   {selectedReport && (
                     <div 
                       id="report-map-container"
@@ -876,87 +1012,12 @@ export function ManageReportsPage() {
                     </div>
                   )}
                 </div>
-                
-                {/* Actions Taken Section */}
-                <div className="mt-4">
-                  <div className="text-lg font-semibold text-gray-900 mb-2">Actions Taken</div>
-                  <div className="rounded-lg p-4">
-                    <div className="grid grid-cols-1 gap-4">
-                      <div>
-                        <Label htmlFor="timeOfDispatch" className="text-sm font-medium text-gray-700">Time of Dispatch</Label>
-                        <Input 
-                          id="timeOfDispatch"
-                          type="time" 
-                          value={isPreviewEditMode ? previewEditData?.timeOfDispatch || '' : selectedReport?.timeOfDispatch || ''} 
-                          onChange={e => {
-                            const newDispatchTime = e.target.value;
-                            if (isPreviewEditMode) {
-                              setPreviewEditData((d: any) => {
-                                const updatedData = { ...d, timeOfDispatch: newDispatchTime };
-                                // Calculate response time if both times are available
-                                if (newDispatchTime && updatedData.timeOfArrival) {
-                                  updatedData.responseTime = calculateResponseTime(newDispatchTime, updatedData.timeOfArrival);
-                                }
-                                return updatedData;
-                              });
-                            } else {
-                              // Update selectedReport directly when not in edit mode
-                              setSelectedReport((report: any) => {
-                                const updatedReport = { ...report, timeOfDispatch: newDispatchTime };
-                                return updatedReport;
-                              });
-                            }
-                          }} 
-                          className="mt-1"
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="timeOfArrival" className="text-sm font-medium text-gray-700">Time of Arrival</Label>
-                        <Input 
-                          id="timeOfArrival"
-                          type="time" 
-                          value={isPreviewEditMode ? previewEditData?.timeOfArrival || '' : selectedReport?.timeOfArrival || ''} 
-                          onChange={e => {
-                            const newArrivalTime = e.target.value;
-                            if (isPreviewEditMode) {
-                              setPreviewEditData((d: any) => {
-                                const updatedData = { ...d, timeOfArrival: newArrivalTime };
-                                // Calculate response time if both times are available
-                                if (updatedData.timeOfDispatch && newArrivalTime) {
-                                  updatedData.responseTime = calculateResponseTime(updatedData.timeOfDispatch, newArrivalTime);
-                                }
-                                return updatedData;
-                              });
-                            } else {
-                              // Update selectedReport directly when not in edit mode
-                              setSelectedReport((report: any) => {
-                                const updatedReport = { ...report, timeOfArrival: newArrivalTime };
-                                return updatedReport;
-                              });
-                            }
-                          }} 
-                          className="mt-1"
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="responseTime" className="text-sm font-medium text-gray-700">Response Time</Label>
-                        <div className="mt-1 p-2 bg-white rounded border border-gray-200">
-                          {(selectedReport?.timeOfDispatch && selectedReport?.timeOfArrival) ? 
-                            calculateResponseTime(selectedReport.timeOfDispatch, selectedReport.timeOfArrival) : 
-                            'Not available'}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              {/* Right: Report Details Section */}
-              <div className="flex-1 min-w-[320px] overflow-y-auto pr-2 h-full flex flex-col">
-                <div className="flex justify-between items-center mb-2">
+              </TabsContent>
+
+              <TabsContent value="details" className="mt-4 h-[500px] flex flex-col">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-2">
                   <div className="text-lg font-semibold text-gray-900">Report Details</div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     {isPreviewEditMode ? (
                       <Button size="sm" variant="outline" onClick={() => {
                         console.log('Saving changes:', previewEditData);
@@ -981,10 +1042,12 @@ export function ManageReportsPage() {
                     </Button>
                   </div>
                 </div>
-                <Table className="flex-1">
-                  <TableBody>
-                    <TableRow>
-                      <TableCell className="font-medium text-gray-700 align-top">Report Type</TableCell>
+                <div className="flex-1 overflow-y-auto border rounded-lg">
+                  <div className="overflow-x-auto">
+                    <Table className="w-full min-w-[600px]">
+                    <TableBody>
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Report Type</TableCell>
                       <TableCell>
                         {isPreviewEditMode ? (
                           <Select value={previewEditData?.type} onValueChange={v => setPreviewEditData((d: any) => ({ ...d, type: v }))}>
@@ -1004,7 +1067,7 @@ export function ManageReportsPage() {
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium text-gray-700 align-top">Reported By</TableCell>
+                      <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Reported By</TableCell>
                       <TableCell>
                         {isPreviewEditMode ? (
                           <Input value={previewEditData?.reportedBy} onChange={e => setPreviewEditData((d: any) => ({ ...d, reportedBy: e.target.value }))} />
@@ -1024,7 +1087,7 @@ export function ManageReportsPage() {
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium text-gray-700 align-top">Mobile Number</TableCell>
+                      <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Mobile Number</TableCell>
                       <TableCell>
                         {isPreviewEditMode ? (
                           <Input value={previewEditData?.mobileNumber} onChange={e => setPreviewEditData((d: any) => ({ ...d, mobileNumber: e.target.value }))} />
@@ -1034,7 +1097,7 @@ export function ManageReportsPage() {
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium text-gray-700 align-top">Barangay</TableCell>
+                      <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Barangay</TableCell>
                       <TableCell>
                         {isPreviewEditMode ? (
                           <Select value={previewEditData?.barangay} onValueChange={v => setPreviewEditData((d: any) => ({ ...d, barangay: v }))}>
@@ -1049,7 +1112,7 @@ export function ManageReportsPage() {
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium text-gray-700 align-top">Description</TableCell>
+                      <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Description</TableCell>
                       <TableCell>
                         {isPreviewEditMode ? (
                           <Textarea value={previewEditData?.description} onChange={e => setPreviewEditData((d: any) => ({ ...d, description: e.target.value }))} />
@@ -1059,7 +1122,7 @@ export function ManageReportsPage() {
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium text-gray-700 align-top">Responders</TableCell>
+                      <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Responders</TableCell>
                       <TableCell>
                         {isPreviewEditMode ? (
                           <Input value={previewEditData?.responders} onChange={e => setPreviewEditData((d: any) => ({ ...d, responders: e.target.value }))} />
@@ -1069,7 +1132,7 @@ export function ManageReportsPage() {
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium text-gray-700 align-top">Location</TableCell>
+                      <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Location</TableCell>
                       <TableCell>
                         {isPreviewEditMode ? (
                           <Input value={previewEditData?.location} onChange={e => setPreviewEditData((d: any) => ({ ...d, location: e.target.value }))} />
@@ -1082,7 +1145,7 @@ export function ManageReportsPage() {
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium text-gray-700 align-top">Status</TableCell>
+                      <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Status</TableCell>
                       <TableCell>
                         {isPreviewEditMode ? (
                           <Select value={previewEditData?.status} onValueChange={v => setPreviewEditData((d: any) => ({ ...d, status: v }))}>
@@ -1110,69 +1173,432 @@ export function ManageReportsPage() {
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium text-gray-700 align-top">Date Submitted</TableCell>
+                      <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Date Submitted</TableCell>
                       <TableCell>
                         {selectedReport?.dateSubmitted}
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium text-gray-700 align-top">Time Submitted</TableCell>
+                      <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Time Submitted</TableCell>
                       <TableCell>
                         {selectedReport?.timeSubmitted}
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium text-gray-700 align-top">Attached Media</TableCell>
+                      <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Attached Media</TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-2 mb-2">
-                          {selectedReport?.attachedMedia?.map((media: string, index: number) => (
-                            <div key={index} className="flex items-center gap-2 bg-gray-100 p-2 rounded">
-                              <Image className="h-4 w-4" />
-                              <span className="text-sm">{media}</span>
-                            </div>
-                          ))}
+                          {selectedReport?.attachedMedia?.map((media: string, index: number) => {
+                            // Truncate filename if too long
+                            const truncatedName = media.length > 20 ? `${media.substring(0, 20)}...` : media;
+                            const fileExtension = media.split('.').pop()?.toLowerCase();
+                            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(fileExtension || '');
+                            
+                            return (
+                              <div 
+                                key={index} 
+                                className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 p-2 rounded cursor-pointer transition-colors group"
+                                 onClick={() => {
+                                   // Open image in new tab or show in modal
+                                   if (isImage) {
+                                     window.open(media, '_blank');
+                                   } else {
+                                     // For non-images, you could implement a download or preview
+                                     window.open(media, '_blank');
+                                   }
+                                 }}
+                                title={media} // Show full filename on hover
+                              >
+                                {isImage ? (
+                                  <Image className="h-4 w-4 text-blue-600" />
+                                ) : (
+                                  <FileIcon className="h-4 w-4 text-gray-600" />
+                                )}
+                                <span className="text-sm text-gray-700 group-hover:text-blue-600 transition-colors">
+                                  {truncatedName}
+                                </span>
+                              </div>
+                            );
+                          })}
                         </div>
-                        {isPreviewEditMode && (
-                          <div className="border-2 border-dashed border-gray-300 rounded-lg p-2 text-center mb-2">
-                            <Input type="file" multiple accept="image/*,video/*" onChange={e => {
-                              const files = Array.from(e.target.files || []);
-                              setPreviewEditData((d: any) => ({
-                                ...d,
-                                attachedMedia: [...(d.attachedMedia || []), ...files.map(f => f.name)]
-                              }));
-                            }} />
-                            <p className="text-xs text-gray-500 mt-1">Attach more photos or videos</p>
-                          </div>
-                        )}
+                         {isPreviewEditMode && (
+                           <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center mb-2">
+                             <Upload className="h-6 w-6 mx-auto text-gray-400 mb-2" />
+                             <p className="text-sm text-gray-600 mb-2">Attach more photos or videos</p>
+                             <Input 
+                               type="file" 
+                               multiple 
+                               accept="image/*,video/*" 
+                               onChange={e => {
+                                 if (e.target.files) {
+                                   handleMediaUpload(e.target.files);
+                                 }
+                               }} 
+                               className="w-full"
+                               disabled={uploadingMedia}
+                             />
+                             {uploadingMedia && (
+                               <div className="mt-2 text-sm text-blue-600">
+                                 Uploading files...
+                               </div>
+                             )}
+                           </div>
+                         )}
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium text-gray-700 align-top">Attached Document</TableCell>
+                      <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Attached Document</TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2 bg-gray-100 p-2 rounded mb-2">
-                          <FileIcon className="h-4 w-4" />
-                          <span className="text-sm">{selectedReport?.attachedDocument}</span>
-                        </div>
-                        {isPreviewEditMode && (
-                          <div className="border-2 border-dashed border-gray-300 rounded-lg p-2 text-center">
-                            <Input type="file" accept=".pdf,.doc,.docx" onChange={e => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                setPreviewEditData((d: any) => ({
-                                  ...d,
-                                  attachedDocument: file.name
-                                }));
-                              }
-                            }} />
-                            <p className="text-xs text-gray-500 mt-1">Attach a document</p>
+                        {selectedReport?.attachedDocument && (
+                          <div 
+                            className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 p-2 rounded mb-2 cursor-pointer transition-colors group"
+                            onClick={() => {
+                              // Open document in new tab or trigger download
+                              window.open(selectedReport.attachedDocument, '_blank');
+                            }}
+                            title={selectedReport.attachedDocument} // Show full filename on hover
+                          >
+                            <FileIcon className="h-4 w-4 text-gray-600 group-hover:text-blue-600 transition-colors" />
+                            <span className="text-sm text-gray-700 group-hover:text-blue-600 transition-colors">
+                              {selectedReport.attachedDocument.length > 25 
+                                ? `${selectedReport.attachedDocument.substring(0, 25)}...` 
+                                : selectedReport.attachedDocument}
+                            </span>
                           </div>
                         )}
+                         {isPreviewEditMode && (
+                           <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                             <FileIcon className="h-6 w-6 mx-auto text-gray-400 mb-2" />
+                             <p className="text-sm text-gray-600 mb-2">Attach a document</p>
+                             <Input 
+                               type="file" 
+                               accept=".pdf,.doc,.docx" 
+                               onChange={e => {
+                                 const file = e.target.files?.[0];
+                                 if (file) {
+                                   handleDocumentUpload(file);
+                                 }
+                               }} 
+                               className="w-full"
+                               disabled={uploadingDocument}
+                             />
+                             {uploadingDocument && (
+                               <div className="mt-2 text-sm text-blue-600">
+                                 Uploading document...
+                               </div>
+                             )}
+                           </div>
+                         )}
                       </TableCell>
                     </TableRow>
                   </TableBody>
-                </Table>
-              </div>
-            </div>
+                  </Table>
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="dispatch" className="mt-4 h-[500px] overflow-y-auto">
+                <div className="space-y-6 p-4">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
+                    <div className="text-lg font-semibold text-gray-900">Dispatch Form</div>
+                  </div>
+                  
+                  {/* I. Dispatch Information */}
+                  <div className="space-y-4">
+                    <h3 className="text-md font-semibold text-gray-800 border-b pb-2">I. Dispatch Information</h3>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="receivedBy" className="text-sm font-medium text-gray-700">Received by:</Label>
+                        <Input 
+                          id="receivedBy"
+                          value={dispatchData.receivedBy}
+                          onChange={e => setDispatchData(prev => ({ ...prev, receivedBy: e.target.value }))}
+                          placeholder="Enter name"
+                          className="mt-1"
+                        />
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="timeCallReceived" className="text-sm font-medium text-gray-700">Time Call Received:</Label>
+                        <Input 
+                          id="timeCallReceived"
+                          type="time"
+                          value={dispatchData.timeCallReceived}
+                          onChange={e => setDispatchData(prev => ({ ...prev, timeCallReceived: e.target.value }))}
+                          className="mt-1"
+                        />
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="timeOfDispatch" className="text-sm font-medium text-gray-700">Time of Dispatch:</Label>
+                        <Input 
+                          id="timeOfDispatch"
+                          type="time"
+                          value={dispatchData.timeOfDispatch}
+                          onChange={e => setDispatchData(prev => ({ ...prev, timeOfDispatch: e.target.value }))}
+                          className="mt-1"
+                        />
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="timeOfArrival" className="text-sm font-medium text-gray-700">Time of Arrival:</Label>
+                        <Input 
+                          id="timeOfArrival"
+                          type="time"
+                          value={dispatchData.timeOfArrival}
+                          onChange={e => setDispatchData(prev => ({ ...prev, timeOfArrival: e.target.value }))}
+                          className="mt-1"
+                        />
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="responseTime" className="text-sm font-medium text-gray-700">Response Time (minutes):</Label>
+                        <div className="mt-1 p-3 bg-gray-50 rounded border border-gray-200">
+                          {dispatchData.timeOfDispatch && dispatchData.timeOfArrival ? 
+                            calculateResponseTimeMinutes(dispatchData.timeOfDispatch, dispatchData.timeOfArrival) + ' minutes' : 
+                            'Not available - Please fill in both dispatch and arrival times'}
+                        </div>
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="hospitalArrival" className="text-sm font-medium text-gray-700">Hospital Arrival:</Label>
+                        <Input 
+                          id="hospitalArrival"
+                          type="time"
+                          value={dispatchData.hospitalArrival}
+                          onChange={e => setDispatchData(prev => ({ ...prev, hospitalArrival: e.target.value }))}
+                          className="mt-1"
+                        />
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="returnedToOpcen" className="text-sm font-medium text-gray-700">Returned to OPCEN:</Label>
+                        <Input 
+                          id="returnedToOpcen"
+                          type="time"
+                          value={dispatchData.returnedToOpcen}
+                          onChange={e => setDispatchData(prev => ({ ...prev, returnedToOpcen: e.target.value }))}
+                          className="mt-1"
+                        />
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="disasterRelated" className="text-sm font-medium text-gray-700">Disaster Related:</Label>
+                        <Select value={dispatchData.disasterRelated} onValueChange={value => setDispatchData(prev => ({ ...prev, disasterRelated: value }))}>
+                          <SelectTrigger className="mt-1">
+                            <SelectValue placeholder="Choose Yes or No" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Yes">Yes</SelectItem>
+                            <SelectItem value="No">No</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="agencyPresent" className="text-sm font-medium text-gray-700">Agency Present:</Label>
+                        <Select value={dispatchData.agencyPresent} onValueChange={value => setDispatchData(prev => ({ ...prev, agencyPresent: value }))}>
+                          <SelectTrigger className="mt-1">
+                            <SelectValue placeholder="Choose Agency" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="PNP">PNP</SelectItem>
+                            <SelectItem value="BFP">BFP</SelectItem>
+                            <SelectItem value="MTMO">MTMO</SelectItem>
+                            <SelectItem value="BPOC">BPOC</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="typeOfEmergency" className="text-sm font-medium text-gray-700">Type of Emergency:</Label>
+                        <Select value={dispatchData.typeOfEmergency} onValueChange={value => setDispatchData(prev => ({ ...prev, typeOfEmergency: value }))}>
+                          <SelectTrigger className="mt-1">
+                            <SelectValue placeholder="Choose Type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Road Crash">Road Crash</SelectItem>
+                            <SelectItem value="Medical Assistance">Medical Assistance</SelectItem>
+                            <SelectItem value="Medical Emergency">Medical Emergency</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Road Crash / Medical Emergency Fields */}
+                  {(dispatchData.typeOfEmergency === "Road Crash" || dispatchData.typeOfEmergency === "Medical Emergency") && (
+                    <div className="space-y-4">
+                      <h3 className="text-md font-semibold text-gray-800 border-b pb-2">Classification of Injury</h3>
+                      
+                      <div>
+                        <Label className="text-sm font-medium text-gray-700">Classification of Injury:</Label>
+                        <div className="mt-2 space-x-4">
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              name="classificationOfInjury"
+                              value="Major"
+                              checked={dispatchData.classificationOfInjury === "Major"}
+                              onChange={e => setDispatchData(prev => ({ ...prev, classificationOfInjury: e.target.value }))}
+                              className="text-blue-600"
+                            />
+                            <span className="text-sm">Major</span>
+                          </label>
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              name="classificationOfInjury"
+                              value="Minor"
+                              checked={dispatchData.classificationOfInjury === "Minor"}
+                              onChange={e => setDispatchData(prev => ({ ...prev, classificationOfInjury: e.target.value }))}
+                              className="text-blue-600"
+                            />
+                            <span className="text-sm">Minor</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Major Injury Checklist */}
+                      {dispatchData.classificationOfInjury === "Major" && (
+                        <div className="space-y-3">
+                          <h4 className="text-sm font-semibold text-gray-700">Major Injury Checklist:</h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            {Object.entries(dispatchData.majorInjuryChecklist).map(([key, value]) => (
+                              <label key={key} className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  checked={value}
+                                  onChange={e => setDispatchData(prev => ({
+                                    ...prev,
+                                    majorInjuryChecklist: {
+                                      ...prev.majorInjuryChecklist,
+                                      [key]: e.target.checked
+                                    }
+                                  }))}
+                                  className="text-blue-600"
+                                />
+                                <span className="text-sm capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Minor Injury Checklist */}
+                      {dispatchData.classificationOfInjury === "Minor" && (
+                        <div className="space-y-3">
+                          <h4 className="text-sm font-semibold text-gray-700">Minor Injury Checklist:</h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            {Object.entries(dispatchData.minorInjuryChecklist).map(([key, value]) => (
+                              <label key={key} className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  checked={value}
+                                  onChange={e => setDispatchData(prev => ({
+                                    ...prev,
+                                    minorInjuryChecklist: {
+                                      ...prev.minorInjuryChecklist,
+                                      [key]: e.target.checked
+                                    }
+                                  }))}
+                                  className="text-blue-600"
+                                />
+                                <span className="text-sm capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Medical Assistance Fields */}
+                  {dispatchData.typeOfEmergency === "Medical Assistance" && (
+                    <div className="space-y-4">
+                      <h3 className="text-md font-semibold text-gray-800 border-b pb-2">Medical Assistance Details</h3>
+                      
+                      <div>
+                        <Label htmlFor="chiefComplaint" className="text-sm font-medium text-gray-700">Chief Complaint:</Label>
+                        <Input 
+                          id="chiefComplaint"
+                          value={dispatchData.chiefComplaint}
+                          onChange={e => setDispatchData(prev => ({ ...prev, chiefComplaint: e.target.value }))}
+                          placeholder="Short description"
+                          className="mt-1"
+                        />
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="diagnosis" className="text-sm font-medium text-gray-700">Diagnosis:</Label>
+                        <Input 
+                          id="diagnosis"
+                          value={dispatchData.diagnosis}
+                          onChange={e => setDispatchData(prev => ({ ...prev, diagnosis: e.target.value }))}
+                          placeholder="Short description"
+                          className="mt-1"
+                        />
+                      </div>
+                      
+                      <div>
+                        <Label className="text-sm font-medium text-gray-700">Nature of Illness:</Label>
+                        <div className="mt-2 space-y-2">
+                          {[
+                            "Infectious disease",
+                            "Lung disease", 
+                            "Cancer",
+                            "Cardiovascular disease",
+                            "Neurological disorder",
+                            "Skin disease",
+                            "Mental health issues",
+                            "Autoimmune disease",
+                            "Inflammatory conditions",
+                            "Metabolic disorder",
+                            "Other"
+                          ].map(illness => (
+                            <label key={illness} className="flex items-center space-x-2">
+                              <input
+                                type="radio"
+                                name="natureOfIllness"
+                                value={illness}
+                                checked={dispatchData.natureOfIllness === illness}
+                                onChange={e => setDispatchData(prev => ({ ...prev, natureOfIllness: e.target.value }))}
+                                className="text-blue-600"
+                              />
+                              <span className="text-sm">{illness}</span>
+                            </label>
+                          ))}
+                        </div>
+                        
+                        {dispatchData.natureOfIllness === "Other" && (
+                          <div className="mt-2">
+                            <Input 
+                              value={dispatchData.otherNatureOfIllness}
+                              onChange={e => setDispatchData(prev => ({ ...prev, otherNatureOfIllness: e.target.value }))}
+                              placeholder="Please specify"
+                              className="mt-1"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => setPreviewTab("details")}>
+                      Cancel
+                    </Button>
+                    <Button onClick={() => {
+                      console.log('Saving dispatch form data:', dispatchData);
+                      // Add dispatch form save logic here
+                    }}>
+                      Save Dispatch
+                    </Button>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
           </DialogContent>
         </Dialog>
       </div>
