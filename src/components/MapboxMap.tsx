@@ -350,6 +350,7 @@ export function MapboxMap({
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
   const popupRef = useRef<mapboxgl.Popup | null>(null);
 
@@ -381,31 +382,95 @@ export function MapboxMap({
 
   // Initialize map
   useEffect(() => {
-    if (!mapContainer.current) return;
+    const initializeMap = () => {
+      if (!mapContainer.current) {
+        console.log('Map container not ready');
+        return;
+      }
 
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
-      center: center,
-      zoom: zoom
-    });
+      // Check if Mapbox access token is available
+      if (!mapboxgl.accessToken) {
+        console.error('Mapbox access token is not available');
+        setMapError('Mapbox access token is not configured');
+        return;
+      }
 
-    map.current.on('load', () => {
-      setMapLoaded(true);
-    });
+      console.log('Initializing map with center:', center, 'zoom:', zoom);
 
-    if (onMapClick) {
-      map.current.on('click', (e) => {
-        onMapClick(e.lngLat);
-      });
-    }
+      // Set a timeout to handle cases where map doesn't load
+      const loadTimeout = setTimeout(() => {
+        if (!mapLoaded) {
+          console.error('Map load timeout');
+          setMapError('Map failed to load within timeout');
+        }
+      }, 10000); // 10 second timeout
 
-    return () => {
-      if (map.current) {
-        map.current.remove();
+      try {
+        // Clean up existing map
+        if (map.current) {
+          map.current.remove();
+          map.current = null;
+        }
+
+        map.current = new mapboxgl.Map({
+          container: mapContainer.current,
+          style: 'mapbox://styles/mapbox/streets-v12',
+          center: center,
+          zoom: zoom
+        });
+
+        map.current.on('load', () => {
+          console.log('Map loaded successfully');
+          clearTimeout(loadTimeout);
+          setMapLoaded(true);
+          setMapError(null);
+        });
+
+        map.current.on('error', (e) => {
+          console.error('Map error:', e);
+          clearTimeout(loadTimeout);
+          setMapError('Failed to load map');
+        });
+
+        if (onMapClick) {
+          map.current.on('click', (e) => {
+            onMapClick(e.lngLat);
+          });
+        }
+
+        return () => {
+          clearTimeout(loadTimeout);
+          if (map.current) {
+            map.current.remove();
+            map.current = null;
+          }
+        };
+      } catch (error) {
+        console.error('Error initializing map:', error);
+        clearTimeout(loadTimeout);
+        setMapError('Failed to initialize map');
       }
     };
-  }, []);
+
+    // Use a small delay to ensure the container is properly rendered
+    const timer = setTimeout(initializeMap, 100);
+
+    return () => {
+      clearTimeout(timer);
+      if (map.current) {
+        map.current.remove();
+        map.current = null;
+      }
+    };
+  }, []); // Remove dependencies to prevent re-initialization
+
+  // Handle center and zoom changes
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+
+    map.current.setCenter(center);
+    map.current.setZoom(zoom);
+  }, [center, zoom, mapLoaded]);
 
   // Handle markers and popups
   useEffect(() => {
@@ -554,10 +619,43 @@ export function MapboxMap({
   }, [showHeatmap, mapLoaded]);
 
   return (
-    <div 
-      ref={mapContainer} 
-      className="w-full h-full"
-      style={{ position: 'absolute', top: 0, bottom: 0, width: '100%' }}
-    />
+    <div className="w-full h-full relative">
+      <div 
+        ref={mapContainer} 
+        className="w-full h-full"
+        style={{ width: '100%', height: '100%', minHeight: '400px' }}
+      />
+      {!mapLoaded && !mapError && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+            <p className="text-sm text-gray-600">Loading map...</p>
+            <p className="text-xs text-gray-500 mt-1">This may take a few seconds</p>
+          </div>
+        </div>
+      )}
+      {mapError && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+          <div className="text-center text-red-600">
+            <p className="text-sm font-medium">{mapError}</p>
+            <p className="text-xs mt-1">Check console for details</p>
+            <button 
+              onClick={() => {
+                setMapError(null);
+                setMapLoaded(false);
+                // Force re-initialization
+                if (mapContainer.current) {
+                  const event = new Event('resize');
+                  window.dispatchEvent(event);
+                }
+              }}
+              className="mt-2 px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

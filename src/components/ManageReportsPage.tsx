@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { MapboxMap } from "./MapboxMap";
 import { db } from "@/lib/firebase";
@@ -200,6 +201,117 @@ export function ManageReportsPage() {
     navigate("/manage-users");
   };
   const barangayOptions = ["Brgy. Poblacion", "Brgy. San Roque", "Brgy. Magsaysay", "Brgy. Santo Niño", "Brgy. San Antonio", "Brgy. Santa Cruz"];
+  const adminOptions = ["Admin 1", "Admin 2", "Admin 3", "Admin 4", "Admin 5"];
+  const agencyOptions = ["PNP", "BFP", "MTMO", "BPOC"];
+  const emergencyTypeOptions = ["Road Crash", "Medical Assistance", "Medical Emergency"];
+  const injuryClassificationOptions = ["Major", "Minor"];
+  const majorInjuryTypeOptions = [
+    "Airway",
+    "Breathing",
+    "Circulation",
+    "Fractures",
+    "Head Injury",
+    "Eye Injury",
+    "Deep Lacerations",
+    "Severe/Extensive Burns",
+    "Injuries with Chest Pain, Paralysis, Confusion, Severe Bleeding, Unconsciousness"
+  ];
+  const minorInjuryTypeOptions = [
+    "Shallow Cuts or Abrasions",
+    "Sprains and Muscle Strain",
+    "Bruises",
+    "Minor Burns Covering Small Area of Skin"
+  ];
+  const majorMedicalSymptomsOptions = [
+    "Unconsciousness",
+    "Severe Chest Pain",
+    "Difficulty Breathing",
+    "Severe Bleeding",
+    "Cardiac Arrest",
+    "Stroke Symptoms",
+    "Severe Allergic Reaction",
+    "Severe Burns",
+    "Multiple Trauma",
+    "Severe Head Injury",
+    "Airway Obstruction",
+    "Severe Dehydration",
+    "Severe Abdominal Pain",
+    "High Fever with Confusion",
+    "Severe Nausea/Vomiting"
+  ];
+  const minorMedicalSymptomsOptions = [
+    "Mild Chest Discomfort",
+    "Minor Cuts/Abrasions",
+    "Mild Burns",
+    "Minor Headache",
+    "Mild Nausea",
+    "Low-grade Fever",
+    "Mild Abdominal Pain",
+    "Minor Allergic Reaction",
+    "Mild Dehydration",
+    "Minor Sprains",
+    "Mild Breathing Difficulty",
+    "Moderate Bleeding",
+    "Moderate Burns",
+    "Moderate Head Injury"
+  ];
+  const natureOfIllnessOptions = [
+    "Infectious disease",
+    "Lung disease",
+    "Cancer",
+    "Cardiovascular disease",
+    "Neurological disorder",
+    "Skin disease",
+    "Mental health issues",
+    "Autoimmune disease",
+    "Inflammatory conditions",
+    "Metabolic disorder",
+    "Others"
+  ];
+  const actionsTakenOptions = [
+    "Ensured scene safety",
+    "Coordinated with on-scene personnel",
+    "Coordinated with PNP",
+    "Coordinated with BFP",
+    "Coordinated with MTMO",
+    "Coordinated and Contacted Relative",
+    "Primary and Secondary Assessments",
+    "First Aid Management Done",
+    "Vital Signs Taken (Temperature, pulse rate, respiratory rate, blood pressure)",
+    "Interviewed patient or relative/s",
+    "Coordinated with RHU",
+    "Coordinated with Refer Quezon",
+    "Referred to (Short Desc)",
+    "Endorsed patient/s to nurse on duty",
+    "Assisted patient/s in Response Vehicle",
+    "Transport from (Place from) to (Place to)",
+    "Others (Short Desc)"
+  ];
+  const [teamOptions, setTeamOptions] = useState([
+    "Alpha Team",
+    "Bravo Team", 
+    "Charlie Team",
+    "Delta Team",
+    "Echo Team"
+  ]);
+  const [driverOptions, setDriverOptions] = useState([
+    "John Smith",
+    "Jane Doe",
+    "Mike Johnson",
+    "Sarah Wilson",
+    "David Brown"
+  ]);
+  const [responderOptions, setResponderOptions] = useState([
+    "Paramedic",
+    "EMT",
+    "Nurse",
+    "Doctor",
+    "Firefighter",
+    "Police Officer",
+    "Rescue Team Member",
+    "Volunteer",
+    "Other"
+  ]);
   const truncateLocation = (location: string, maxLength: number = 30) => {
     return location.length > maxLength ? `${location.substring(0, maxLength)}...` : location;
   };
@@ -323,30 +435,33 @@ export function ManageReportsPage() {
     disasterRelated: "",
     agencyPresent: "",
     typeOfEmergency: "",
-    // Road Crash / Medical Emergency fields
-    classificationOfInjury: "",
-    majorInjuryChecklist: {
-      airway: false,
-      breathing: false,
-      circulation: false,
-      fractures: false,
-      headInjury: false,
-      eyeInjury: false,
-      deepLacerations: false,
-      severeBurns: false,
-      severeSymptoms: false
-    },
-    minorInjuryChecklist: {
-      shallowCuts: false,
-      sprains: false,
-      bruises: false,
-      minorBurns: false
-    },
-    // Medical Assistance fields
+    injuryClassification: "",
+    majorInjuryTypes: [] as string[],
+    minorInjuryTypes: [] as string[],
+    medicalClassification: "",
+    majorMedicalSymptoms: [] as string[],
+    minorMedicalSymptoms: [] as string[],
     chiefComplaint: "",
     diagnosis: "",
     natureOfIllness: "",
-    otherNatureOfIllness: ""
+    natureOfIllnessOthers: "",
+    actionsTaken: [] as string[],
+    referredTo: "",
+    transportFrom: "",
+    transportTo: "",
+    othersDescription: "",
+    vitalSigns: {
+      temperature: "",
+      pulseRate: "",
+      respiratoryRate: "",
+      bloodPressure: ""
+    },
+    responders: [] as Array<{
+      id: string;
+      team: string;
+      driver: string;
+      responder: string;
+    }>
   });
 
   // Function to upload media files to Firebase Storage
@@ -970,7 +1085,7 @@ export function ManageReportsPage() {
 
         {/* Preview Report Modal */}
         <Dialog open={showPreviewModal} onOpenChange={setShowPreviewModal}>
-          <DialogContent className="sm:max-w-[900px] h-[700px] max-h-[90vh] bg-white flex flex-col">
+          <DialogContent className="sm:max-w-[900px] max-h-[90vh] bg-white flex flex-col overflow-hidden">
             {/* Header Row: Title, ID, and Action Buttons */}
             <div className="flex items-center justify-between mb-6">
               <div>
@@ -979,19 +1094,20 @@ export function ManageReportsPage() {
               </div>
             </div>
             {/* Navigation Tabs */}
-            <Tabs value={previewTab} onValueChange={setPreviewTab} className="w-full">
+            <Tabs value={previewTab} onValueChange={setPreviewTab} className="w-full flex-1 flex flex-col">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="directions">Directions</TabsTrigger>
                 <TabsTrigger value="details">Report Details</TabsTrigger>
                 <TabsTrigger value="dispatch">Dispatch Form</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="directions" className="mt-4 h-[500px]">
-                <div className="bg-gray-200 rounded-lg h-full flex items-center justify-center w-full relative">
-                  {selectedReport && (
+              <TabsContent value="directions" className="mt-4 flex-1 min-h-0">
+                <div className="bg-gray-200 rounded-lg h-full w-full relative" style={{ minHeight: '400px' }}>
+                  {selectedReport ? (
                     <div 
                       id="report-map-container"
-                      className="w-full h-full rounded-lg overflow-hidden absolute inset-0"
+                      className="w-full h-full rounded-lg overflow-hidden"
+                      style={{ minHeight: '400px' }}
                     >
                       <MapboxMap 
                         center={selectedReport.coordinates ? 
@@ -1010,11 +1126,18 @@ export function ManageReportsPage() {
                         }}
                       />
                     </div>
+                  ) : (
+                    <div className="text-gray-500 text-center flex items-center justify-center h-full">
+                      <div>
+                        <MapPin className="h-12 w-12 mx-auto mb-2" />
+                        <p>No location data available</p>
+                      </div>
+                    </div>
                   )}
                 </div>
               </TabsContent>
 
-              <TabsContent value="details" className="mt-4 h-[500px] flex flex-col">
+              <TabsContent value="details" className="mt-4 flex-1 min-h-0 flex flex-col">
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-2">
                   <div className="text-lg font-semibold text-gray-900">Report Details</div>
                   <div className="flex gap-2 flex-wrap">
@@ -1042,8 +1165,8 @@ export function ManageReportsPage() {
                     </Button>
                   </div>
                 </div>
-                <div className="flex-1 overflow-y-auto border rounded-lg">
-                  <div className="overflow-x-auto">
+                <div className="flex-1 overflow-y-auto border rounded-lg min-h-0">
+                  <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
                     <Table className="w-full min-w-[600px]">
                     <TableBody>
                       <TableRow>
@@ -1297,307 +1420,1076 @@ export function ManageReportsPage() {
                 </div>
               </TabsContent>
 
-              <TabsContent value="dispatch" className="mt-4 h-[500px] overflow-y-auto">
-                <div className="space-y-6 p-4">
-                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-                    <div className="text-lg font-semibold text-gray-900">Dispatch Form</div>
+              <TabsContent value="dispatch" className="mt-4 flex-1 min-h-0 flex flex-col">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-2">
+                  <div className="text-lg font-semibold text-gray-900">Dispatch Form</div>
+                  <div className="flex gap-2 flex-wrap">
+                    {isPreviewEditMode ? (
+                      <Button size="sm" className="bg-[#FF4F0B] text-white hover:bg-[#FF4F0B]/90" onClick={() => {
+                        console.log('Saving dispatch form:', dispatchData);
+                        // Add save logic here
+                        toast.success('Dispatch form saved successfully!');
+                      }}>
+                        Save
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="outline" onClick={() => {
+                        setIsPreviewEditMode(true);
+                      }}>
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
-                  
-                  {/* I. Dispatch Information */}
-                  <div className="space-y-4">
-                    <h3 className="text-md font-semibold text-gray-800 border-b pb-2">I. Dispatch Information</h3>
-                    
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="receivedBy" className="text-sm font-medium text-gray-700">Received by:</Label>
-                        <Input 
-                          id="receivedBy"
-                          value={dispatchData.receivedBy}
-                          onChange={e => setDispatchData(prev => ({ ...prev, receivedBy: e.target.value }))}
-                          placeholder="Enter name"
-                          className="mt-1"
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="timeCallReceived" className="text-sm font-medium text-gray-700">Time Call Received:</Label>
-                        <Input 
-                          id="timeCallReceived"
-                          type="time"
-                          value={dispatchData.timeCallReceived}
-                          onChange={e => setDispatchData(prev => ({ ...prev, timeCallReceived: e.target.value }))}
-                          className="mt-1"
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="timeOfDispatch" className="text-sm font-medium text-gray-700">Time of Dispatch:</Label>
-                        <Input 
-                          id="timeOfDispatch"
-                          type="time"
-                          value={dispatchData.timeOfDispatch}
-                          onChange={e => setDispatchData(prev => ({ ...prev, timeOfDispatch: e.target.value }))}
-                          className="mt-1"
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="timeOfArrival" className="text-sm font-medium text-gray-700">Time of Arrival:</Label>
-                        <Input 
-                          id="timeOfArrival"
-                          type="time"
-                          value={dispatchData.timeOfArrival}
-                          onChange={e => setDispatchData(prev => ({ ...prev, timeOfArrival: e.target.value }))}
-                          className="mt-1"
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="responseTime" className="text-sm font-medium text-gray-700">Response Time (minutes):</Label>
-                        <div className="mt-1 p-3 bg-gray-50 rounded border border-gray-200">
-                          {dispatchData.timeOfDispatch && dispatchData.timeOfArrival ? 
-                            calculateResponseTimeMinutes(dispatchData.timeOfDispatch, dispatchData.timeOfArrival) + ' minutes' : 
-                            'Not available - Please fill in both dispatch and arrival times'}
-                        </div>
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="hospitalArrival" className="text-sm font-medium text-gray-700">Hospital Arrival:</Label>
-                        <Input 
-                          id="hospitalArrival"
-                          type="time"
-                          value={dispatchData.hospitalArrival}
-                          onChange={e => setDispatchData(prev => ({ ...prev, hospitalArrival: e.target.value }))}
-                          className="mt-1"
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="returnedToOpcen" className="text-sm font-medium text-gray-700">Returned to OPCEN:</Label>
-                        <Input 
-                          id="returnedToOpcen"
-                          type="time"
-                          value={dispatchData.returnedToOpcen}
-                          onChange={e => setDispatchData(prev => ({ ...prev, returnedToOpcen: e.target.value }))}
-                          className="mt-1"
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="disasterRelated" className="text-sm font-medium text-gray-700">Disaster Related:</Label>
-                        <Select value={dispatchData.disasterRelated} onValueChange={value => setDispatchData(prev => ({ ...prev, disasterRelated: value }))}>
-                          <SelectTrigger className="mt-1">
-                            <SelectValue placeholder="Choose Yes or No" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Yes">Yes</SelectItem>
-                            <SelectItem value="No">No</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="agencyPresent" className="text-sm font-medium text-gray-700">Agency Present:</Label>
-                        <Select value={dispatchData.agencyPresent} onValueChange={value => setDispatchData(prev => ({ ...prev, agencyPresent: value }))}>
-                          <SelectTrigger className="mt-1">
-                            <SelectValue placeholder="Choose Agency" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="PNP">PNP</SelectItem>
-                            <SelectItem value="BFP">BFP</SelectItem>
-                            <SelectItem value="MTMO">MTMO</SelectItem>
-                            <SelectItem value="BPOC">BPOC</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="typeOfEmergency" className="text-sm font-medium text-gray-700">Type of Emergency:</Label>
-                        <Select value={dispatchData.typeOfEmergency} onValueChange={value => setDispatchData(prev => ({ ...prev, typeOfEmergency: value }))}>
-                          <SelectTrigger className="mt-1">
-                            <SelectValue placeholder="Choose Type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="Road Crash">Road Crash</SelectItem>
-                            <SelectItem value="Medical Assistance">Medical Assistance</SelectItem>
-                            <SelectItem value="Medical Emergency">Medical Emergency</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Road Crash / Medical Emergency Fields */}
-                  {(dispatchData.typeOfEmergency === "Road Crash" || dispatchData.typeOfEmergency === "Medical Emergency") && (
-                    <div className="space-y-4">
-                      <h3 className="text-md font-semibold text-gray-800 border-b pb-2">Classification of Injury</h3>
-                      
-                      <div>
-                        <Label className="text-sm font-medium text-gray-700">Classification of Injury:</Label>
-                        <div className="mt-2 space-x-4">
-                          <label className="flex items-center space-x-2">
-                            <input
-                              type="radio"
-                              name="classificationOfInjury"
-                              value="Major"
-                              checked={dispatchData.classificationOfInjury === "Major"}
-                              onChange={e => setDispatchData(prev => ({ ...prev, classificationOfInjury: e.target.value }))}
-                              className="text-blue-600"
-                            />
-                            <span className="text-sm">Major</span>
-                          </label>
-                          <label className="flex items-center space-x-2">
-                            <input
-                              type="radio"
-                              name="classificationOfInjury"
-                              value="Minor"
-                              checked={dispatchData.classificationOfInjury === "Minor"}
-                              onChange={e => setDispatchData(prev => ({ ...prev, classificationOfInjury: e.target.value }))}
-                              className="text-blue-600"
-                            />
-                            <span className="text-sm">Minor</span>
-                          </label>
-                        </div>
-                      </div>
-
-                      {/* Major Injury Checklist */}
-                      {dispatchData.classificationOfInjury === "Major" && (
-                        <div className="space-y-3">
-                          <h4 className="text-sm font-semibold text-gray-700">Major Injury Checklist:</h4>
-                          <div className="grid grid-cols-2 gap-2">
-                            {Object.entries(dispatchData.majorInjuryChecklist).map(([key, value]) => (
-                              <label key={key} className="flex items-center space-x-2">
-                                <input
-                                  type="checkbox"
-                                  checked={value}
-                                  onChange={e => setDispatchData(prev => ({
-                                    ...prev,
-                                    majorInjuryChecklist: {
-                                      ...prev.majorInjuryChecklist,
-                                      [key]: e.target.checked
-                                    }
-                                  }))}
-                                  className="text-blue-600"
-                                />
-                                <span className="text-sm capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Minor Injury Checklist */}
-                      {dispatchData.classificationOfInjury === "Minor" && (
-                        <div className="space-y-3">
-                          <h4 className="text-sm font-semibold text-gray-700">Minor Injury Checklist:</h4>
-                          <div className="grid grid-cols-2 gap-2">
-                            {Object.entries(dispatchData.minorInjuryChecklist).map(([key, value]) => (
-                              <label key={key} className="flex items-center space-x-2">
-                                <input
-                                  type="checkbox"
-                                  checked={value}
-                                  onChange={e => setDispatchData(prev => ({
-                                    ...prev,
-                                    minorInjuryChecklist: {
-                                      ...prev.minorInjuryChecklist,
-                                      [key]: e.target.checked
-                                    }
-                                  }))}
-                                  className="text-blue-600"
-                                />
-                                <span className="text-sm capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Medical Assistance Fields */}
-                  {dispatchData.typeOfEmergency === "Medical Assistance" && (
-                    <div className="space-y-4">
-                      <h3 className="text-md font-semibold text-gray-800 border-b pb-2">Medical Assistance Details</h3>
-                      
-                      <div>
-                        <Label htmlFor="chiefComplaint" className="text-sm font-medium text-gray-700">Chief Complaint:</Label>
-                        <Input 
-                          id="chiefComplaint"
-                          value={dispatchData.chiefComplaint}
-                          onChange={e => setDispatchData(prev => ({ ...prev, chiefComplaint: e.target.value }))}
-                          placeholder="Short description"
-                          className="mt-1"
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label htmlFor="diagnosis" className="text-sm font-medium text-gray-700">Diagnosis:</Label>
-                        <Input 
-                          id="diagnosis"
-                          value={dispatchData.diagnosis}
-                          onChange={e => setDispatchData(prev => ({ ...prev, diagnosis: e.target.value }))}
-                          placeholder="Short description"
-                          className="mt-1"
-                        />
-                      </div>
-                      
-                      <div>
-                        <Label className="text-sm font-medium text-gray-700">Nature of Illness:</Label>
-                        <div className="mt-2 space-y-2">
-                          {[
-                            "Infectious disease",
-                            "Lung disease", 
-                            "Cancer",
-                            "Cardiovascular disease",
-                            "Neurological disorder",
-                            "Skin disease",
-                            "Mental health issues",
-                            "Autoimmune disease",
-                            "Inflammatory conditions",
-                            "Metabolic disorder",
-                            "Other"
-                          ].map(illness => (
-                            <label key={illness} className="flex items-center space-x-2">
-                              <input
-                                type="radio"
-                                name="natureOfIllness"
-                                value={illness}
-                                checked={dispatchData.natureOfIllness === illness}
-                                onChange={e => setDispatchData(prev => ({ ...prev, natureOfIllness: e.target.value }))}
-                                className="text-blue-600"
-                              />
-                              <span className="text-sm">{illness}</span>
-                            </label>
-                          ))}
-                        </div>
+                </div>
+                <div className="flex-1 overflow-y-auto border rounded-lg min-h-0">
+                  <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+                    <Table className="w-full min-w-[600px]">
+                      <TableBody>
+                        <TableRow>
+                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Received By</TableCell>
+                          <TableCell>
+                            {isPreviewEditMode ? (
+                              <Select value={dispatchData.receivedBy} onValueChange={v => setDispatchData(d => ({ ...d, receivedBy: v }))}>
+                                <SelectTrigger><SelectValue placeholder="Select admin" /></SelectTrigger>
+                                <SelectContent>
+                                  {adminOptions.map(admin => <SelectItem key={admin} value={admin}>{admin}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              dispatchData.receivedBy || "Not specified"
+                            )}
+                          </TableCell>
+                        </TableRow>
                         
-                        {dispatchData.natureOfIllness === "Other" && (
-                          <div className="mt-2">
-                            <Input 
-                              value={dispatchData.otherNatureOfIllness}
-                              onChange={e => setDispatchData(prev => ({ ...prev, otherNatureOfIllness: e.target.value }))}
-                              placeholder="Please specify"
-                              className="mt-1"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                        <TableRow>
+                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Responders</TableCell>
+                          <TableCell>
+                            {isPreviewEditMode ? (
+                              <div className="space-y-4">
+                                {/* Options Management */}
+                                <div className="grid grid-cols-3 gap-4 p-4 bg-blue-50 rounded-lg">
+                                  <div>
+                                    <Label className="text-sm font-medium text-blue-800 mb-2 block">Manage Teams</Label>
+                                    <div className="space-y-2">
+                                      {teamOptions.map((team, index) => (
+                                        <div key={index} className="flex items-center gap-2">
+                                          <span className="text-sm flex-1">{team}</span>
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => {
+                                              const newOptions = teamOptions.filter((_, i) => i !== index);
+                                              setTeamOptions(newOptions);
+                                            }}
+                                            className="text-red-600 hover:text-red-700 hover:bg-red-50 h-6 w-6 p-0"
+                                          >
+                                            <Trash2 className="h-3 w-3" />
+                                          </Button>
+                                        </div>
+                                      ))}
+                                      <div className="flex gap-2">
+                                        <Input
+                                          placeholder="Add new team"
+                                          className="text-sm"
+                                          onKeyPress={e => {
+                                            if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                                              setTeamOptions([...teamOptions, e.currentTarget.value.trim()]);
+                                              e.currentTarget.value = '';
+                                            }
+                                          }}
+                                        />
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={e => {
+                                            const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                                            if (input.value.trim()) {
+                                              setTeamOptions([...teamOptions, input.value.trim()]);
+                                              input.value = '';
+                                            }
+                                          }}
+                                          className="h-8 px-2"
+                                        >
+                                          <Plus className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  
+                                  <div>
+                                    <Label className="text-sm font-medium text-blue-800 mb-2 block">Manage Drivers</Label>
+                                    <div className="space-y-2">
+                                      {driverOptions.map((driver, index) => (
+                                        <div key={index} className="flex items-center gap-2">
+                                          <span className="text-sm flex-1">{driver}</span>
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => {
+                                              const newOptions = driverOptions.filter((_, i) => i !== index);
+                                              setDriverOptions(newOptions);
+                                            }}
+                                            className="text-red-600 hover:text-red-700 hover:bg-red-50 h-6 w-6 p-0"
+                                          >
+                                            <Trash2 className="h-3 w-3" />
+                                          </Button>
+                                        </div>
+                                      ))}
+                                      <div className="flex gap-2">
+                                        <Input
+                                          placeholder="Add new driver"
+                                          className="text-sm"
+                                          onKeyPress={e => {
+                                            if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                                              setDriverOptions([...driverOptions, e.currentTarget.value.trim()]);
+                                              e.currentTarget.value = '';
+                                            }
+                                          }}
+                                        />
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={e => {
+                                            const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                                            if (input.value.trim()) {
+                                              setDriverOptions([...driverOptions, input.value.trim()]);
+                                              input.value = '';
+                                            }
+                                          }}
+                                          className="h-8 px-2"
+                                        >
+                                          <Plus className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  
+                                  <div>
+                                    <Label className="text-sm font-medium text-blue-800 mb-2 block">Manage Responder Types</Label>
+                                    <div className="space-y-2">
+                                      {responderOptions.map((responder, index) => (
+                                        <div key={index} className="flex items-center gap-2">
+                                          <span className="text-sm flex-1">{responder}</span>
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => {
+                                              const newOptions = responderOptions.filter((_, i) => i !== index);
+                                              setResponderOptions(newOptions);
+                                            }}
+                                            className="text-red-600 hover:text-red-700 hover:bg-red-50 h-6 w-6 p-0"
+                                          >
+                                            <Trash2 className="h-3 w-3" />
+                                          </Button>
+                                        </div>
+                                      ))}
+                                      <div className="flex gap-2">
+                                        <Input
+                                          placeholder="Add new type"
+                                          className="text-sm"
+                                          onKeyPress={e => {
+                                            if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                                              setResponderOptions([...responderOptions, e.currentTarget.value.trim()]);
+                                              e.currentTarget.value = '';
+                                            }
+                                          }}
+                                        />
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={e => {
+                                            const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                                            if (input.value.trim()) {
+                                              setResponderOptions([...responderOptions, input.value.trim()]);
+                                              input.value = '';
+                                            }
+                                          }}
+                                          className="h-8 px-2"
+                                        >
+                                          <Plus className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
 
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" onClick={() => setPreviewTab("details")}>
-                      Cancel
-                    </Button>
-                    <Button onClick={() => {
-                      console.log('Saving dispatch form data:', dispatchData);
-                      // Add dispatch form save logic here
-                    }}>
-                      Save Dispatch
-                    </Button>
+                                {/* Responder Entries */}
+                                <div className="space-y-3">
+                                  {dispatchData.responders.map((responder, index) => (
+                                    <div key={responder.id} className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                                      <div className="flex-1 grid grid-cols-3 gap-2">
+                                        <div>
+                                          <Label className="text-xs text-gray-600">Team</Label>
+                                          <Select
+                                            value={responder.team}
+                                            onValueChange={v => {
+                                              const newResponders = [...dispatchData.responders];
+                                              newResponders[index].team = v;
+                                              setDispatchData(d => ({ ...d, responders: newResponders }));
+                                            }}
+                                          >
+                                            <SelectTrigger className="text-sm">
+                                              <SelectValue placeholder="Select team" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {teamOptions.map(option => (
+                                                <SelectItem key={option} value={option}>{option}</SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                        <div>
+                                          <Label className="text-xs text-gray-600">Driver</Label>
+                                          <Select
+                                            value={responder.driver}
+                                            onValueChange={v => {
+                                              const newResponders = [...dispatchData.responders];
+                                              newResponders[index].driver = v;
+                                              setDispatchData(d => ({ ...d, responders: newResponders }));
+                                            }}
+                                          >
+                                            <SelectTrigger className="text-sm">
+                                              <SelectValue placeholder="Select driver" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {driverOptions.map(option => (
+                                                <SelectItem key={option} value={option}>{option}</SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                        <div>
+                                          <Label className="text-xs text-gray-600">Responder Type</Label>
+                                          <Select
+                                            value={responder.responder}
+                                            onValueChange={v => {
+                                              const newResponders = [...dispatchData.responders];
+                                              newResponders[index].responder = v;
+                                              setDispatchData(d => ({ ...d, responders: newResponders }));
+                                            }}
+                                          >
+                                            <SelectTrigger className="text-sm">
+                                              <SelectValue placeholder="Select type" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {responderOptions.map(option => (
+                                                <SelectItem key={option} value={option}>{option}</SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                      </div>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => {
+                                          const newResponders = dispatchData.responders.filter((_, i) => i !== index);
+                                          setDispatchData(d => ({ ...d, responders: newResponders }));
+                                        }}
+                                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                  ))}
+                                  
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      const newResponder = {
+                                        id: Date.now().toString(),
+                                        team: "",
+                                        driver: "",
+                                        responder: ""
+                                      };
+                                      setDispatchData(d => ({ ...d, responders: [...d.responders, newResponder] }));
+                                    }}
+                                    className="w-full"
+                                  >
+                                    <Plus className="h-4 w-4 mr-2" />
+                                    Add Responder
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                {dispatchData.responders.length > 0 ? (
+                                  dispatchData.responders.map((responder, index) => (
+                                    <div key={responder.id} className="p-2 bg-gray-50 rounded text-sm">
+                                      <div className="font-medium">{responder.team || "No team selected"}</div>
+                                      <div className="text-gray-600">
+                                        Driver: {responder.driver || "No driver selected"} | 
+                                        Type: {responder.responder || "No type selected"}
+                                      </div>
+                                    </div>
+                                  ))
+                                ) : (
+                                  "No responders specified"
+                                )}
+                              </div>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Time Call Received</TableCell>
+                          <TableCell>
+                            {isPreviewEditMode ? (
+                              <Input 
+                                type="time" 
+                                value={dispatchData.timeCallReceived} 
+                                onChange={e => setDispatchData(d => ({ ...d, timeCallReceived: e.target.value }))} 
+                              />
+                            ) : (
+                              dispatchData.timeCallReceived || "Not specified"
+                            )}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Time of Dispatch</TableCell>
+                          <TableCell>
+                            {isPreviewEditMode ? (
+                              <Input 
+                                type="time" 
+                                value={dispatchData.timeOfDispatch} 
+                                onChange={e => setDispatchData(d => ({ ...d, timeOfDispatch: e.target.value }))} 
+                              />
+                            ) : (
+                              dispatchData.timeOfDispatch || "Not specified"
+                            )}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Time of Arrival</TableCell>
+                          <TableCell>
+                            {isPreviewEditMode ? (
+                              <Input 
+                                type="time" 
+                                value={dispatchData.timeOfArrival} 
+                                onChange={e => setDispatchData(d => ({ ...d, timeOfArrival: e.target.value }))} 
+                              />
+                            ) : (
+                              dispatchData.timeOfArrival || "Not specified"
+                            )}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Response Time</TableCell>
+                          <TableCell>
+                            {dispatchData.timeOfDispatch && dispatchData.timeOfArrival ? (
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-blue-600">
+                                  {calculateResponseTime(dispatchData.timeOfDispatch, dispatchData.timeOfArrival)}
+                                </span>
+                                <span className="text-sm text-gray-500">
+                                  ({calculateResponseTimeMinutes(dispatchData.timeOfDispatch, dispatchData.timeOfArrival)} minutes)
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-gray-500">Calculate after entering dispatch and arrival times</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Hospital Arrival</TableCell>
+                          <TableCell>
+                            {isPreviewEditMode ? (
+                              <Input 
+                                type="time" 
+                                value={dispatchData.hospitalArrival} 
+                                onChange={e => setDispatchData(d => ({ ...d, hospitalArrival: e.target.value }))} 
+                              />
+                            ) : (
+                              dispatchData.hospitalArrival || "Not specified"
+                            )}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Returned to OPCEN</TableCell>
+                          <TableCell>
+                            {isPreviewEditMode ? (
+                              <Input 
+                                type="time" 
+                                value={dispatchData.returnedToOpcen} 
+                                onChange={e => setDispatchData(d => ({ ...d, returnedToOpcen: e.target.value }))} 
+                              />
+                            ) : (
+                              dispatchData.returnedToOpcen || "Not specified"
+                            )}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Disaster Related</TableCell>
+                          <TableCell>
+                            {isPreviewEditMode ? (
+                              <Select value={dispatchData.disasterRelated} onValueChange={v => setDispatchData(d => ({ ...d, disasterRelated: v }))}>
+                                <SelectTrigger><SelectValue placeholder="Select option" /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Yes">Yes</SelectItem>
+                                  <SelectItem value="No">No</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              dispatchData.disasterRelated ? (
+                                <Badge className={dispatchData.disasterRelated === "Yes" ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}>
+                                  {dispatchData.disasterRelated}
+                                </Badge>
+                              ) : (
+                                "Not specified"
+                              )
+                            )}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Agency Present</TableCell>
+                          <TableCell>
+                            {isPreviewEditMode ? (
+                              <Select value={dispatchData.agencyPresent} onValueChange={v => setDispatchData(d => ({ ...d, agencyPresent: v }))}>
+                                <SelectTrigger><SelectValue placeholder="Select agency" /></SelectTrigger>
+                                <SelectContent>
+                                  {agencyOptions.map(agency => <SelectItem key={agency} value={agency}>{agency}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              dispatchData.agencyPresent ? (
+                                <Badge className="bg-blue-100 text-blue-800">
+                                  {dispatchData.agencyPresent}
+                                </Badge>
+                              ) : (
+                                "Not specified"
+                              )
+                            )}
+                          </TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Type of Emergency</TableCell>
+                          <TableCell>
+                            {isPreviewEditMode ? (
+                              <Select value={dispatchData.typeOfEmergency} onValueChange={v => setDispatchData(d => ({ 
+                                ...d, 
+                                typeOfEmergency: v, 
+                                injuryClassification: "", 
+                                majorInjuryTypes: [], 
+                                minorInjuryTypes: [],
+                                medicalClassification: "",
+                                majorMedicalSymptoms: [],
+                                minorMedicalSymptoms: [],
+                                chiefComplaint: "",
+                                diagnosis: "",
+                                natureOfIllness: "",
+                                natureOfIllnessOthers: "",
+                                actionsTaken: [],
+                                referredTo: "",
+                                transportFrom: "",
+                                transportTo: "",
+                                othersDescription: "",
+                                vitalSigns: {
+                                  temperature: "",
+                                  pulseRate: "",
+                                  respiratoryRate: "",
+                                  bloodPressure: ""
+                                },
+                                responders: []
+                              }))}>
+                                <SelectTrigger><SelectValue placeholder="Select emergency type" /></SelectTrigger>
+                                <SelectContent>
+                                  {emergencyTypeOptions.map(type => <SelectItem key={type} value={type}>{type}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              dispatchData.typeOfEmergency ? (
+                                <Badge className="bg-orange-100 text-orange-800">
+                                  {dispatchData.typeOfEmergency}
+                                </Badge>
+                              ) : (
+                                "Not specified"
+                              )
+                            )}
+                          </TableCell>
+                        </TableRow>
+                        
+                        {/* Road Crash Specific Fields */}
+                        {dispatchData.typeOfEmergency === "Road Crash" && (
+                          <>
+                            <TableRow>
+                              <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Classification of Injury</TableCell>
+                              <TableCell>
+                                {isPreviewEditMode ? (
+                                  <Select value={dispatchData.injuryClassification} onValueChange={v => setDispatchData(d => ({ ...d, injuryClassification: v, majorInjuryTypes: [], minorInjuryTypes: [] }))}>
+                                    <SelectTrigger><SelectValue placeholder="Select injury classification" /></SelectTrigger>
+                                    <SelectContent>
+                                      {injuryClassificationOptions.map(classification => <SelectItem key={classification} value={classification}>{classification}</SelectItem>)}
+                                    </SelectContent>
+                                  </Select>
+                                ) : (
+                                  dispatchData.injuryClassification ? (
+                                    <Badge className={dispatchData.injuryClassification === "Major" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"}>
+                                      {dispatchData.injuryClassification}
+                                    </Badge>
+                                  ) : (
+                                    "Not specified"
+                                  )
+                                )}
+                              </TableCell>
+                            </TableRow>
+                            
+                            {/* Major Injury Types */}
+                            {dispatchData.injuryClassification === "Major" && (
+                              <TableRow>
+                                <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Major Injury Types</TableCell>
+                                <TableCell>
+                                  {isPreviewEditMode ? (
+                                    <div className="space-y-2">
+                                      {majorInjuryTypeOptions.map((injuryType) => (
+                                        <div key={injuryType} className="flex items-center space-x-2">
+                                          <Checkbox
+                                            id={`major-${injuryType}`}
+                                            checked={dispatchData.majorInjuryTypes.includes(injuryType)}
+                                            onCheckedChange={(checked) => {
+                                              if (checked) {
+                                                setDispatchData(d => ({
+                                                  ...d,
+                                                  majorInjuryTypes: [...d.majorInjuryTypes, injuryType]
+                                                }));
+                                              } else {
+                                                setDispatchData(d => ({
+                                                  ...d,
+                                                  majorInjuryTypes: d.majorInjuryTypes.filter(type => type !== injuryType)
+                                                }));
+                                              }
+                                            }}
+                                          />
+                                          <Label htmlFor={`major-${injuryType}`} className="text-sm">
+                                            {injuryType}
+                                          </Label>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    dispatchData.majorInjuryTypes.length > 0 ? (
+                                      <div className="flex flex-wrap gap-1">
+                                        {dispatchData.majorInjuryTypes.map((injuryType, index) => (
+                                          <Badge key={index} className="bg-red-100 text-red-800 text-xs">
+                                            {injuryType}
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      "No major injury types selected"
+                                    )
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            )}
+                            
+                            {/* Minor Injury Types */}
+                            {dispatchData.injuryClassification === "Minor" && (
+                              <TableRow>
+                                <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Minor Injury Types</TableCell>
+                                <TableCell>
+                                  {isPreviewEditMode ? (
+                                    <div className="space-y-2">
+                                      {minorInjuryTypeOptions.map((injuryType) => (
+                                        <div key={injuryType} className="flex items-center space-x-2">
+                                          <Checkbox
+                                            id={`minor-${injuryType}`}
+                                            checked={dispatchData.minorInjuryTypes.includes(injuryType)}
+                                            onCheckedChange={(checked) => {
+                                              if (checked) {
+                                                setDispatchData(d => ({
+                                                  ...d,
+                                                  minorInjuryTypes: [...d.minorInjuryTypes, injuryType]
+                                                }));
+                                              } else {
+                                                setDispatchData(d => ({
+                                                  ...d,
+                                                  minorInjuryTypes: d.minorInjuryTypes.filter(type => type !== injuryType)
+                                                }));
+                                              }
+                                            }}
+                                          />
+                                          <Label htmlFor={`minor-${injuryType}`} className="text-sm">
+                                            {injuryType}
+                                          </Label>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    dispatchData.minorInjuryTypes.length > 0 ? (
+                                      <div className="flex flex-wrap gap-1">
+                                        {dispatchData.minorInjuryTypes.map((injuryType, index) => (
+                                          <Badge key={index} className="bg-yellow-100 text-yellow-800 text-xs">
+                                            {injuryType}
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      "No minor injury types selected"
+                                    )
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </>
+                        )}
+                        
+                        {/* Medical Emergency Specific Fields */}
+                        {dispatchData.typeOfEmergency === "Medical Emergency" && (
+                          <>
+                            <TableRow>
+                              <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Medical Classification</TableCell>
+                              <TableCell>
+                                {isPreviewEditMode ? (
+                                  <Select value={dispatchData.medicalClassification} onValueChange={v => setDispatchData(d => ({ ...d, medicalClassification: v, majorMedicalSymptoms: [], minorMedicalSymptoms: [] }))}>
+                                    <SelectTrigger><SelectValue placeholder="Select medical classification" /></SelectTrigger>
+                                    <SelectContent>
+                                      {injuryClassificationOptions.map(classification => <SelectItem key={classification} value={classification}>{classification}</SelectItem>)}
+                                    </SelectContent>
+                                  </Select>
+                                ) : (
+                                  dispatchData.medicalClassification ? (
+                                    <Badge className={dispatchData.medicalClassification === "Major" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"}>
+                                      {dispatchData.medicalClassification}
+                                    </Badge>
+                                  ) : (
+                                    "Not specified"
+                                  )
+                                )}
+                              </TableCell>
+                            </TableRow>
+                            
+                            {/* Major Medical Symptoms */}
+                            {dispatchData.medicalClassification === "Major" && (
+                              <TableRow>
+                                <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Major Medical Symptoms</TableCell>
+                                <TableCell>
+                                  {isPreviewEditMode ? (
+                                    <div className="space-y-2">
+                                      {majorMedicalSymptomsOptions.map((symptom) => (
+                                        <div key={symptom} className="flex items-center space-x-2">
+                                          <Checkbox
+                                            id={`major-medical-${symptom}`}
+                                            checked={dispatchData.majorMedicalSymptoms.includes(symptom)}
+                                            onCheckedChange={(checked) => {
+                                              if (checked) {
+                                                setDispatchData(d => ({
+                                                  ...d,
+                                                  majorMedicalSymptoms: [...d.majorMedicalSymptoms, symptom]
+                                                }));
+                                              } else {
+                                                setDispatchData(d => ({
+                                                  ...d,
+                                                  majorMedicalSymptoms: d.majorMedicalSymptoms.filter(s => s !== symptom)
+                                                }));
+                                              }
+                                            }}
+                                          />
+                                          <Label htmlFor={`major-medical-${symptom}`} className="text-sm">
+                                            {symptom}
+                                          </Label>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    dispatchData.majorMedicalSymptoms.length > 0 ? (
+                                      <div className="flex flex-wrap gap-1">
+                                        {dispatchData.majorMedicalSymptoms.map((symptom, index) => (
+                                          <Badge key={index} className="bg-red-100 text-red-800 text-xs">
+                                            {symptom}
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      "No major medical symptoms selected"
+                                    )
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            )}
+                            
+                            {/* Minor Medical Symptoms */}
+                            {dispatchData.medicalClassification === "Minor" && (
+                              <TableRow>
+                                <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Minor Medical Symptoms</TableCell>
+                                <TableCell>
+                                  {isPreviewEditMode ? (
+                                    <div className="space-y-2">
+                                      {minorMedicalSymptomsOptions.map((symptom) => (
+                                        <div key={symptom} className="flex items-center space-x-2">
+                                          <Checkbox
+                                            id={`minor-medical-${symptom}`}
+                                            checked={dispatchData.minorMedicalSymptoms.includes(symptom)}
+                                            onCheckedChange={(checked) => {
+                                              if (checked) {
+                                                setDispatchData(d => ({
+                                                  ...d,
+                                                  minorMedicalSymptoms: [...d.minorMedicalSymptoms, symptom]
+                                                }));
+                                              } else {
+                                                setDispatchData(d => ({
+                                                  ...d,
+                                                  minorMedicalSymptoms: d.minorMedicalSymptoms.filter(s => s !== symptom)
+                                                }));
+                                              }
+                                            }}
+                                          />
+                                          <Label htmlFor={`minor-medical-${symptom}`} className="text-sm">
+                                            {symptom}
+                                          </Label>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    dispatchData.minorMedicalSymptoms.length > 0 ? (
+                                      <div className="flex flex-wrap gap-1">
+                                        {dispatchData.minorMedicalSymptoms.map((symptom, index) => (
+                                          <Badge key={index} className="bg-yellow-100 text-yellow-800 text-xs">
+                                            {symptom}
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      "No minor medical symptoms selected"
+                                    )
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </>
+                        )}
+                        
+                        {/* Medical Assistance Specific Fields */}
+                        {dispatchData.typeOfEmergency === "Medical Assistance" && (
+                          <>
+                            <TableRow>
+                              <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Chief Complaint</TableCell>
+                              <TableCell>
+                                {isPreviewEditMode ? (
+                                  <Textarea 
+                                    value={dispatchData.chiefComplaint} 
+                                    onChange={e => setDispatchData(d => ({ ...d, chiefComplaint: e.target.value }))} 
+                                    placeholder="Enter chief complaint (short description)"
+                                    className="min-h-[80px]"
+                                  />
+                                ) : (
+                                  dispatchData.chiefComplaint || "Not specified"
+                                )}
+                              </TableCell>
+                            </TableRow>
+                            
+                            <TableRow>
+                              <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Diagnosis</TableCell>
+                              <TableCell>
+                                {isPreviewEditMode ? (
+                                  <Textarea 
+                                    value={dispatchData.diagnosis} 
+                                    onChange={e => setDispatchData(d => ({ ...d, diagnosis: e.target.value }))} 
+                                    placeholder="Enter diagnosis (short description)"
+                                    className="min-h-[80px]"
+                                  />
+                                ) : (
+                                  dispatchData.diagnosis || "Not specified"
+                                )}
+                              </TableCell>
+                            </TableRow>
+                            
+                            <TableRow>
+                              <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Nature of Illness</TableCell>
+                              <TableCell>
+                                {isPreviewEditMode ? (
+                                  <div className="space-y-3">
+                                    <RadioGroup 
+                                      value={dispatchData.natureOfIllness} 
+                                      onValueChange={v => setDispatchData(d => ({ ...d, natureOfIllness: v, natureOfIllnessOthers: "" }))}
+                                    >
+                                      {natureOfIllnessOptions.map((illness) => (
+                                        <div key={illness} className="flex items-center space-x-2">
+                                          <RadioGroupItem value={illness} id={`illness-${illness}`} />
+                                          <Label htmlFor={`illness-${illness}`} className="text-sm">
+                                            {illness}
+                                          </Label>
+                                        </div>
+                                      ))}
+                                    </RadioGroup>
+                                    
+                                    {dispatchData.natureOfIllness === "Others" && (
+                                      <div className="mt-2">
+                                        <Label htmlFor="nature-of-illness-others" className="text-sm font-medium">
+                                          Please specify:
+                                        </Label>
+                                        <Input 
+                                          id="nature-of-illness-others"
+                                          value={dispatchData.natureOfIllnessOthers} 
+                                          onChange={e => setDispatchData(d => ({ ...d, natureOfIllnessOthers: e.target.value }))} 
+                                          placeholder="Enter nature of illness"
+                                          className="mt-1"
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div>
+                                    {dispatchData.natureOfIllness ? (
+                                      <div className="flex items-center gap-2">
+                                        <Badge className="bg-blue-100 text-blue-800">
+                                          {dispatchData.natureOfIllness}
+                                        </Badge>
+                                        {dispatchData.natureOfIllness === "Others" && dispatchData.natureOfIllnessOthers && (
+                                          <span className="text-sm text-gray-600">
+                                            - {dispatchData.natureOfIllnessOthers}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      "Not specified"
+                                    )}
+                                  </div>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          </>
+                        )}
+                        
+                        {/* Actions Taken Field - appears for any emergency type */}
+                        {dispatchData.typeOfEmergency && (
+                          <TableRow>
+                            <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Actions Taken</TableCell>
+                            <TableCell>
+                              {isPreviewEditMode ? (
+                                <div className="space-y-3">
+                                  <div className="space-y-2">
+                                    {actionsTakenOptions.map((action) => (
+                                      <div key={action} className="flex items-center space-x-2">
+                                        <Checkbox
+                                          id={`action-${action}`}
+                                          checked={dispatchData.actionsTaken.includes(action)}
+                                          onCheckedChange={(checked) => {
+                                            if (checked) {
+                                              setDispatchData(d => ({
+                                                ...d,
+                                                actionsTaken: [...d.actionsTaken, action]
+                                              }));
+                                            } else {
+                                              setDispatchData(d => ({
+                                                ...d,
+                                                actionsTaken: d.actionsTaken.filter(a => a !== action)
+                                              }));
+                                            }
+                                          }}
+                                        />
+                                        <Label htmlFor={`action-${action}`} className="text-sm">
+                                          {action}
+                                        </Label>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  
+                                  {/* Additional input fields for specific actions */}
+                                  {dispatchData.actionsTaken.includes("Vital Signs Taken (Temperature, pulse rate, respiratory rate, blood pressure)") && (
+                                    <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                                      <Label className="text-sm font-medium text-gray-800 mb-3 block">
+                                        Vital Signs Details (Optional - fill in available measurements):
+                                      </Label>
+                                      <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                          <Label htmlFor="temperature" className="text-sm text-gray-700">
+                                            Temperature (°C):
+                                          </Label>
+                                          <Input 
+                                            id="temperature"
+                                            type="number"
+                                            step="0.1"
+                                            value={dispatchData.vitalSigns.temperature} 
+                                            onChange={e => setDispatchData(d => ({ 
+                                              ...d, 
+                                              vitalSigns: { ...d.vitalSigns, temperature: e.target.value }
+                                            }))} 
+                                            placeholder="e.g., 37.2"
+                                            className="mt-1"
+                                          />
+                                        </div>
+                                        <div>
+                                          <Label htmlFor="pulse-rate" className="text-sm text-gray-700">
+                                            Pulse Rate (bpm):
+                                          </Label>
+                                          <Input 
+                                            id="pulse-rate"
+                                            type="number"
+                                            value={dispatchData.vitalSigns.pulseRate} 
+                                            onChange={e => setDispatchData(d => ({ 
+                                              ...d, 
+                                              vitalSigns: { ...d.vitalSigns, pulseRate: e.target.value }
+                                            }))} 
+                                            placeholder="e.g., 80"
+                                            className="mt-1"
+                                          />
+                                        </div>
+                                        <div>
+                                          <Label htmlFor="respiratory-rate" className="text-sm text-gray-700">
+                                            Respiratory Rate (breaths/min):
+                                          </Label>
+                                          <Input 
+                                            id="respiratory-rate"
+                                            type="number"
+                                            value={dispatchData.vitalSigns.respiratoryRate} 
+                                            onChange={e => setDispatchData(d => ({ 
+                                              ...d, 
+                                              vitalSigns: { ...d.vitalSigns, respiratoryRate: e.target.value }
+                                            }))} 
+                                            placeholder="e.g., 16"
+                                            className="mt-1"
+                                          />
+                                        </div>
+                                        <div>
+                                          <Label htmlFor="blood-pressure" className="text-sm text-gray-700">
+                                            Blood Pressure (mmHg):
+                                          </Label>
+                                          <Input 
+                                            id="blood-pressure"
+                                            value={dispatchData.vitalSigns.bloodPressure} 
+                                            onChange={e => setDispatchData(d => ({ 
+                                              ...d, 
+                                              vitalSigns: { ...d.vitalSigns, bloodPressure: e.target.value }
+                                            }))} 
+                                            placeholder="e.g., 120/80"
+                                            className="mt-1"
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                  
+                                  {dispatchData.actionsTaken.includes("Referred to (Short Desc)") && (
+                                    <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                                      <Label htmlFor="referred-to" className="text-sm font-medium text-gray-800">
+                                        Referred to:
+                                      </Label>
+                                      <Input 
+                                        id="referred-to"
+                                        value={dispatchData.referredTo} 
+                                        onChange={e => setDispatchData(d => ({ ...d, referredTo: e.target.value }))} 
+                                        placeholder="Enter who the patient was referred to (e.g., Dr. Smith, General Hospital, Specialist Clinic)"
+                                        className="mt-1"
+                                      />
+                                    </div>
+                                  )}
+                                  
+                                  {dispatchData.actionsTaken.includes("Transport from (Place from) to (Place to)") && (
+                                    <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                                      <Label className="text-sm font-medium text-gray-800 mb-3 block">
+                                        Transport Details:
+                                      </Label>
+                                      <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                          <Label htmlFor="transport-from" className="text-sm text-gray-700">
+                                            Transport from:
+                                          </Label>
+                                          <Input 
+                                            id="transport-from"
+                                            value={dispatchData.transportFrom} 
+                                            onChange={e => setDispatchData(d => ({ ...d, transportFrom: e.target.value }))} 
+                                            placeholder="e.g., Scene of accident, Patient's home, Current location"
+                                            className="mt-1"
+                                          />
+                                        </div>
+                                        <div>
+                                          <Label htmlFor="transport-to" className="text-sm text-gray-700">
+                                            Transport to:
+                                          </Label>
+                                          <Input 
+                                            id="transport-to"
+                                            value={dispatchData.transportTo} 
+                                            onChange={e => setDispatchData(d => ({ ...d, transportTo: e.target.value }))} 
+                                            placeholder="e.g., General Hospital, Emergency Room, Specialist Clinic"
+                                            className="mt-1"
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                  
+                                  {dispatchData.actionsTaken.includes("Others (Short Desc)") && (
+                                    <div className="mt-3 p-3 bg-gray-50 rounded-lg">
+                                      <Label htmlFor="others-description" className="text-sm font-medium text-gray-800">
+                                        Others - Please specify:
+                                      </Label>
+                                      <Input 
+                                        id="others-description"
+                                        value={dispatchData.othersDescription} 
+                                        onChange={e => setDispatchData(d => ({ ...d, othersDescription: e.target.value }))} 
+                                        placeholder="Enter other actions taken"
+                                        className="mt-1"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  {dispatchData.actionsTaken.length > 0 ? (
+                                    <div className="space-y-2">
+                                      <div className="flex flex-wrap gap-1">
+                                        {dispatchData.actionsTaken.map((action, index) => (
+                                          <Badge key={index} className="bg-blue-100 text-blue-800 text-xs">
+                                            {action}
+                                          </Badge>
+                                        ))}
+                                      </div>
+                                      
+                                      {/* Show additional details for specific actions */}
+                                      {dispatchData.actionsTaken.includes("Vital Signs Taken (Temperature, pulse rate, respiratory rate, blood pressure)") && (
+                                        dispatchData.vitalSigns.temperature || dispatchData.vitalSigns.pulseRate || dispatchData.vitalSigns.respiratoryRate || dispatchData.vitalSigns.bloodPressure
+                                      ) && (
+                                        <div className="mt-2 p-3 bg-gray-50 rounded text-sm">
+                                          <span className="font-medium text-gray-800 block mb-2">Vital Signs:</span>
+                                          <div className="grid grid-cols-2 gap-2 text-xs">
+                                            {dispatchData.vitalSigns.temperature && (
+                                              <div><span className="font-medium">Temperature:</span> {dispatchData.vitalSigns.temperature}°C</div>
+                                            )}
+                                            {dispatchData.vitalSigns.pulseRate && (
+                                              <div><span className="font-medium">Pulse Rate:</span> {dispatchData.vitalSigns.pulseRate} bpm</div>
+                                            )}
+                                            {dispatchData.vitalSigns.respiratoryRate && (
+                                              <div><span className="font-medium">Respiratory Rate:</span> {dispatchData.vitalSigns.respiratoryRate} breaths/min</div>
+                                            )}
+                                            {dispatchData.vitalSigns.bloodPressure && (
+                                              <div><span className="font-medium">Blood Pressure:</span> {dispatchData.vitalSigns.bloodPressure} mmHg</div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+                                      
+                                      {dispatchData.actionsTaken.includes("Referred to (Short Desc)") && dispatchData.referredTo && (
+                                        <div className="mt-2 p-2 bg-gray-50 rounded text-sm">
+                                          <span className="font-medium text-gray-800">Referred to:</span> {dispatchData.referredTo}
+                                        </div>
+                                      )}
+                                      
+                                      {dispatchData.actionsTaken.includes("Transport from (Place from) to (Place to)") && (dispatchData.transportFrom || dispatchData.transportTo) && (
+                                        <div className="mt-2 p-2 bg-gray-50 rounded text-sm">
+                                          <span className="font-medium text-gray-800">Transport:</span> {dispatchData.transportFrom} to {dispatchData.transportTo}
+                                        </div>
+                                      )}
+                                      
+                                      {dispatchData.actionsTaken.includes("Others (Short Desc)") && dispatchData.othersDescription && (
+                                        <div className="mt-2 p-2 bg-gray-50 rounded text-sm">
+                                          <span className="font-medium text-gray-800">Others:</span> {dispatchData.othersDescription}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    "No actions taken specified"
+                                  )}
+                                </div>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
                   </div>
                 </div>
               </TabsContent>
+
             </Tabs>
           </DialogContent>
         </Dialog>
