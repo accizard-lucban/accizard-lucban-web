@@ -9,7 +9,8 @@ import { signInWithEmailAndPassword } from "firebase/auth";
 import { toast } from "@/components/ui/sonner";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query, where } from "firebase/firestore";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, HelpCircle } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 export function LoginForm() {
   const [email, setEmail] = useState("");
@@ -88,7 +89,7 @@ export function LoginForm() {
     navigate("/password-recovery");
   };
 
-  return <div className="min-h-screen flex flex-col lg:flex-row bg-black">
+  return <div className="min-h-screen flex flex-col lg:flex-row bg-black relative">
       {/* Left Side - Logo and Branding */}
       <div className="flex-1 bg-[url('/accizard-uploads/login-signup-cover.png')] bg-cover bg-center min-h-[200px] lg:min-h-screen">
         <div className="text-center">
@@ -101,7 +102,6 @@ export function LoginForm() {
         <Card className="w-full max-w-md border-0 shadow-none">
           <CardHeader className="text-center pb-4 sm:pb-8">
             <CardTitle className="text-2xl sm:text-3xl font-bold text-gray-800 mb-0">Account Login</CardTitle>
-            <p className="font-medium text-red-800 text-sm sm:text-base">Welcome back!</p>
           </CardHeader>
           <CardContent>
             {/* User Type Toggle */}
@@ -162,5 +162,46 @@ export function LoginForm() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Help Button with Modal */}
+      <Dialog>
+        <DialogTrigger asChild>
+          <button 
+            type="button"
+            className="absolute bottom-4 right-4 p-2 bg-gray-100 hover:bg-gray-200 rounded-full shadow-md transition-colors"
+            aria-label="Password recovery help"
+          >
+            <HelpCircle className="h-5 w-5 text-gray-600" />
+          </button>
+        </DialogTrigger>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold text-gray-800">Password Recovery Help</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-3">
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0 w-6 h-6 bg-brand-red rounded-full flex items-center justify-center">
+                  <span className="text-white text-sm font-semibold">1</span>
+                </div>
+                <div>
+                  <h4 className="font-medium text-gray-800">Super Admins</h4>
+                  <p className="text-sm text-gray-600 mt-1">Can reset their password through email using the "Forgot password?" link below the login form.</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0 w-6 h-6 bg-brand-red rounded-full flex items-center justify-center">
+                  <span className="text-white text-sm font-semibold">2</span>
+                </div>
+                <div>
+                  <h4 className="font-medium text-gray-800">Admins</h4>
+                  <p className="text-sm text-gray-600 mt-1">If you forget your password, please contact your Super Admin to reset it for you.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>;
 }

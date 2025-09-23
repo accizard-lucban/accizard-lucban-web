@@ -65,6 +65,16 @@ export default {
 					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
+				},
+				// AcciZard Brand Colors
+				'brand-red': {
+					DEFAULT: '#991b1b', // red-800
+					700: '#b91c1c', // red-700
+					500: '#ef4444'  // red-500
+				},
+				'brand-orange': {
+					DEFAULT: '#f97316', // orange-500
+					400: '#fb923c'      // orange-400
 				}
 			},
 			borderRadius: {

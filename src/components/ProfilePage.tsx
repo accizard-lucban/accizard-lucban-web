@@ -9,10 +9,12 @@ import { User, LogOut, Camera } from "lucide-react";
 import { Layout } from "./Layout";
 import { PageHeader } from "./PageHeader";
 import { useNavigate } from "react-router-dom";
-import { db, auth } from "@/lib/firebase";
+import { db, auth, storage } from "@/lib/firebase";
 import { getAuth, updateProfile, updateEmail } from "firebase/auth";
 import { collection, query, where, getDocs, doc, updateDoc, orderBy, limit } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { toast } from "@/components/ui/sonner";
+import { useUserRole } from "@/hooks/useUserRole";
 import { SUPER_ADMIN_EMAIL } from "@/lib/utils";
 import {
   AlertDialog,
@@ -29,6 +31,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 
 export function ProfilePage() {
   const navigate = useNavigate();
+  const { canViewEmail, userRole, loading: roleLoading } = useUserRole();
   const [profile, setProfile] = useState({
     name: "",
     position: "",
@@ -112,77 +115,96 @@ export function ProfilePage() {
     console.log("Signing out...");
     navigate('/login');
   };
-  const handleProfilePictureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleProfilePictureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = event => {
+      // Check if userRole is available
+      if (!userRole) {
+        toast.error("User information not loaded. Please refresh the page and try again.");
+        return;
+      }
+
+      try {
+        console.log("Starting profile picture upload...");
+        console.log("User role:", userRole);
+        console.log("File details:", {
+          name: file.name,
+          size: file.size,
+          type: file.type
+        });
+
+        // Validate file size (max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+          toast.error("File size must be less than 5MB");
+          return;
+        }
+
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+          toast.error("Please select an image file");
+          return;
+        }
+
+        // Create a unique filename
+        const timestamp = Date.now();
+        const fileExtension = file.name.split('.').pop() || 'jpg';
+        const filename = `profile-pictures/${userRole.id}-${timestamp}.${fileExtension}`;
+        
+        console.log("Uploading to path:", filename);
+        console.log("Storage instance:", storage);
+
+        // Upload to Firebase Storage
+        const storageRef = ref(storage, filename);
+        console.log("Storage reference created:", storageRef);
+        
+        const snapshot = await uploadBytes(storageRef, file);
+        console.log("Upload completed:", snapshot);
+        
+        const downloadURL = await getDownloadURL(snapshot.ref);
+        console.log("Download URL obtained:", downloadURL);
+
+        // Update profile with the download URL
         setProfile({
           ...profile,
-          profilePicture: event.target?.result as string
+          profilePicture: downloadURL
         });
-      };
-      reader.readAsDataURL(file);
+
+        toast.success("Profile picture uploaded successfully!");
+      } catch (error: any) {
+        console.error("Detailed error uploading profile picture:", error);
+        console.error("Error code:", error.code);
+        console.error("Error message:", error.message);
+        
+        // Provide more specific error messages
+        if (error.code === 'storage/unauthorized') {
+          toast.error("You don't have permission to upload files. Please contact your administrator.");
+        } else if (error.code === 'storage/canceled') {
+          toast.error("Upload was canceled. Please try again.");
+        } else if (error.code === 'storage/unknown') {
+          toast.error("An unknown error occurred. Please check your internet connection and try again.");
+        } else if (error.code === 'storage/invalid-format') {
+          toast.error("Invalid file format. Please select a valid image file.");
+        } else if (error.code === 'storage/object-not-found') {
+          toast.error("Storage bucket not found. Please contact your administrator.");
+        } else {
+          toast.error(`Failed to upload profile picture: ${error.message || 'Unknown error'}`);
+        }
+      }
     }
   };
 
   useEffect(() => {
-    async function fetchProfile() {
-      // Check if admin or super-admin
-      const adminLoggedIn = localStorage.getItem("adminLoggedIn") === "true";
-      if (adminLoggedIn) {
-        // Admin: get username from localStorage (set after login)
-        const username = localStorage.getItem("adminUsername");
-        if (username) {
-          const q = query(collection(db, "admins"), where("username", "==", username));
-          const querySnapshot = await getDocs(q);
-          if (!querySnapshot.empty) {
-            const data = querySnapshot.docs[0].data();
-            setProfile({
-              name: data.name || "",
-              position: data.position || "",
-              idNumber: data.idNumber || "",
-              username: data.username || "",
-              email: data.email || "",
-              profilePicture: data.profilePicture || ""
-            });
-          }
-        }
-      } else {
-        // Super-admin: use Firebase Auth
-        const user = getAuth().currentUser;
-        if (user) {
-          if (user.email === SUPER_ADMIN_EMAIL) {
-            // Fetch from superAdmin collection
-            const q = query(collection(db, "superAdmin"), where("email", "==", user.email));
-            const querySnapshot = await getDocs(q);
-            if (!querySnapshot.empty) {
-              const data = querySnapshot.docs[0].data();
-              setProfile({
-                name: data.fullName || "",
-                position: data.position || "",
-                idNumber: data.idNumber || "",
-                username: data.username || "",
-                email: data.email || user.email,
-                profilePicture: data.profilePicture || user.photoURL || ""
-              });
-              return;
-            }
-          }
-          // Fallback: use Firebase Auth
-          setProfile({
-            name: user.displayName || "",
-            position: "Super Admin",
-            idNumber: user.uid || "",
-            username: user.email?.split("@")[0] || "",
-            email: user.email || "",
-            profilePicture: user.photoURL || ""
-          });
-        }
-      }
+    if (userRole && !roleLoading) {
+      setProfile({
+        name: userRole.name || "",
+        position: userRole.position || "",
+        idNumber: userRole.idNumber || "",
+        username: userRole.username || "",
+        email: userRole.email || "",
+        profilePicture: userRole.profilePicture || "/accizard-uploads/login-signup-cover.png"
+      });
     }
-    fetchProfile();
-  }, []);
+  }, [userRole, roleLoading]);
 
   // Fetch personal activity logs
   useEffect(() => {
@@ -262,13 +284,15 @@ export function ProfilePage() {
                       username: e.target.value
                     })} className="focus:border-accizard-primary focus:ring-accizard-primary" />
                     </div>
-                    <div className="space-y-2 col-span-2">
-                      <Label htmlFor="email" className="text-accizard-neutral">Email</Label>
-                      <Input id="email" type="email" value={profile.email} onChange={e => setProfile({
-                      ...profile,
-                      email: e.target.value
-                    })} className="focus:border-accizard-primary focus:ring-accizard-primary" />
-                    </div>
+                    {canViewEmail() && (
+                      <div className="space-y-2 col-span-2">
+                        <Label htmlFor="email" className="text-accizard-neutral">Email</Label>
+                        <Input id="email" type="email" value={profile.email} onChange={e => setProfile({
+                        ...profile,
+                        email: e.target.value
+                      })} className="focus:border-accizard-primary focus:ring-accizard-primary" />
+                      </div>
+                    )}
                   </div>
                   <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
                     <AlertDialogTrigger asChild>

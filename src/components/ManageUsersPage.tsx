@@ -17,6 +17,7 @@ import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, onSnapshot, que
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/components/ui/use-toast";
 import { useLocation } from "react-router-dom";
+import { useUserRole } from "@/hooks/useUserRole";
 
 // Add this helper at the top (after imports):
 function formatTimeNoSeconds(time: string | number | null | undefined) {
@@ -35,6 +36,7 @@ function formatTimeNoSeconds(time: string | number | null | undefined) {
 }
 
 export function ManageUsersPage() {
+  const { userRole, loading: roleLoading, canManageAdmins } = useUserRole();
   const [searchTerm, setSearchTerm] = useState("");
   const [positionFilter, setPositionFilter] = useState("all");
   const [permissionFilter, setPermissionFilter] = useState("all");
@@ -972,15 +974,19 @@ export function ManageUsersPage() {
     }
   }, []);
 
-  // Determine default tab based on navigation state
-  const defaultTab = location.state && (location.state as any).tab === "residents" ? "residents" : "admins";
+  // Determine default tab based on navigation state and user role
+  const defaultTab = location.state && (location.state as any).tab === "residents" 
+    ? "residents" 
+    : canManageAdmins() ? "admins" : "residents";
 
   return <Layout>
       <div className="">
 
         <Tabs defaultValue={defaultTab} className="w-full">
           <TabsList>
-            <TabsTrigger value="admins">Admin Accounts</TabsTrigger>
+            {canManageAdmins() && (
+              <TabsTrigger value="admins">Admin Accounts</TabsTrigger>
+            )}
             <TabsTrigger value="residents" onClick={handleResidentsTabClick}>
               Residents
               {newResidentsCount > 0 && (
@@ -997,7 +1003,8 @@ export function ManageUsersPage() {
 
           
           
-          <TabsContent value="admins">
+          {canManageAdmins() && (
+            <TabsContent value="admins">
 
             {/* Admin Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
@@ -1542,6 +1549,7 @@ export function ManageUsersPage() {
               </CardContent>
             </Card>
           </TabsContent>
+          )}
           
           <TabsContent value="residents">
             
@@ -1856,9 +1864,38 @@ export function ManageUsersPage() {
                                               <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
+                                              <SelectItem value="Abang">Abang</SelectItem>
+                                              <SelectItem value="Aliliw">Aliliw</SelectItem>
+                                              <SelectItem value="Atulinao">Atulinao</SelectItem>
+                                              <SelectItem value="Ayuti">Ayuti</SelectItem>
                                               <SelectItem value="Barangay 1">Barangay 1</SelectItem>
                                               <SelectItem value="Barangay 2">Barangay 2</SelectItem>
                                               <SelectItem value="Barangay 3">Barangay 3</SelectItem>
+                                              <SelectItem value="Barangay 4">Barangay 4</SelectItem>
+                                              <SelectItem value="Barangay 5">Barangay 5</SelectItem>
+                                              <SelectItem value="Barangay 6">Barangay 6</SelectItem>
+                                              <SelectItem value="Barangay 7">Barangay 7</SelectItem>
+                                              <SelectItem value="Barangay 8">Barangay 8</SelectItem>
+                                              <SelectItem value="Barangay 9">Barangay 9</SelectItem>
+                                              <SelectItem value="Barangay 10">Barangay 10</SelectItem>
+                                              <SelectItem value="Igang">Igang</SelectItem>
+                                              <SelectItem value="Kabatete">Kabatete</SelectItem>
+                                              <SelectItem value="Kakawit">Kakawit</SelectItem>
+                                              <SelectItem value="Kalangay">Kalangay</SelectItem>
+                                              <SelectItem value="Kalyaat">Kalyaat</SelectItem>
+                                              <SelectItem value="Kilib">Kilib</SelectItem>
+                                              <SelectItem value="Kulapi">Kulapi</SelectItem>
+                                              <SelectItem value="Mahabang Parang">Mahabang Parang</SelectItem>
+                                              <SelectItem value="Malupak">Malupak</SelectItem>
+                                              <SelectItem value="Manasa">Manasa</SelectItem>
+                                              <SelectItem value="May-it">May-it</SelectItem>
+                                              <SelectItem value="Nagsinamo">Nagsinamo</SelectItem>
+                                              <SelectItem value="Nalunao">Nalunao</SelectItem>
+                                              <SelectItem value="Palola">Palola</SelectItem>
+                                              <SelectItem value="Piis">Piis</SelectItem>
+                                              <SelectItem value="Samil">Samil</SelectItem>
+                                              <SelectItem value="Tiawe">Tiawe</SelectItem>
+                                              <SelectItem value="Tinamnan">Tinamnan</SelectItem>
                                             </SelectContent>
                                           </Select>
                                         </div>
@@ -2320,7 +2357,7 @@ export function ManageUsersPage() {
         </AlertDialog>
 
         {/* Edit Admin Account Modal */}
-        <Dialog open={!!editingAdmin} onOpenChange={open => { if (!open) { setEditingAdmin(null); setShowEditAdminErrors(false); } }}>
+        <Dialog open={!!editingAdmin} onOpenChange={() => {}}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Edit Admin Account</DialogTitle>

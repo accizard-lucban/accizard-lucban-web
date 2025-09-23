@@ -13,6 +13,7 @@ import { getAuth } from "firebase/auth";
 import { db } from "@/lib/firebase";
 import { collection, query, orderBy, limit, getDocs, where } from "firebase/firestore";
 import { Bell } from "lucide-react";
+import { useUserRole } from "@/hooks/useUserRole";
 import { SUPER_ADMIN_EMAIL } from "@/lib/utils";
 
 interface PageHeaderProps {
@@ -32,55 +33,21 @@ export function PageHeader({
     role: "",
     avatarUrl: ""
   });
+  const { userRole, loading: roleLoading } = useUserRole();
 
   // Notifications state
   const [notifications, setNotifications] = useState<any[]>([]);
   const [notifLoading, setNotifLoading] = useState(false);
 
   useEffect(() => {
-    async function fetchUser() {
-      const adminLoggedIn = localStorage.getItem("adminLoggedIn") === "true";
-      if (adminLoggedIn) {
-        const username = localStorage.getItem("adminUsername");
-        if (username) {
-          const q = query(collection(db, "admins"), where("username", "==", username));
-          const querySnapshot = await getDocs(q);
-          if (!querySnapshot.empty) {
-            const data = querySnapshot.docs[0].data();
-            setUser({
-              name: data.name || data.username || "Admin",
-              role: data.position || "Admin",
-              avatarUrl: data.profilePicture || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.name || data.username || "Admin")}&background=random`
-            });
-            return;
-          }
-        }
-      } else {
-        const authUser = getAuth().currentUser;
-        if (authUser) {
-          if (authUser.email === SUPER_ADMIN_EMAIL) {
-            const q = query(collection(db, "superAdmin"), where("email", "==", authUser.email));
-            const querySnapshot = await getDocs(q);
-            if (!querySnapshot.empty) {
-              const data = querySnapshot.docs[0].data();
-              setUser({
-                name: data.fullName || data.username || "Super Admin",
-                role: data.role || data.position || "Super Admin",
-                avatarUrl: data.profilePicture || authUser.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.fullName || data.username || "Super Admin")}&background=random`
-              });
-              return;
-            }
-          }
-          setUser({
-            name: authUser.displayName || authUser.email?.split("@")[0] || "Super Admin",
-            role: "Super Admin",
-            avatarUrl: authUser.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(authUser.displayName || authUser.email?.split("@")[0] || "Super Admin")}&background=random`
-          });
-        }
-      }
+    if (userRole && !roleLoading) {
+      setUser({
+        name: userRole.name || "",
+        role: userRole.position || "",
+        avatarUrl: userRole.profilePicture || "/accizard-uploads/login-signup-cover.png"
+      });
     }
-    fetchUser();
-  }, []);
+  }, [userRole, roleLoading]);
 
   useEffect(() => {
     async function fetchNotifications() {

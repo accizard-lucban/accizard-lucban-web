@@ -22,7 +22,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { MapboxMap } from "./MapboxMap";
 import { db } from "@/lib/firebase";
-import { collection, onSnapshot, orderBy, query, getDocs, where } from "firebase/firestore";
+import { collection, onSnapshot, orderBy, query, getDocs, where, updateDoc, doc, serverTimestamp } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getAuth } from "firebase/auth";
 import { toast } from "@/components/ui/sonner";
@@ -99,7 +99,9 @@ export function ManageReportsPage() {
     async function fetchCurrentUser() {
       try {
         const adminLoggedIn = localStorage.getItem("adminLoggedIn") === "true";
+        
         if (adminLoggedIn) {
+          // Admin user - fetch from admins collection using username
           const username = localStorage.getItem("adminUsername");
           if (username) {
             const q = query(collection(db, "admins"), where("username", "==", username));
@@ -109,31 +111,34 @@ export function ManageReportsPage() {
               setCurrentUser({
                 id: querySnapshot.docs[0].id,
                 username: data.username || username,
-                name: data.name || data.username || "Admin"
+                name: data.name || data.fullName || username,
+                userType: "admin"
               });
               return;
             }
           }
         } else {
+          // Super admin user - fetch from superAdmin collection using email
           const authUser = getAuth().currentUser;
-          if (authUser) {
-            if (authUser.email === "superadmin@accizard.com") {
-              const q = query(collection(db, "superAdmin"), where("email", "==", authUser.email));
-              const querySnapshot = await getDocs(q);
-              if (!querySnapshot.empty) {
-                const data = querySnapshot.docs[0].data();
-                setCurrentUser({
-                  id: querySnapshot.docs[0].id,
-                  username: data.username || authUser.email?.split("@")[0] || "Super Admin",
-                  name: data.fullName || data.username || "Super Admin"
-                });
-                return;
-              }
+          if (authUser && authUser.email) {
+            const q = query(collection(db, "superAdmin"), where("email", "==", authUser.email));
+            const querySnapshot = await getDocs(q);
+            if (!querySnapshot.empty) {
+              const data = querySnapshot.docs[0].data();
+              setCurrentUser({
+                id: querySnapshot.docs[0].id,
+                username: data.username || authUser.email?.split("@")[0] || "Super Admin",
+                name: data.fullName || data.name || "Super Admin",
+                userType: "superadmin"
+              });
+              return;
             }
+            // Fallback for super admin not found in collection
             setCurrentUser({
               id: authUser.uid,
               username: authUser.email?.split("@")[0] || "Super Admin",
-              name: authUser.displayName || authUser.email?.split("@")[0] || "Super Admin"
+              name: authUser.displayName || authUser.email?.split("@")[0] || "Super Admin",
+              userType: "superadmin"
             });
           }
         }
@@ -246,7 +251,14 @@ export function ManageReportsPage() {
     console.log("Redirecting to user:", reportedBy);
     navigate("/manage-users");
   };
-  const barangayOptions = ["Brgy. Poblacion", "Brgy. San Roque", "Brgy. Magsaysay", "Brgy. Santo Niño", "Brgy. San Antonio", "Brgy. Santa Cruz"];
+  const barangayOptions = [
+    "Abang", "Aliliw", "Atulinao", "Ayuti", 
+    "Barangay 1", "Barangay 2", "Barangay 3", "Barangay 4", "Barangay 5", 
+    "Barangay 6", "Barangay 7", "Barangay 8", "Barangay 9", "Barangay 10", 
+    "Igang", "Kabatete", "Kakawit", "Kalangay", "Kalyaat", "Kilib", 
+    "Kulapi", "Mahabang Parang", "Malupak", "Manasa", "May-it", 
+    "Nagsinamo", "Nalunao", "Palola", "Piis", "Samil", "Tiawe", "Tinamnan"
+  ];
   const [adminOptions, setAdminOptions] = useState(["Admin 1", "Admin 2", "Admin 3", "Admin 4", "Admin 5"]);
   const [agencyOptions, setAgencyOptions] = useState(["PNP", "BFP", "MTMO", "BPOC"]);
   const emergencyTypeOptions = ["Road Crash", "Medical Assistance", "Medical Emergency"];
@@ -478,13 +490,57 @@ export function ManageReportsPage() {
   const [previewEditData, setPreviewEditData] = useState<any>(null);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [uploadingDocument, setUploadingDocument] = useState(false);
-  const [currentUser, setCurrentUser] = useState<{ id: string; username: string; name: string } | null>(null);
-  const [hasAutoPopulatedReceivedBy, setHasAutoPopulatedReceivedBy] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{ id: string; username: string; name: string; userType: string } | null>(null);
 
   // Helper function to get current time in HH:MM format
   const getCurrentTime = () => {
     const now = new Date();
     return now.toTimeString().slice(0, 5);
+  };
+
+  // Function to save dispatch data to database
+  const saveDispatchDataToDatabase = async (reportId: string, dispatchData: any) => {
+    try {
+      // First, get the current document to merge with existing data
+      const reportDoc = await getDocs(query(collection(db, "reports"), where("reportId", "==", reportId)));
+      if (!reportDoc.empty) {
+        const docId = reportDoc.docs[0].id;
+        const currentData = reportDoc.docs[0].data();
+        
+        // Merge with existing dispatchInfo if it exists
+        const mergedDispatchInfo = {
+          ...currentData.dispatchInfo,
+          ...dispatchData
+        };
+        
+        await updateDoc(doc(db, "reports", docId), {
+          dispatchInfo: mergedDispatchInfo,
+          updatedAt: serverTimestamp(),
+          lastModifiedBy: currentUser?.id
+        });
+        toast.success("Dispatch data saved successfully!");
+      }
+    } catch (error) {
+      console.error("Error saving dispatch data:", error);
+      toast.error("Failed to save dispatch data");
+    }
+  };
+
+  // Function to load existing dispatch data from database
+  const loadDispatchDataFromDatabase = async (reportId: string) => {
+    try {
+      const reportDoc = await getDocs(query(collection(db, "reports"), where("reportId", "==", reportId)));
+      if (!reportDoc.empty) {
+        const data = reportDoc.docs[0].data();
+        if (data.dispatchInfo) {
+          setDispatchData(data.dispatchInfo);
+          return data.dispatchInfo;
+        }
+      }
+    } catch (error) {
+      console.error("Error loading dispatch data:", error);
+    }
+    return null;
   };
   const [dispatchData, setDispatchData] = useState({
     receivedBy: "",
@@ -808,10 +864,15 @@ export function ManageReportsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Types</SelectItem>
-                      <SelectItem value="fire">Fire</SelectItem>
+                      <SelectItem value="road-crash">Road Crash</SelectItem>
+                      <SelectItem value="medical-emergency">Medical Emergency</SelectItem>
                       <SelectItem value="flooding">Flooding</SelectItem>
-                      <SelectItem value="medical">Medical Emergency</SelectItem>
+                      <SelectItem value="volcanic-activity">Volcanic Activity</SelectItem>
+                      <SelectItem value="landslide">Landslide</SelectItem>
                       <SelectItem value="earthquake">Earthquake</SelectItem>
+                      <SelectItem value="civil-disturbance">Civil Disturbance</SelectItem>
+                      <SelectItem value="armed-conflict">Armed Conflict</SelectItem>
+                      <SelectItem value="infectious-disease">Infectious Disease</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -891,15 +952,16 @@ export function ManageReportsPage() {
                       <TableCell className="font-medium">{report.id}</TableCell>
                       <TableCell>
                         <Badge className={
-                          report.type === 'Fire'
-                            ? 'bg-red-100 text-red-800 hover:bg-red-50'
-                            : report.type === 'Flooding'
-                            ? 'bg-blue-100 text-blue-800 hover:bg-blue-50'
-                            : report.type === 'Medical Emergency'
-                            ? 'bg-green-100 text-green-800 hover:bg-green-50'
-                            : report.type === 'Earthquake'
-                            ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-50'
-                            : 'bg-gray-100 text-gray-800 hover:bg-gray-50'
+                          report.type === 'Road Crash' ? 'bg-red-100 text-red-800 hover:bg-red-50' :
+                          report.type === 'Medical Emergency' ? 'bg-green-100 text-green-800 hover:bg-green-50' :
+                          report.type === 'Flooding' ? 'bg-blue-100 text-blue-800 hover:bg-blue-50' :
+                          report.type === 'Volcanic Activity' ? 'bg-orange-100 text-orange-800 hover:bg-orange-50' :
+                          report.type === 'Landslide' ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-50' :
+                          report.type === 'Earthquake' ? 'bg-purple-100 text-purple-800 hover:bg-purple-50' :
+                          report.type === 'Civil Disturbance' ? 'bg-pink-100 text-pink-800 hover:bg-pink-50' :
+                          report.type === 'Armed Conflict' ? 'bg-red-100 text-red-800 hover:bg-red-50' :
+                          report.type === 'Infectious Disease' ? 'bg-indigo-100 text-indigo-800 hover:bg-indigo-50' :
+                          'bg-gray-100 text-gray-800 hover:bg-gray-50'
                         }>
                           {report.type}
                         </Badge>
@@ -941,22 +1003,34 @@ export function ManageReportsPage() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => {
+                            onClick={async () => {
                               setSelectedReport(report);
                               setShowPreviewModal(true);
-                              // Auto-populate received by field with current user info (only once per session)
-                              if (currentUser && !hasAutoPopulatedReceivedBy) {
-                                setDispatchData(prev => ({
-                                  ...prev,
-                                  receivedBy: `${currentUser.name} (${currentUser.username})`
-                                }));
-                                setHasAutoPopulatedReceivedBy(true);
+                              
+                              // Load existing dispatch data from database
+                              const existingDispatchData = await loadDispatchDataFromDatabase(report.id);
+                              
+                              // Only auto-populate if no existing dispatch data AND no receivedBy/timeCallReceived
+                              if (!existingDispatchData || (!existingDispatchData.receivedBy && !existingDispatchData.timeCallReceived)) {
+                                if (currentUser) {
+                                  const newDispatchData = {
+                                    receivedBy: currentUser.name,
+                                    timeCallReceived: getCurrentTime()
+                                  };
+                                  
+                                  // Set the data in state
+                                  setDispatchData(prev => ({
+                                    ...prev,
+                                    ...newDispatchData
+                                  }));
+                                  
+                                  // Immediately save to database to prevent other users from overwriting
+                                  await saveDispatchDataToDatabase(report.id, {
+                                    ...existingDispatchData,
+                                    ...newDispatchData
+                                  });
+                                }
                               }
-                              // Auto-populate time call received with current time
-                              setDispatchData(prev => ({
-                                ...prev,
-                                timeCallReceived: getCurrentTime()
-                              }));
                             }}
                           >
                             <Eye className="h-4 w-4" />
@@ -1021,10 +1095,15 @@ export function ManageReportsPage() {
                       <SelectValue placeholder="Select type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="fire">Fire</SelectItem>
+                      <SelectItem value="road-crash">Road Crash</SelectItem>
+                      <SelectItem value="medical-emergency">Medical Emergency</SelectItem>
                       <SelectItem value="flooding">Flooding</SelectItem>
-                      <SelectItem value="medical">Medical Emergency</SelectItem>
+                      <SelectItem value="volcanic-activity">Volcanic Activity</SelectItem>
+                      <SelectItem value="landslide">Landslide</SelectItem>
                       <SelectItem value="earthquake">Earthquake</SelectItem>
+                      <SelectItem value="civil-disturbance">Civil Disturbance</SelectItem>
+                      <SelectItem value="armed-conflict">Armed Conflict</SelectItem>
+                      <SelectItem value="infectious-disease">Infectious Disease</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1124,8 +1203,41 @@ export function ManageReportsPage() {
         <Dialog open={showPreviewModal} onOpenChange={(open) => {
           setShowPreviewModal(open);
           if (!open) {
-            // Reset the auto-population flag when modal is closed
-            setHasAutoPopulatedReceivedBy(false);
+            // Reset dispatch data when modal is closed
+            setDispatchData({
+              receivedBy: "",
+              timeCallReceived: "",
+              timeOfDispatch: "",
+              timeOfArrival: "",
+              hospitalArrival: "",
+              returnedToOpcen: "",
+              disasterRelated: "",
+              agencyPresent: "",
+              typeOfEmergency: "",
+              vehicleInvolved: "",
+              injuryClassification: "",
+              majorInjuryTypes: [],
+              minorInjuryTypes: [],
+              medicalClassification: "",
+              majorMedicalSymptoms: [],
+              minorMedicalSymptoms: [],
+              chiefComplaint: "",
+              diagnosis: "",
+              natureOfIllness: "",
+              natureOfIllnessOthers: "",
+              actionsTaken: [],
+              referredTo: "",
+              transportFrom: "",
+              transportTo: "",
+              othersDescription: "",
+              vitalSigns: {
+                temperature: "",
+                pulseRate: "",
+                respiratoryRate: "",
+                bloodPressure: ""
+              },
+              responders: []
+            });
           }
         }}>
           <DialogContent className="sm:max-w-[900px] max-h-[90vh] bg-white flex flex-col overflow-hidden">
@@ -1134,6 +1246,14 @@ export function ManageReportsPage() {
               <div>
                 <h2 className="text-2xl font-bold text-gray-900">Report Preview</h2>
                 <div className="text-sm text-gray-700">{selectedReport?.id && `Report ID: ${selectedReport.id}`}</div>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={handlePrintPreview}>
+                  <Printer className="h-4 w-4" />
+                </Button>
+                <Button size="sm" variant="outline">
+                  <Download className="h-4 w-4" />
+                </Button>
               </div>
             </div>
             {/* Navigation Tabs */}
@@ -1201,12 +1321,6 @@ export function ManageReportsPage() {
                         <Edit className="h-4 w-4" />
                       </Button>
                     )}
-                    <Button size="sm" variant="outline" onClick={handlePrintPreview}>
-                      <Printer className="h-4 w-4" />
-                    </Button>
-                    <Button size="sm" variant="outline">
-                      <Download className="h-4 w-4" />
-                    </Button>
                   </div>
                 </div>
                 <div className="flex-1 overflow-y-auto border rounded-lg min-h-0">
@@ -1239,14 +1353,30 @@ export function ManageReportsPage() {
                           <Select value={previewEditData?.type} onValueChange={v => setPreviewEditData((d: any) => ({ ...d, type: v }))}>
                             <SelectTrigger><SelectValue /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="Fire">Fire</SelectItem>
-                              <SelectItem value="Flooding">Flooding</SelectItem>
+                              <SelectItem value="Road Crash">Road Crash</SelectItem>
                               <SelectItem value="Medical Emergency">Medical Emergency</SelectItem>
+                              <SelectItem value="Flooding">Flooding</SelectItem>
+                              <SelectItem value="Volcanic Activity">Volcanic Activity</SelectItem>
+                              <SelectItem value="Landslide">Landslide</SelectItem>
                               <SelectItem value="Earthquake">Earthquake</SelectItem>
+                              <SelectItem value="Civil Disturbance">Civil Disturbance</SelectItem>
+                              <SelectItem value="Armed Conflict">Armed Conflict</SelectItem>
+                              <SelectItem value="Infectious Disease">Infectious Disease</SelectItem>
                             </SelectContent>
                           </Select>
                         ) : (
-                          <Badge className={selectedReport?.type === 'Fire' ? 'bg-red-100 text-red-800 hover:bg-red-50' : selectedReport?.type === 'Flooding' ? 'bg-blue-100 text-blue-800 hover:bg-blue-50' : 'bg-gray-100 text-gray-800 hover:bg-gray-50'}>
+                          <Badge className={
+                            selectedReport?.type === 'Road Crash' ? 'bg-red-100 text-red-800 hover:bg-red-50' :
+                            selectedReport?.type === 'Medical Emergency' ? 'bg-green-100 text-green-800 hover:bg-green-50' :
+                            selectedReport?.type === 'Flooding' ? 'bg-blue-100 text-blue-800 hover:bg-blue-50' :
+                            selectedReport?.type === 'Volcanic Activity' ? 'bg-orange-100 text-orange-800 hover:bg-orange-50' :
+                            selectedReport?.type === 'Landslide' ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-50' :
+                            selectedReport?.type === 'Earthquake' ? 'bg-purple-100 text-purple-800 hover:bg-purple-50' :
+                            selectedReport?.type === 'Civil Disturbance' ? 'bg-pink-100 text-pink-800 hover:bg-pink-50' :
+                            selectedReport?.type === 'Armed Conflict' ? 'bg-red-100 text-red-800 hover:bg-red-50' :
+                            selectedReport?.type === 'Infectious Disease' ? 'bg-indigo-100 text-indigo-800 hover:bg-indigo-50' :
+                            'bg-gray-100 text-gray-800 hover:bg-gray-50'
+                          }>
                             {selectedReport?.type}
                           </Badge>
                         )}
@@ -1421,10 +1551,9 @@ export function ManageReportsPage() {
                   <div className="text-lg font-semibold text-gray-900">Dispatch Form</div>
                   <div className="flex gap-2 flex-wrap">
                     {isPreviewEditMode ? (
-                      <Button size="sm" className="bg-[#FF4F0B] text-white hover:bg-[#FF4F0B]/90" onClick={() => {
+                      <Button size="sm" className="bg-[#FF4F0B] text-white hover:bg-[#FF4F0B]/90" onClick={async () => {
                         console.log('Saving dispatch form:', dispatchData);
-                        // Add save logic here
-                        toast.success('Dispatch form saved successfully!');
+                        await saveDispatchDataToDatabase(selectedReport.id, dispatchData);
                         setIsPreviewEditMode(false);
                       }}>
                         Save
@@ -1496,7 +1625,7 @@ export function ManageReportsPage() {
                                 </SelectContent>
                               </Select>
                             ) : (
-                              dispatchData.receivedBy || (currentUser ? `${currentUser.name} (${currentUser.username})` : "Not specified")
+                              dispatchData.receivedBy || (currentUser ? `${currentUser.name}` : "Not specified")
                             )}
                           </TableCell>
                         </TableRow>
