@@ -24,6 +24,7 @@ import { MapboxMap } from "./MapboxMap";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, orderBy, query, getDocs, where, updateDoc, doc, serverTimestamp } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { storage } from "@/lib/firebase";
 import { getAuth } from "firebase/auth";
 import { toast } from "@/components/ui/sonner";
 
@@ -154,7 +155,7 @@ export function ManageReportsPage() {
     try {
       const reportsQuery = query(collection(db, "reports"), orderBy("timestamp", "desc"));
       const unsubscribe = onSnapshot(reportsQuery, (snapshot) => {
-        const fetched = snapshot.docs.map((doc) => {
+        const fetched = snapshot.docs.map((doc, index) => {
           const data: any = doc.data() || {};
           
           // Map timestamp to dateSubmitted and timeSubmitted
@@ -176,8 +177,14 @@ export function ManageReportsPage() {
             }
           } catch {}
 
-          // Map imageUrls to attachedMedia
-          const attachedMedia = Array.isArray(data.imageUrls) ? data.imageUrls : [];
+          // Map imageUrls to attachedMedia (from mobile users)
+          const mobileMedia = Array.isArray(data.imageUrls) ? data.imageUrls : [];
+          
+          // Get admin-added media from the report data
+          const adminMedia = Array.isArray(data.adminMedia) ? data.adminMedia : [];
+
+          // Use mock coordinates for testing if Firebase data doesn't have coordinates
+          const mockCoordinates = mockReports[index % mockReports.length]?.coordinates || "14.5995, 120.9842";
 
           return {
             id: data.reportId || doc.id,
@@ -191,12 +198,13 @@ export function ManageReportsPage() {
             dateSubmitted,
             timeSubmitted,
             status: data.status || "Pending",
-            attachedMedia,
+            mobileMedia,
+            adminMedia,
             attachedDocument: "", // Not in your schema, will show empty
             mobileNumber: "", // Not in your schema, will show empty
             timeOfDispatch: "", // Not in your schema, will show empty
             timeOfArrival: "", // Not in your schema, will show empty
-            coordinates: "" // Not in your schema, will show empty
+            coordinates: data.coordinates || mockCoordinates // Use Firebase coordinates if available, otherwise use mock
           };
         });
         console.log("Fetched reports:", fetched);
@@ -491,6 +499,10 @@ export function ManageReportsPage() {
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [uploadingDocument, setUploadingDocument] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ id: string; username: string; name: string; userType: string } | null>(null);
+  const [showImagePreview, setShowImagePreview] = useState(false);
+  const [previewImageUrl, setPreviewImageUrl] = useState("");
+  const [previewImageName, setPreviewImageName] = useState("");
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
   // Helper function to get current time in HH:MM format
   const getCurrentTime = () => {
@@ -686,58 +698,157 @@ export function ManageReportsPage() {
   const currentPatient = patients[currentPatientIndex] || patients[0];
 
   // Function to upload media files to Firebase Storage
-  const handleMediaUpload = async (files: FileList) => {
-    if (!files || files.length === 0) return;
+  const handleMediaUpload = async (files?: File[]) => {
+    const filesToUpload = files || selectedFiles;
+    if (!filesToUpload || filesToUpload.length === 0) {
+      toast.error('No files selected for upload');
+      return;
+    }
+
+    if (!selectedReport?.id) {
+      toast.error('No report selected for upload');
+      return;
+    }
     
     setUploadingMedia(true);
-    const storage = getStorage();
     const uploadedUrls: string[] = [];
     
     try {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const fileName = `${Date.now()}_${file.name}`;
-        const storageRef = ref(storage, `reports/${selectedReport?.id}/media/${fileName}`);
+      console.log('Starting upload process...');
+      console.log('Files to upload:', filesToUpload.length);
+      console.log('Report ID:', selectedReport.id);
+      
+      for (let i = 0; i < filesToUpload.length; i++) {
+        const file = filesToUpload[i];
+        console.log(`Uploading file ${i + 1}/${filesToUpload.length}:`, file.name, file.type, file.size);
+        
+        // Create unique filename with timestamp and random suffix
+        const timestamp = Date.now();
+        const randomSuffix = Math.random().toString(36).substring(2, 8);
+        const fileExtension = file.name.split('.').pop() || '';
+        const fileName = `media_${timestamp}_${randomSuffix}.${fileExtension}`;
+        
+        // Create storage reference
+        const storageRef = ref(storage, `reports/${selectedReport.id}/media/${fileName}`);
+        console.log('Storage path:', `reports/${selectedReport.id}/media/${fileName}`);
         
         // Upload file
-        await uploadBytes(storageRef, file);
+        console.log('Uploading bytes...');
+        const uploadResult = await uploadBytes(storageRef, file);
+        console.log('Upload bytes result:', uploadResult);
         
         // Get download URL
+        console.log('Getting download URL...');
         const downloadURL = await getDownloadURL(storageRef);
+        console.log('Download URL:', downloadURL);
+        
         uploadedUrls.push(downloadURL);
+        console.log(`File ${i + 1} uploaded successfully`);
       }
       
-      // Update the preview data with new URLs
+      // Update the preview data with new URLs (save as admin media)
       setPreviewEditData((d: any) => ({
         ...d,
-        attachedMedia: [...(d.attachedMedia || []), ...uploadedUrls]
+        adminMedia: [...(d.adminMedia || []), ...uploadedUrls]
       }));
       
-      toast.success(`${files.length} file(s) uploaded successfully!`);
-    } catch (error) {
+      // Clear selected files after successful upload
+      setSelectedFiles([]);
+      
+      console.log('All files uploaded successfully:', uploadedUrls);
+      toast.success(`${filesToUpload.length} file(s) uploaded successfully!`);
+    } catch (error: any) {
       console.error('Error uploading media files:', error);
-      toast.error('Failed to upload media files. Please try again.');
+      console.error('Error details:', {
+        code: error.code,
+        message: error.message,
+        stack: error.stack
+      });
+      
+      let errorMessage = 'Failed to upload media files. Please try again.';
+      
+      // Provide more specific error messages
+      if (error.code === 'storage/unauthorized') {
+        errorMessage = 'You are not authorized to upload files. Please check your permissions.';
+      } else if (error.code === 'storage/canceled') {
+        errorMessage = 'Upload was canceled.';
+      } else if (error.code === 'storage/unknown') {
+        errorMessage = 'An unknown error occurred during upload.';
+      } else if (error.code === 'storage/invalid-format') {
+        errorMessage = 'Invalid file format. Please check the file type.';
+      } else if (error.code === 'storage/object-not-found') {
+        errorMessage = 'Storage object not found.';
+      } else if (error.code === 'storage/bucket-not-found') {
+        errorMessage = 'Storage bucket not found. Please check your Firebase configuration.';
+      } else if (error.code === 'storage/project-not-found') {
+        errorMessage = 'Firebase project not found. Please check your configuration.';
+      }
+      
+      toast.error(errorMessage);
     } finally {
       setUploadingMedia(false);
     }
+  };
+
+  // Function to handle file selection
+  const handleFileSelection = (files: FileList | null) => {
+    if (!files) return;
+    
+    const fileArray = Array.from(files);
+    setSelectedFiles(prev => [...prev, ...fileArray]);
+  };
+
+  // Function to remove selected file
+  const removeSelectedFile = (index: number) => {
+    setSelectedFiles(prev => {
+      const fileToRemove = prev[index];
+      // Clean up object URL for the removed file
+      if (fileToRemove && fileToRemove.type.startsWith('image/')) {
+        URL.revokeObjectURL(URL.createObjectURL(fileToRemove));
+      }
+      return prev.filter((_, i) => i !== index);
+    });
+  };
+
+  // Function to clear all selected files
+  const clearSelectedFiles = () => {
+    // Clean up object URLs to prevent memory leaks
+    selectedFiles.forEach(file => {
+      if (file.type.startsWith('image/')) {
+        URL.revokeObjectURL(URL.createObjectURL(file));
+      }
+    });
+    setSelectedFiles([]);
   };
 
   // Function to upload document to Firebase Storage
   const handleDocumentUpload = async (file: File) => {
     if (!file) return;
     
+    if (!selectedReport?.id) {
+      toast.error('No report selected for upload');
+      return;
+    }
+    
     setUploadingDocument(true);
-    const storage = getStorage();
     
     try {
-      const fileName = `${Date.now()}_${file.name}`;
-      const storageRef = ref(storage, `reports/${selectedReport?.id}/documents/${fileName}`);
+      console.log('Uploading document:', file.name, file.type, file.size);
+      
+      const timestamp = Date.now();
+      const randomSuffix = Math.random().toString(36).substring(2, 8);
+      const fileExtension = file.name.split('.').pop() || '';
+      const fileName = `document_${timestamp}_${randomSuffix}.${fileExtension}`;
+      
+      const storageRef = ref(storage, `reports/${selectedReport.id}/documents/${fileName}`);
+      console.log('Document storage path:', `reports/${selectedReport.id}/documents/${fileName}`);
       
       // Upload file
       await uploadBytes(storageRef, file);
       
       // Get download URL
       const downloadURL = await getDownloadURL(storageRef);
+      console.log('Document download URL:', downloadURL);
       
       // Update the preview data with new URL
       setPreviewEditData((d: any) => ({
@@ -746,11 +857,95 @@ export function ManageReportsPage() {
       }));
       
       toast.success('Document uploaded successfully!');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error uploading document:', error);
-      toast.error('Failed to upload document. Please try again.');
+      console.error('Document upload error details:', {
+        code: error.code,
+        message: error.message,
+        stack: error.stack
+      });
+      
+      let errorMessage = 'Failed to upload document. Please try again.';
+      
+      if (error.code === 'storage/unauthorized') {
+        errorMessage = 'You are not authorized to upload files. Please check your permissions.';
+      } else if (error.code === 'storage/bucket-not-found') {
+        errorMessage = 'Storage bucket not found. Please check your Firebase configuration.';
+      }
+      
+      toast.error(errorMessage);
     } finally {
       setUploadingDocument(false);
+    }
+  };
+
+  // Function to open image preview
+  const handleImagePreview = (imageUrl: string, imageName: string) => {
+    console.log('Setting image preview:', imageUrl, imageName);
+    setPreviewImageUrl(imageUrl);
+    setPreviewImageName(imageName);
+    setShowImagePreview(true);
+  };
+
+  // Function to download image
+  const handleDownloadImage = async (imageUrl: string, imageName: string) => {
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = imageName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success('Image downloaded successfully!');
+    } catch (error) {
+      console.error('Error downloading image:', error);
+      toast.error('Failed to download image. Please try again.');
+    }
+  };
+
+  // Function to delete image from report
+  const handleDeleteImage = async (imageUrl: string, imageIndex: number) => {
+    try {
+      // Remove from preview data (mobile media)
+      setPreviewEditData((d: any) => ({
+        ...d,
+        mobileMedia: d.mobileMedia.filter((_: any, index: number) => index !== imageIndex)
+      }));
+      
+      // Close preview if this image was being previewed
+      if (previewImageUrl === imageUrl) {
+        setShowImagePreview(false);
+      }
+      
+      toast.success('Mobile image removed successfully!');
+    } catch (error) {
+      console.error('Error deleting mobile image:', error);
+      toast.error('Failed to delete mobile image. Please try again.');
+    }
+  };
+
+  // Function to delete admin-added image from report
+  const handleDeleteAdminImage = async (imageUrl: string, imageIndex: number) => {
+    try {
+      // Remove from preview data (admin media)
+      setPreviewEditData((d: any) => ({
+        ...d,
+        adminMedia: d.adminMedia.filter((_: any, index: number) => index !== imageIndex)
+      }));
+      
+      // Close preview if this image was being previewed
+      if (previewImageUrl === imageUrl) {
+        setShowImagePreview(false);
+      }
+      
+      toast.success('Admin image removed successfully!');
+    } catch (error) {
+      console.error('Error deleting admin image:', error);
+      toast.error('Failed to delete admin image. Please try again.');
     }
   };
 
@@ -1265,29 +1460,33 @@ export function ManageReportsPage() {
                 <TabsTrigger value="patient">Patient Information</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="directions" className="mt-4 flex-1 min-h-0">
-                <div className="bg-gray-200 rounded-lg h-full w-full relative" style={{ minHeight: '400px' }}>
+              <TabsContent value="directions" className="mt-4 flex-1 min-h-0 flex flex-col">
+                <div className="bg-gray-200 rounded-lg flex-1 w-full relative overflow-hidden" style={{ minHeight: '500px' }}>
                   {selectedReport ? (
                     <div 
                       id="report-map-container"
                       className="w-full h-full rounded-lg overflow-hidden"
-                      style={{ minHeight: '400px' }}
+                      style={{ height: '100%', minHeight: '500px' }}
                     >
                       <MapboxMap 
                         center={selectedReport.coordinates ? 
-                          selectedReport.coordinates.split(',').map(coord => parseFloat(coord.trim())).reverse() as [number, number] : 
-                          [120.9842, 14.5995]}
+                          (() => {
+                            try {
+                              const coords = selectedReport.coordinates.split(',').map(coord => parseFloat(coord.trim()));
+                              console.log('Processing coordinates:', selectedReport.coordinates, 'Parsed:', coords);
+                              if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
+                                // Mock data format is "latitude, longitude" - convert to [longitude, latitude] for Mapbox
+                                const result = [coords[1], coords[0]] as [number, number];
+                                console.log('Final coordinates (center):', result);
+                                return result;
+                              }
+                            } catch (error) {
+                              console.error('Error parsing coordinates:', error);
+                            }
+                            return [120.9842, 14.5995] as [number, number];
+                          })() : 
+                          [120.9842, 14.5995] as [number, number]}
                         zoom={14}
-                        singleMarker={{
-                          id: selectedReport.id || 'report-marker',
-                          type: selectedReport.type || 'Report',
-                          title: selectedReport.location || 'Report Location',
-                          description: selectedReport.description || '',
-                          reportId: selectedReport.id,
-                          coordinates: selectedReport.coordinates ? 
-                            selectedReport.coordinates.split(',').map(coord => parseFloat(coord.trim())).reverse() as [number, number] : 
-                            [120.9842, 14.5995]
-                        }}
                       />
                     </div>
                   ) : (
@@ -1306,17 +1505,19 @@ export function ManageReportsPage() {
                   <div className="text-lg font-semibold text-gray-900">Report Details</div>
                   <div className="flex gap-2 flex-wrap">
                     {isPreviewEditMode ? (
-                      <Button size="sm" variant="outline" onClick={() => {
+                      <Button size="sm" className="bg-[#FF4F0B] text-white hover:bg-[#FF4F0B]/90" onClick={() => {
                         console.log('Saving changes:', previewEditData);
                         setSelectedReport(previewEditData);
                         setIsPreviewEditMode(false);
+                        setSelectedFiles([]); // Clear selected files when saving
                       }}>
-                        <Edit className="h-4 w-4" />
+                        Save
                       </Button>
                     ) : (
                       <Button size="sm" variant="outline" onClick={() => {
                         setIsPreviewEditMode(true);
                         setPreviewEditData({ ...selectedReport });
+                        setSelectedFiles([]); // Clear any previously selected files
                       }}>
                         <Edit className="h-4 w-4" />
                       </Button>
@@ -1327,8 +1528,8 @@ export function ManageReportsPage() {
                   <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
                     <Table className="w-full min-w-[600px]">
                     <TableBody>
-                      <TableRow className="bg-blue-50">
-                        <TableCell className="font-semibold text-gray-800 align-top w-1/3 min-w-[150px]">Date & Time Submitted</TableCell>
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Date & Time Submitted</TableCell>
                         <TableCell>
                           {selectedReport?.dateSubmitted && selectedReport?.timeSubmitted ? (
                             <div className="flex items-center gap-3">
@@ -1343,6 +1544,34 @@ export function ManageReportsPage() {
                             </div>
                           ) : (
                             <span className="text-gray-500">Not available</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Status</TableCell>
+                        <TableCell>
+                          {isPreviewEditMode ? (
+                            <Select value={previewEditData?.status} onValueChange={v => setPreviewEditData((d: any) => ({ ...d, status: v }))}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Pending">Pending</SelectItem>
+                                <SelectItem value="Ongoing">Ongoing</SelectItem>
+                                <SelectItem value="Not Responded">Not Responded</SelectItem>
+                                <SelectItem value="Responded">Responded</SelectItem>
+                                <SelectItem value="False Report">False Report</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Badge className={cn(
+                              "capitalize",
+                              selectedReport?.status === "Pending" && "bg-yellow-100 text-yellow-800 hover:bg-yellow-50",
+                              selectedReport?.status === "Ongoing" && "bg-blue-100 text-blue-800 hover:bg-blue-50",
+                              selectedReport?.status === "Not Responded" && "bg-red-100 text-red-800 hover:bg-red-50",
+                              selectedReport?.status === "Responded" && "bg-green-100 text-green-800 hover:bg-green-50",
+                              selectedReport?.status === "False Report" && "bg-gray-100 text-gray-800 hover:bg-gray-50"
+                            )}>
+                              {selectedReport?.status}
+                            </Badge>
                           )}
                         </TableCell>
                       </TableRow>
@@ -1451,89 +1680,297 @@ export function ManageReportsPage() {
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Status</TableCell>
-                      <TableCell>
-                        {isPreviewEditMode ? (
-                          <Select value={previewEditData?.status} onValueChange={v => setPreviewEditData((d: any) => ({ ...d, status: v }))}>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Pending">Pending</SelectItem>
-                              <SelectItem value="Ongoing">Ongoing</SelectItem>
-                              <SelectItem value="Not Responded">Not Responded</SelectItem>
-                              <SelectItem value="Responded">Responded</SelectItem>
-                              <SelectItem value="False Report">False Report</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <Badge className={cn(
-                            "capitalize",
-                            selectedReport?.status === "Pending" && "bg-yellow-100 text-yellow-800 hover:bg-yellow-50",
-                            selectedReport?.status === "Ongoing" && "bg-blue-100 text-blue-800 hover:bg-blue-50",
-                            selectedReport?.status === "Not Responded" && "bg-red-100 text-red-800 hover:bg-red-50",
-                            selectedReport?.status === "Responded" && "bg-green-100 text-green-800 hover:bg-green-50",
-                            selectedReport?.status === "False Report" && "bg-gray-100 text-gray-800 hover:bg-gray-50"
-                          )}>
-                            {selectedReport?.status}
-                          </Badge>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
                       <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Attached Media</TableCell>
                       <TableCell>
-                        <div className="flex flex-wrap gap-2 mb-2">
-                          {selectedReport?.attachedMedia?.map((media: string, index: number) => {
-                            // Truncate filename if too long
-                            const truncatedName = media.length > 20 ? `${media.substring(0, 20)}...` : media;
-                            const fileExtension = media.split('.').pop()?.toLowerCase();
-                            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(fileExtension || '');
+                        <div className="space-y-4">
+                          {/* Mobile User Media Section */}
+                          <div>
+                            <div className="mb-2">
+                              <h4 className="text-sm font-medium text-gray-700">Mobile User Media</h4>
+                            </div>
+                        <div className="flex flex-wrap gap-3 mb-2">
+                              {(() => {
+                                const mobileMediaArray = isPreviewEditMode ? previewEditData?.mobileMedia : selectedReport?.mobileMedia;
+                                console.log('Mobile media array:', mobileMediaArray);
+                                
+                                if (!mobileMediaArray || mobileMediaArray.length === 0) {
+                                  return (
+                                    <div className="text-gray-500 text-sm italic">
+                                      No mobile attachments
+                                    </div>
+                                  );
+                                }
+                                
+                                return mobileMediaArray.map((media: string, index: number) => {
+                            // Better image detection - check URL path and query parameters
+                            const urlPath = media.split('?')[0]; // Remove query parameters
+                            const fileExtension = urlPath.split('.').pop()?.toLowerCase();
+                            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(fileExtension || '') || 
+                                          media.includes('image') || 
+                                          media.includes('photo') ||
+                                          media.includes('img');
+                            const fileName = urlPath.split('/').pop() || media;
                             
                             return (
                               <div 
                                 key={index} 
-                                className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 p-2 rounded cursor-pointer transition-colors group"
-                                 onClick={() => {
-                                   // Open image in new tab or show in modal
-                                   if (isImage) {
-                                     window.open(media, '_blank');
-                                   } else {
-                                     // For non-images, you could implement a download or preview
-                                     window.open(media, '_blank');
-                                   }
-                                 }}
-                                title={media} // Show full filename on hover
+                                className="relative group"
                               >
                                 {isImage ? (
-                                  <Image className="h-4 w-4 text-blue-600" />
+                                  <div 
+                                    className="w-20 h-20 rounded-lg overflow-hidden border-2 border-gray-200 hover:border-gray-400 cursor-pointer transition-all duration-200 hover:shadow-md"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      console.log('Opening image preview:', media, fileName);
+                                      handleImagePreview(media, fileName);
+                                    }}
+                                    title={`Click to preview: ${fileName}`}
+                                  >
+                                    <img 
+                                      src={media} 
+                                      alt={fileName}
+                                      className="w-full h-full object-cover"
+                                      onLoad={() => console.log('Image loaded successfully:', media)}
+                                      onError={(e) => {
+                                        console.log('Image failed to load:', media);
+                                        // Fallback to icon if image fails to load
+                                        const target = e.target as HTMLImageElement;
+                                        target.style.display = 'none';
+                                        const parent = target.parentElement;
+                                        if (parent) {
+                                          parent.innerHTML = `
+                                            <div class="w-full h-full flex items-center justify-center bg-gray-100">
+                                              <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                              </svg>
+                                            </div>
+                                          `;
+                                        }
+                                      }}
+                                    />
+                                  </div>
                                 ) : (
-                                  <FileIcon className="h-4 w-4 text-gray-600" />
+                                  <div 
+                                    className="w-20 h-20 rounded-lg border-2 border-gray-200 hover:border-gray-400 cursor-pointer transition-all duration-200 hover:shadow-md flex items-center justify-center bg-gray-50"
+                                    onClick={() => window.open(media, '_blank')}
+                                    title={`Click to open: ${fileName}`}
+                                  >
+                                    <FileIcon className="h-8 w-8 text-gray-400" />
+                                  </div>
                                 )}
-                                <span className="text-sm text-gray-700 group-hover:text-blue-600 transition-colors">
-                                  {truncatedName}
-                                </span>
+                                
+                                {/* Image filename overlay */}
+                                <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 rounded-b-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                  <div className="truncate">{fileName}</div>
+                                </div>
+                                
+                                {/* Delete button for edit mode */}
+                                {isPreviewEditMode && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteImage(media, index);
+                                    }}
+                                    className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                                    title="Delete image"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                )}
                               </div>
                             );
-                          })}
+                            });
+                          })()}
+                        </div>
+                          </div>
+
+                          {/* Admin Added Media Section */}
+                          <div className="border-t border-gray-200 pt-4">
+                            <div className="mb-2">
+                              <h4 className="text-sm font-medium text-gray-700">Admin Added Media</h4>
+                            </div>
+                            <div className="flex flex-wrap gap-3 mb-2">
+                              {(() => {
+                                const adminMediaArray = isPreviewEditMode ? previewEditData?.adminMedia : selectedReport?.adminMedia;
+                                console.log('Admin media array:', adminMediaArray);
+                                
+                                if (!adminMediaArray || adminMediaArray.length === 0) {
+                                  return (
+                                    <div className="text-gray-500 text-sm italic">
+                                      No admin attachments
+                                    </div>
+                                  );
+                                }
+                                
+                                return adminMediaArray.map((media: string, index: number) => {
+                            // Better image detection - check URL path and query parameters
+                            const urlPath = media.split('?')[0]; // Remove query parameters
+                            const fileExtension = urlPath.split('.').pop()?.toLowerCase();
+                            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(fileExtension || '') || 
+                                          media.includes('image') || 
+                                          media.includes('photo') ||
+                                          media.includes('img');
+                            const fileName = urlPath.split('/').pop() || media;
+                            
+                            return (
+                              <div 
+                                key={index} 
+                                className="relative group"
+                              >
+                                {isImage ? (
+                                  <div 
+                                    className="w-20 h-20 rounded-lg overflow-hidden border-2 border-gray-200 hover:border-gray-400 cursor-pointer transition-all duration-200 hover:shadow-md"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      console.log('Opening admin image preview:', media, fileName);
+                                      handleImagePreview(media, fileName);
+                                    }}
+                                    title={`Click to preview: ${fileName} (Admin Added)`}
+                                  >
+                                    <img 
+                                      src={media} 
+                                      alt={fileName}
+                                      className="w-full h-full object-cover"
+                                      onLoad={() => console.log('Admin image loaded successfully:', media)}
+                                      onError={(e) => {
+                                        console.log('Admin image failed to load:', media);
+                                        // Fallback to icon if image fails to load
+                                        const target = e.target as HTMLImageElement;
+                                        target.style.display = 'none';
+                                        const parent = target.parentElement;
+                                        if (parent) {
+                                          parent.innerHTML = `
+                                            <div class="w-full h-full flex items-center justify-center bg-gray-100">
+                                              <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                                              </svg>
+                                            </div>
+                                          `;
+                                        }
+                                      }}
+                                    />
+                                  </div>
+                                ) : (
+                                  <div 
+                                    className="w-20 h-20 rounded-lg border-2 border-gray-200 hover:border-gray-400 cursor-pointer transition-all duration-200 hover:shadow-md flex items-center justify-center bg-gray-50"
+                                    onClick={() => window.open(media, '_blank')}
+                                    title={`Click to open: ${fileName} (Admin Added)`}
+                                  >
+                                    <FileIcon className="h-8 w-8 text-gray-400" />
+                                  </div>
+                                )}
+                                
+                                
+                                {/* Image filename overlay */}
+                                <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-60 text-white text-xs p-1 rounded-b-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                  <div className="truncate">{fileName}</div>
+                                </div>
+                                
+                                {/* Delete button for edit mode */}
+                         {isPreviewEditMode && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteAdminImage(media, index);
+                                    }}
+                                    className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                                    title="Delete admin image"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          });
+                          })()}
+                            </div>
+                          </div>
                         </div>
                          {isPreviewEditMode && (
-                           <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center mb-2">
-                             <Upload className="h-6 w-6 mx-auto text-gray-400 mb-2" />
-                             <p className="text-sm text-gray-600 mb-2">Attach more photos or videos</p>
+                           <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 mb-2 bg-gray-50">
+                             <div className="text-center mb-4">
+                               <div className="flex items-center justify-center gap-2 mb-2">
+                                 <Upload className="h-6 w-6 text-gray-600" />
+                               </div>
+                               <p className="text-sm text-gray-700 mb-2">Add additional photos or videos as admin</p>
                              <Input 
                                type="file" 
                                multiple 
                                accept="image/*,video/*" 
-                               onChange={e => {
-                                 if (e.target.files) {
-                                   handleMediaUpload(e.target.files);
-                                 }
-                               }} 
+                                 onChange={e => handleFileSelection(e.target.files)}
                                className="w-full"
                                disabled={uploadingMedia}
                              />
-                             {uploadingMedia && (
-                               <div className="mt-2 text-sm text-blue-600">
-                                 Uploading files...
+                               </div>
+                             
+                             {/* Selected Files Preview */}
+                             {selectedFiles.length > 0 && (
+                               <div className="mb-4">
+                                 <div className="flex items-center justify-between mb-2">
+                                   <h4 className="text-sm font-medium text-gray-700">
+                                     Selected Files ({selectedFiles.length})
+                                   </h4>
+                                   <Button
+                                     type="button"
+                                     variant="ghost"
+                                     size="sm"
+                                     onClick={clearSelectedFiles}
+                                     className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                   >
+                                     Clear All
+                                   </Button>
+                                 </div>
+                                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                   {selectedFiles.map((file, index) => (
+                                     <div key={index} className="relative group">
+                                       <div className="w-16 h-16 rounded-lg overflow-hidden border-2 border-gray-200 bg-gray-50 flex items-center justify-center">
+                                         {file.type.startsWith('image/') ? (
+                                           <img 
+                                             src={URL.createObjectURL(file)} 
+                                             alt={file.name}
+                                             className="w-full h-full object-cover"
+                                           />
+                                         ) : (
+                                           <FileIcon className="h-6 w-6 text-gray-400" />
+                                         )}
+                                       </div>
+                                       <div className="absolute -top-1 -right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 cursor-pointer"
+                                            onClick={() => removeSelectedFile(index)}
+                                            title="Remove file">
+                                         <X className="h-3 w-3" />
+                                       </div>
+                                       <div className="mt-1 text-xs text-gray-600 truncate" title={file.name}>
+                                         {file.name}
+                                       </div>
+                                     </div>
+                                   ))}
+                                 </div>
+                               </div>
+                             )}
+                             
+                             {/* Upload Button */}
+                             {selectedFiles.length > 0 && (
+                               <div className="flex gap-2 justify-center">
+                                 <Button
+                                   type="button"
+                                   onClick={() => handleMediaUpload()}
+                                   disabled={uploadingMedia}
+                                   className="bg-[#FF4F0B] hover:bg-[#FF4F0B]/90 text-white"
+                                 >
+                                   {uploadingMedia ? (
+                                     <>
+                                       <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                       Uploading...
+                                     </>
+                                   ) : (
+                                     <>
+                                       <Upload className="h-4 w-4 mr-2" />
+                                       Add {selectedFiles.length} Admin File{selectedFiles.length > 1 ? 's' : ''}
+                                     </>
+                                   )}
+                                 </Button>
                                </div>
                              )}
                            </div>
@@ -1574,59 +2011,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Received By</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
-                              <Select value={dispatchData.receivedBy} onValueChange={v => setDispatchData(d => ({ ...d, receivedBy: v }))}>
-                                <SelectTrigger><SelectValue placeholder="Select admin" /></SelectTrigger>
-                                <SelectContent>
-                                  {adminOptions.map((admin, index) => (
-                                    <div key={admin} className="flex items-center justify-between px-2 py-1.5 hover:bg-gray-100">
-                                      <SelectItem value={admin} className="flex-1">{admin}</SelectItem>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setAdminOptions(adminOptions.filter((_, i) => i !== index));
-                                        }}
-                                        className="h-6 w-6 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                      >
-                                        <Trash2 className="h-3 w-3" />
-                                      </Button>
-                                    </div>
-                                  ))}
-                                  <div className="border-t border-gray-200 p-2">
-                                    <div className="flex gap-2">
-                                      <Input
-                                        placeholder="Add new admin"
-                                        className="text-sm"
-                                        onKeyPress={e => {
-                                          if (e.key === 'Enter' && e.currentTarget.value.trim()) {
-                                            setAdminOptions([...adminOptions, e.currentTarget.value.trim()]);
-                                            e.currentTarget.value = '';
-                                          }
-                                        }}
-                                      />
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={e => {
-                                          const input = e.currentTarget.previousElementSibling as HTMLInputElement;
-                                          if (input.value.trim()) {
-                                            setAdminOptions([...adminOptions, input.value.trim()]);
-                                            input.value = '';
-                                          }
-                                        }}
-                                        className="h-8 px-2"
-                                      >
-                                        <Plus className="h-3 w-3" />
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </SelectContent>
-                              </Select>
-                            ) : (
-                              dispatchData.receivedBy || (currentUser ? `${currentUser.name}` : "Not specified")
-                            )}
+                            {dispatchData.receivedBy || (currentUser ? `${currentUser.name}` : "Not specified")}
                           </TableCell>
                         </TableRow>
                         
@@ -1639,15 +2024,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Time Call Received</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
-                              <Input 
-                                type="time" 
-                                value={dispatchData.timeCallReceived} 
-                                onChange={e => setDispatchData(d => ({ ...d, timeCallReceived: e.target.value }))} 
-                              />
-                            ) : (
-                              dispatchData.timeCallReceived || getCurrentTime()
-                            )}
+                            {dispatchData.timeCallReceived || getCurrentTime()}
                           </TableCell>
                         </TableRow>
                         <TableRow>
@@ -3381,6 +3758,90 @@ export function ManageReportsPage() {
               </TabsContent>
 
             </Tabs>
+          </DialogContent>
+        </Dialog>
+
+        {/* Image Preview Modal */}
+        <Dialog open={showImagePreview} onOpenChange={(open) => {
+          console.log('Image preview modal state change:', open);
+          setShowImagePreview(open);
+        }}>
+          <DialogContent className="sm:max-w-[800px] max-h-[90vh] bg-white flex flex-col overflow-hidden">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Image className="h-5 w-5 text-blue-600" />
+                Image Preview
+                {(() => {
+                  const isAdminMedia = (isPreviewEditMode ? previewEditData?.adminMedia : selectedReport?.adminMedia)?.includes(previewImageUrl);
+                  const isMobileMedia = (isPreviewEditMode ? previewEditData?.mobileMedia : selectedReport?.mobileMedia)?.includes(previewImageUrl);
+                  
+                  if (isAdminMedia) {
+                    return <Badge variant="outline" className="border-gray-500 text-gray-700 text-xs">Admin Added</Badge>;
+                  } else if (isMobileMedia) {
+                    return <Badge variant="secondary" className="text-xs">Mobile User</Badge>;
+                  }
+                  return null;
+                })()}
+              </DialogTitle>
+              <DialogDescription>
+                {previewImageName}
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="flex-1 flex flex-col items-center justify-center p-4 bg-gray-50 rounded-lg">
+              <div className="relative max-w-full max-h-full">
+                <img 
+                  src={previewImageUrl} 
+                  alt={previewImageName}
+                  className="max-w-full max-h-[60vh] object-contain rounded-lg shadow-lg"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                    const parent = target.parentElement;
+                    if (parent) {
+                      parent.innerHTML = `
+                        <div class="w-full h-64 flex flex-col items-center justify-center bg-gray-100 rounded-lg">
+                          <svg class="w-16 h-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                          </svg>
+                          <p class="text-gray-500 text-center">Failed to load image</p>
+                          <p class="text-sm text-gray-400 text-center mt-1">${previewImageName}</p>
+                        </div>
+                      `;
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            
+            <DialogFooter className="flex gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => handleDownloadImage(previewImageUrl, previewImageName)}
+                className="flex items-center gap-2"
+              >
+                <Download className="h-4 w-4" />
+                Download
+              </Button>
+              {isPreviewEditMode && (
+                <Button 
+                  variant="destructive" 
+                  onClick={() => {
+                    const imageIndex = (isPreviewEditMode ? previewEditData?.attachedMedia : selectedReport?.attachedMedia)?.findIndex((url: string) => url === previewImageUrl);
+                    if (imageIndex !== undefined && imageIndex >= 0) {
+                      handleDeleteImage(previewImageUrl, imageIndex);
+                    }
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete
+                </Button>
+              )}
+              <DialogClose asChild>
+                <Button variant="outline">Close</Button>
+              </DialogClose>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

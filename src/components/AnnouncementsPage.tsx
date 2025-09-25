@@ -8,7 +8,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Plus, Edit, Trash2, Calendar, AlertTriangle, Info, X, Eye, ChevronUp, ChevronDown } from "lucide-react";
+import { Search, Plus, Edit, Trash2, Calendar, AlertTriangle, Info, X, Eye, ChevronUp, ChevronDown, Check } from "lucide-react";
 import { Layout } from "./Layout";
 import { DateRange } from "react-day-picker";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/components/ui/use-toast";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
   
@@ -57,6 +58,7 @@ export function AnnouncementsPage() {
   const [previewAnnouncement, setPreviewAnnouncement] = useState<any>(null);
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>("desc");
   const [editDialogOpenId, setEditDialogOpenId] = useState<string | null>(null);
+  const [selectedAnnouncements, setSelectedAnnouncements] = useState<Set<string>>(new Set());
 
   const today = new Date();
   // For dual calendar date range picker
@@ -199,6 +201,62 @@ export function AnnouncementsPage() {
     await deleteDoc(doc(db, "announcements", id));
     setAnnouncements(announcements.filter(a => a.id !== id));
   };
+
+  const handleBatchDelete = async () => {
+    if (selectedAnnouncements.size === 0) return;
+    
+    try {
+      // Delete all selected announcements from Firestore
+      const deletePromises = Array.from(selectedAnnouncements).map(id => 
+        deleteDoc(doc(db, "announcements", id))
+      );
+      await Promise.all(deletePromises);
+      
+      // Update local state
+      setAnnouncements(announcements.filter(a => !selectedAnnouncements.has(a.id)));
+      setSelectedAnnouncements(new Set());
+      
+      toast({
+        title: "Announcements Deleted",
+        description: `${selectedAnnouncements.size} announcement(s) have been deleted successfully.`,
+      });
+    } catch (error) {
+      console.error("Error deleting announcements:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete some announcements. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSelectAnnouncement = (id: string, checked: boolean) => {
+    setSelectedAnnouncements(prev => {
+      const newSet = new Set(prev);
+      if (checked) {
+        newSet.add(id);
+      } else {
+        newSet.delete(id);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedAnnouncements(new Set(pagedAnnouncements.map(a => a.id)));
+    } else {
+      setSelectedAnnouncements(new Set());
+    }
+  };
+
+  const isAllSelected = pagedAnnouncements.length > 0 && selectedAnnouncements.size === pagedAnnouncements.length;
+  const isIndeterminate = selectedAnnouncements.size > 0 && selectedAnnouncements.size < pagedAnnouncements.length;
+
+  // Clear selections when page changes or filters change
+  useEffect(() => {
+    setSelectedAnnouncements(new Set());
+  }, [announcementPage, searchTerm, typeFilter, priorityFilter, dateRange]);
 
   // Helper to truncate description
   function truncateDescription(desc: string, maxLength = 20) {
@@ -364,8 +422,8 @@ export function AnnouncementsPage() {
           </CardContent>
         </Card>
 
-        {/* New Announcement Button */} 
-        <div className="mb-6">
+        {/* Action Buttons */} 
+        <div className="mb-6 flex gap-4">
           <Dialog open={isNewAnnouncementOpen} onOpenChange={setIsNewAnnouncementOpen}>
             <DialogTrigger asChild>
               <Button className="bg-[#FF4F0B] hover:bg-[#FF4F0B]/90 text-white">
@@ -483,6 +541,32 @@ export function AnnouncementsPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+
+          {/* Batch Delete Button */}
+          {selectedAnnouncements.size > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" className="bg-red-600 hover:bg-red-700">
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Selected ({selectedAnnouncements.size})
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete Selected Announcements</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Are you sure you want to delete {selectedAnnouncements.size} selected announcement(s)? This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleBatchDelete} className="bg-red-600 hover:bg-red-700">
+                    Delete {selectedAnnouncements.size} Announcement(s)
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
 
         <Card>
@@ -492,6 +576,18 @@ export function AnnouncementsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-12">
+                      <Checkbox
+                        checked={isAllSelected}
+                        onCheckedChange={handleSelectAll}
+                        ref={(el) => {
+                          if (el) {
+                            const input = el.querySelector('input[type="checkbox"]') as HTMLInputElement;
+                            if (input) input.indeterminate = isIndeterminate;
+                          }
+                        }}
+                      />
+                    </TableHead>
                     <TableHead>Announcement Type</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead>Priority</TableHead>
@@ -511,13 +607,22 @@ export function AnnouncementsPage() {
                 <TableBody>
                   {pagedAnnouncements.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-gray-500 py-8">
+                      <TableCell colSpan={6} className="text-center text-gray-500 py-8">
                         No announcements found.
                       </TableCell>
                     </TableRow>
                   ) : (
                     pagedAnnouncements.map(announcement => (
-                      <TableRow key={announcement.id} className="hover:bg-gray-50">
+                      <TableRow 
+                        key={announcement.id} 
+                        className={`hover:bg-gray-50 ${selectedAnnouncements.has(announcement.id) ? 'bg-blue-50' : ''}`}
+                      >
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedAnnouncements.has(announcement.id)}
+                            onCheckedChange={(checked) => handleSelectAnnouncement(announcement.id, checked as boolean)}
+                          />
+                        </TableCell>
                         <TableCell>{announcement.type}</TableCell>
                         <TableCell>
                           <div className="max-w-xs">{truncateDescription(announcement.description)}</div>

@@ -1,4 +1,4 @@
-import { Home, FileText, BarChart3, MessageSquare, Bell, Users, User, ChevronLeft, ClipboardList, LogOut } from "lucide-react";
+import { Home, FileText, BarChart3, MessageSquare, Bell, Users, User, ChevronLeft, ClipboardList, LogOut, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,8 @@ interface SidebarProps {
   isCollapsed: boolean;
   onCollapse: (collapsed: boolean) => void;
   manageUsersBadge?: number;
+  isMobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
 const menuItems = [{
@@ -45,13 +47,17 @@ const otherItems = [{
   path: "/profile"
 }];
 
-export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge }: SidebarProps) {
+export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, isMobileOpen = false, onMobileClose }: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [showSignOut, setShowSignOut] = useState(false);
 
   const handleMenuClick = (item: typeof menuItems[0]) => {
     navigate(item.path);
+    // Close mobile sidebar when navigating
+    if (onMobileClose) {
+      onMobileClose();
+    }
   };
 
   const handleSignOut = async () => {
@@ -69,10 +75,29 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge }: SidebarPr
     return location.pathname === path;
   };
 
-  return <div className={cn("bg-gradient-to-b from-orange-500 to-red-600 text-white transition-all duration-300 flex flex-col h-screen fixed left-0 top-0 z-50", isCollapsed ? "w-16" : "w-64")}>
+  return (
+    <>
+      {/* Mobile overlay */}
+      {isMobileOpen && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          onClick={onMobileClose}
+        />
+      )}
+      
+      {/* Sidebar */}
+      <div className={cn(
+        "bg-gradient-to-b from-orange-500 to-red-600 text-white transition-all duration-300 flex flex-col h-screen fixed left-0 top-0 z-50",
+        // Mobile: slide in/out
+        isMobileOpen ? "w-64 translate-x-0" : "w-0 -translate-x-full",
+        // Tablet and Desktop: always visible with proper width
+        "md:w-64 md:translate-x-0",
+        // Desktop: collapsible behavior
+        isCollapsed ? "lg:w-16" : "lg:w-64"
+      )}>
       {/* Header */}
       <div className="p-4 border-b border-orange-400/30 flex items-center justify-between">
-        {!isCollapsed && <div className="flex items-center space-x-3">
+        {(!isCollapsed || isMobileOpen) && <div className="flex items-center space-x-3">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-transparent">
               <img alt="ACCIZARD" className="w-8 h-8" src="/accizard-uploads/accizard-logo-white-png.png" />
             </div>
@@ -80,7 +105,22 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge }: SidebarPr
             <img alt="ACCIZARD" className="h-8" src="/accizard-uploads/accizard-logotype-png.png" />
             </div>
           </div>}
-        <button onClick={() => onCollapse(!isCollapsed)} className="p-2 hover:bg-orange-400/20 rounded-lg transition-colors">
+        
+        {/* Mobile close button */}
+        {isMobileOpen && onMobileClose && (
+          <button onClick={onMobileClose} className="p-2 hover:bg-orange-400/20 rounded-lg transition-colors lg:hidden">
+            <X className="h-5 w-5" />
+          </button>
+        )}
+        
+        {/* Desktop collapse button */}
+        <button 
+          onClick={() => onCollapse(!isCollapsed)} 
+          className={cn(
+            "p-2 hover:bg-orange-400/20 rounded-lg transition-colors",
+            isMobileOpen && "hidden lg:block"
+          )}
+        >
           <ChevronLeft className={cn("h-5 w-5 transition-transform", isCollapsed && "rotate-180")} />
         </button>
       </div>
@@ -88,21 +128,21 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge }: SidebarPr
       {/* Menu */}
       <div className="flex-1 py-6 overflow-y-auto">
         <div className="px-3">
-          {!isCollapsed && <div className="text-xs font-semibold text-orange-100 uppercase tracking-wider mb-4 px-3">
+          {(!isCollapsed || isMobileOpen) && <div className="text-xs font-semibold text-orange-100 uppercase tracking-wider mb-4 px-3">
               MENU
             </div>}
           <nav className="space-y-2">
-            {menuItems.map(item => <button key={item.title} onClick={() => handleMenuClick(item)} className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", isCollapsed ? "justify-center px-2 py-3" : "justify-between px-4 py-3", isActive(item.path) ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white")}>
-                <div className={cn("flex items-center", isCollapsed && "justify-center")}>
-                  <item.icon className={cn("h-5 w-5 flex-shrink-0", !isCollapsed && "mr-3")} />
-                  {!isCollapsed && <span>{item.title}</span>}
+            {menuItems.map(item => <button key={item.title} onClick={() => handleMenuClick(item)} className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "justify-between px-4 py-3", isActive(item.path) ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white")}>
+                <div className={cn("flex items-center", (isCollapsed && !isMobileOpen) && "justify-center")}>
+                  <item.icon className={cn("h-5 w-5 flex-shrink-0", (!isCollapsed || isMobileOpen) && "mr-3")} />
+                  {(!isCollapsed || isMobileOpen) && <span>{item.title}</span>}
                 </div>
-                {!isCollapsed && item.title === "Manage Users" && manageUsersBadge > 0 && (
+                {(!isCollapsed || isMobileOpen) && item.title === "Manage Users" && manageUsersBadge > 0 && (
                   <Badge className="text-[#FF4F0B] text-xs border-0 bg-slate-50">
                     {manageUsersBadge}
                   </Badge>
                 )}
-                {!isCollapsed && item.title !== "Manage Users" && item.badge && (
+                {(!isCollapsed || isMobileOpen) && item.title !== "Manage Users" && item.badge && (
                   <Badge className="text-[#FF4F0B] text-xs border-0 bg-slate-50">
                     {item.badge}
                   </Badge>
@@ -112,13 +152,16 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge }: SidebarPr
         </div>
 
         <div className="px-3 mt-8">
-          {!isCollapsed && <div className="text-xs font-semibold text-orange-100 uppercase tracking-wider mb-4 px-3">
+          {(!isCollapsed || isMobileOpen) && <div className="text-xs font-semibold text-orange-100 uppercase tracking-wider mb-4 px-3">
               OTHERS
             </div>}
           <nav className="space-y-2">
-            {otherItems.map(item => <button key={item.title} onClick={() => navigate(item.path)} className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", isCollapsed ? "justify-center px-2 py-3" : "px-4 py-3", isActive(item.path) ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white")}>
-                <item.icon className={cn("h-5 w-5 flex-shrink-0", !isCollapsed && "mr-3")} />
-                {!isCollapsed && <span>{item.title}</span>}
+            {otherItems.map(item => <button key={item.title} onClick={() => {
+              navigate(item.path);
+              if (onMobileClose) onMobileClose();
+            }} className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "px-4 py-3", isActive(item.path) ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white")}>
+                <item.icon className={cn("h-5 w-5 flex-shrink-0", (!isCollapsed || isMobileOpen) && "mr-3")} />
+                {(!isCollapsed || isMobileOpen) && <span>{item.title}</span>}
               </button>)}
           </nav>
         </div>
@@ -128,9 +171,9 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge }: SidebarPr
       <div className="p-3 border-t border-orange-400/30">
         <AlertDialog open={showSignOut} onOpenChange={setShowSignOut}>
           <AlertDialogTrigger asChild>
-            <button onClick={() => setShowSignOut(true)} className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200 text-orange-100 hover:bg-red-500 hover:text-white", isCollapsed ? "justify-center px-2 py-3" : "px-4 py-3")}>
-              <LogOut className={cn("h-5 w-5 flex-shrink-0", !isCollapsed && "mr-3")} />
-              {!isCollapsed && <span>Sign Out</span>}
+            <button onClick={() => setShowSignOut(true)} className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200 text-orange-100 hover:bg-red-500 hover:text-white", (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "px-4 py-3")}>
+              <LogOut className={cn("h-5 w-5 flex-shrink-0", (!isCollapsed || isMobileOpen) && "mr-3")} />
+              {(!isCollapsed || isMobileOpen) && <span>Sign Out</span>}
             </button>
           </AlertDialogTrigger>
           <AlertDialogContent>
@@ -149,5 +192,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge }: SidebarPr
           </AlertDialogContent>
         </AlertDialog>
       </div>
-    </div>;
+      </div>
+    </>
+  );
 }

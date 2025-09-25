@@ -11,6 +11,10 @@ interface Marker {
   description: string;
   reportId?: string;
   coordinates: [number, number];
+  status?: string;
+  locationName?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 interface MapboxMapProps {
@@ -22,7 +26,6 @@ interface MapboxMapProps {
     accidentTypes?: string[];
     facilityTypes?: string[];
   };
-  singleMarker?: Marker;
 }
 
 // Sample data for markers
@@ -339,13 +342,33 @@ const sampleMarkers: Marker[] = [
   }
 ];
 
+// Helper function to parse coordinates
+const parseCoordinates = (coordinateString: string): [number, number] => {
+  if (!coordinateString) return [120.9842, 14.5995]; // Default to Manila
+  
+  const coords = coordinateString.split(',').map(coord => parseFloat(coord.trim()));
+  
+  if (coords.length !== 2 || isNaN(coords[0]) || isNaN(coords[1])) {
+    console.warn('Invalid coordinates:', coordinateString);
+    return [120.9842, 14.5995]; // Default to Manila
+  }
+  
+  // Ensure coordinates are in [longitude, latitude] format
+  // If latitude > longitude, they might be swapped
+  if (Math.abs(coords[0]) > 90 && Math.abs(coords[1]) <= 90) {
+    // Likely swapped, so swap them back
+    return [coords[1], coords[0]];
+  }
+  
+  return [coords[0], coords[1]];
+};
+
 export function MapboxMap({ 
   onMapClick, 
   showHeatmap = false,
   center = [-122.4194, 37.7749],
   zoom = 12,
-  activeFilters,
-  singleMarker
+  activeFilters
 }: MapboxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -354,28 +377,86 @@ export function MapboxMap({
   const markersRef = useRef<mapboxgl.Marker[]>([]);
   const popupRef = useRef<mapboxgl.Popup | null>(null);
 
+
   // Function to create a marker element
-  const createMarkerElement = (type: string) => {
+  const createMarkerElement = (type: string, isSingleMarker = false) => {
     const el = document.createElement('div');
     el.className = 'marker';
-    el.style.width = '24px';
-    el.style.height = '24px';
+    el.style.width = isSingleMarker ? '40px' : '24px';
+    el.style.height = isSingleMarker ? '40px' : '24px';
     el.style.backgroundColor = '#FF4F0B';
     el.style.borderRadius = '50%';
-    el.style.border = '2px solid white';
-    el.style.boxShadow = '0 0 4px rgba(0,0,0,0.3)';
+    el.style.border = '4px solid white';
+    el.style.boxShadow = '0 0 12px rgba(0,0,0,0.6)';
     el.style.cursor = 'pointer';
+    el.style.zIndex = '1000';
+    el.style.position = 'relative';
+    
+    // Add a pulsing animation for single markers
+    if (isSingleMarker) {
+      el.style.animation = 'pulse 2s infinite';
+      // Add a larger shadow for single markers
+      el.style.boxShadow = '0 0 20px rgba(255, 79, 11, 0.8), 0 0 12px rgba(0,0,0,0.6)';
+    }
+    
+    console.log('Created marker element:', el, 'for type:', type, 'isSingleMarker:', isSingleMarker);
+    
     return el;
   };
 
   // Function to create popup content
   const createPopupContent = (marker: Marker) => {
     return `
-      <div class="p-2">
-        <h3 class="font-bold text-lg">${marker.title}</h3>
-        <p class="text-sm text-gray-600">${marker.description}</p>
-        ${marker.reportId ? `<p class="text-xs text-blue-600 mt-1">Report ID: ${marker.reportId}</p>` : ''}
-        <p class="text-xs text-gray-500 mt-1">Type: ${marker.type}</p>
+      <div class="p-3 min-w-[280px] max-w-[380px] overflow-hidden">
+        <h3 class="font-bold text-lg mb-2 text-gray-800 break-words leading-tight">${marker.title}</h3>
+        
+        <div class="space-y-2 text-sm overflow-hidden">
+          ${marker.reportId ? `
+            <div class="flex items-start gap-2">
+              <span class="font-medium text-gray-700 flex-shrink-0 mt-0.5">Report ID:</span>
+              <span class="text-blue-600 font-mono break-all">${marker.reportId}</span>
+            </div>
+          ` : ''}
+          
+          <div class="flex items-start gap-2">
+            <span class="font-medium text-gray-700 flex-shrink-0 mt-0.5">Type:</span>
+            <span class="text-gray-600 break-words">${marker.type}</span>
+          </div>
+          
+          ${marker.status ? `
+            <div class="flex items-start gap-2">
+              <span class="font-medium text-gray-700 flex-shrink-0 mt-0.5">Status:</span>
+              <span class="px-2 py-1 rounded-full text-xs font-medium inline-block ${
+                marker.status === 'Resolved' ? 'bg-green-100 text-green-800' :
+                marker.status === 'In Progress' ? 'bg-yellow-100 text-yellow-800' :
+                marker.status === 'Pending' ? 'bg-orange-100 text-orange-800' :
+                'bg-gray-100 text-gray-800'
+              }">${marker.status}</span>
+            </div>
+          ` : ''}
+          
+          ${marker.locationName ? `
+            <div class="flex items-start gap-2">
+              <span class="font-medium text-gray-700 flex-shrink-0 mt-0.5">Location:</span>
+              <span class="text-gray-600 break-words leading-relaxed">${marker.locationName}</span>
+            </div>
+          ` : ''}
+          
+          ${marker.latitude !== undefined && marker.longitude !== undefined ? `
+            <div class="flex items-start gap-2">
+              <span class="font-medium text-gray-700 flex-shrink-0 mt-0.5">Coordinates:</span>
+              <span class="text-gray-600 font-mono text-xs break-all">
+                ${marker.latitude.toFixed(6)}, ${marker.longitude.toFixed(6)}
+              </span>
+            </div>
+          ` : ''}
+          
+          ${marker.description ? `
+            <div class="mt-3 pt-2 border-t border-gray-200">
+              <p class="text-gray-600 text-xs leading-relaxed break-words">${marker.description}</p>
+            </div>
+          ` : ''}
+        </div>
       </div>
     `;
   };
@@ -418,6 +499,20 @@ export function MapboxMap({
           center: center,
           zoom: zoom
         });
+
+        // Add geolocate control
+        const geolocate = new mapboxgl.GeolocateControl({
+          positionOptions: {
+            enableHighAccuracy: true
+          },
+          trackUserLocation: true,
+          showUserHeading: true
+        });
+        
+        map.current.addControl(geolocate);
+        
+        // Add navigation controls
+        map.current.addControl(new mapboxgl.NavigationControl());
 
         map.current.on('load', () => {
           console.log('Map loaded successfully');
@@ -468,6 +563,7 @@ export function MapboxMap({
   useEffect(() => {
     if (!map.current || !mapLoaded) return;
 
+    console.log('Setting map center to:', center, 'zoom:', zoom);
     map.current.setCenter(center);
     map.current.setZoom(zoom);
   }, [center, zoom, mapLoaded]);
@@ -483,46 +579,6 @@ export function MapboxMap({
       popupRef.current.remove();
     }
 
-    // If singleMarker is provided, only show that marker
-    if (singleMarker) {
-      const el = createMarkerElement(singleMarker.type);
-      const markerInstance = new mapboxgl.Marker({
-        element: el,
-        anchor: 'bottom'
-      })
-        .setLngLat(singleMarker.coordinates)
-        .addTo(map.current!);
-
-      // Add click event to marker
-      el.addEventListener('click', () => {
-        if (popupRef.current) {
-          popupRef.current.remove();
-        }
-
-        popupRef.current = new mapboxgl.Popup({ 
-          offset: 25,
-          closeButton: false,
-          className: 'custom-popup'
-        })
-          .setLngLat(singleMarker.coordinates)
-          .setHTML(createPopupContent(singleMarker))
-          .addTo(map.current!);
-      });
-
-      markersRef.current.push(markerInstance);
-      
-      // Automatically show popup for single marker
-      popupRef.current = new mapboxgl.Popup({ 
-        offset: 25,
-        closeButton: false,
-        className: 'custom-popup'
-      })
-        .setLngLat(singleMarker.coordinates)
-        .setHTML(createPopupContent(singleMarker))
-        .addTo(map.current!);
-      
-      return;
-    }
 
     // Filter markers based on active filters
     const filteredMarkers = sampleMarkers.filter(marker => {
@@ -551,9 +607,10 @@ export function MapboxMap({
         }
 
         popupRef.current = new mapboxgl.Popup({ 
-          offset: 25,
+          offset: [0, -10],
           closeButton: false,
-          className: 'custom-popup'
+          className: 'custom-popup',
+          maxWidth: '380px'
         })
           .setLngLat(marker.coordinates)
           .setHTML(createPopupContent(marker))
@@ -562,7 +619,7 @@ export function MapboxMap({
 
       markersRef.current.push(markerInstance);
     });
-  }, [mapLoaded, activeFilters, singleMarker]);
+  }, [mapLoaded, activeFilters]);
 
   // Handle heatmap
   useEffect(() => {
@@ -618,13 +675,52 @@ export function MapboxMap({
     }
   }, [showHeatmap, mapLoaded]);
 
+
   return (
     <div className="w-full h-full relative">
+      <style>
+        {`
+          @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.8; }
+            100% { transform: scale(1); opacity: 1; }
+          }
+          
+          .mapboxgl-popup-content {
+            padding: 0 !important;
+            border-radius: 8px !important;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1) !important;
+            max-width: 380px !important;
+            word-wrap: break-word !important;
+            overflow-wrap: break-word !important;
+            background: white !important;
+            border: 1px solid #e5e7eb !important;
+            position: relative !important;
+          }
+          
+          .mapboxgl-popup-tip {
+            border-top-color: white !important;
+            border-bottom-color: white !important;
+            width: 0 !important;
+            height: 0 !important;
+            border-left: 8px solid transparent !important;
+            border-right: 8px solid transparent !important;
+            border-bottom: 8px solid white !important;
+            margin: 0 auto !important;
+          }
+          
+          .mapboxgl-popup {
+            z-index: 1001 !important;
+            max-width: 380px !important;
+          }
+        `}
+      </style>
       <div 
         ref={mapContainer} 
-        className="w-full h-full"
-        style={{ width: '100%', height: '100%', minHeight: '400px' }}
+        className="w-full h-full rounded-lg"
+        style={{ width: '100%', height: '100%', minHeight: '500px' }}
       />
+      
       {!mapLoaded && !mapError && (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
           <div className="text-center">
