@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
+import MapboxGeocoder from '@mapbox/mapbox-gl-geocoder';
+import '@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css';
 
 // Use environment variable for Mapbox access token
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
@@ -26,6 +28,11 @@ interface MapboxMapProps {
     accidentTypes?: string[];
     facilityTypes?: string[];
   };
+  singleMarker?: Marker;
+  showOnlyCurrentLocation?: boolean;
+  clickedLocation?: { lat: number; lng: number; address: string } | null;
+  showGeocoder?: boolean;
+  onGeocoderResult?: (result: { lat: number; lng: number; address: string }) => void;
 }
 
 // Sample data for markers
@@ -368,7 +375,12 @@ export function MapboxMap({
   showHeatmap = false,
   center = [-122.4194, 37.7749],
   zoom = 12,
-  activeFilters
+  activeFilters,
+  singleMarker,
+  showOnlyCurrentLocation = false,
+  clickedLocation = null,
+  showGeocoder = false,
+  onGeocoderResult
 }: MapboxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -376,6 +388,11 @@ export function MapboxMap({
   const [mapError, setMapError] = useState<string | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
   const popupRef = useRef<mapboxgl.Popup | null>(null);
+  const geocoderRef = useRef<MapboxGeocoder | null>(null);
+  const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [travelTime, setTravelTime] = useState<{duration: number, distance: number} | null>(null);
+  const [routeData, setRouteData] = useState<any>(null);
+  const [showRoute, setShowRoute] = useState(false);
 
 
   // Function to create a marker element
@@ -407,34 +424,10 @@ export function MapboxMap({
   // Function to create popup content
   const createPopupContent = (marker: Marker) => {
     return `
-      <div class="p-3 min-w-[280px] max-w-[380px] overflow-hidden">
+      <div class="p-3 min-w-[200px] max-w-[300px] overflow-hidden">
         <h3 class="font-bold text-lg mb-2 text-gray-800 break-words leading-tight">${marker.title}</h3>
         
         <div class="space-y-2 text-sm overflow-hidden">
-          ${marker.reportId ? `
-            <div class="flex items-start gap-2">
-              <span class="font-medium text-gray-700 flex-shrink-0 mt-0.5">Report ID:</span>
-              <span class="text-blue-600 font-mono break-all">${marker.reportId}</span>
-            </div>
-          ` : ''}
-          
-          <div class="flex items-start gap-2">
-            <span class="font-medium text-gray-700 flex-shrink-0 mt-0.5">Type:</span>
-            <span class="text-gray-600 break-words">${marker.type}</span>
-          </div>
-          
-          ${marker.status ? `
-            <div class="flex items-start gap-2">
-              <span class="font-medium text-gray-700 flex-shrink-0 mt-0.5">Status:</span>
-              <span class="px-2 py-1 rounded-full text-xs font-medium inline-block ${
-                marker.status === 'Resolved' ? 'bg-green-100 text-green-800' :
-                marker.status === 'In Progress' ? 'bg-yellow-100 text-yellow-800' :
-                marker.status === 'Pending' ? 'bg-orange-100 text-orange-800' :
-                'bg-gray-100 text-gray-800'
-              }">${marker.status}</span>
-            </div>
-          ` : ''}
-          
           ${marker.locationName ? `
             <div class="flex items-start gap-2">
               <span class="font-medium text-gray-700 flex-shrink-0 mt-0.5">Location:</span>
@@ -450,16 +443,242 @@ export function MapboxMap({
               </span>
             </div>
           ` : ''}
-          
-          ${marker.description ? `
-            <div class="mt-3 pt-2 border-t border-gray-200">
-              <p class="text-gray-600 text-xs leading-relaxed break-words">${marker.description}</p>
-            </div>
-          ` : ''}
         </div>
       </div>
     `;
   };
+
+  // Function to get user's current location
+  const getUserLocation = (): Promise<{lat: number, lng: number}> => {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error('Geolocation is not supported by this browser'));
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          resolve({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+        },
+        (error) => {
+          reject(error);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 300000 // 5 minutes
+        }
+      );
+    });
+  };
+
+  // Function to calculate travel time using Mapbox Directions API
+  const calculateTravelTime = async (origin: {lat: number, lng: number}, destination: {lat: number, lng: number}) => {
+    try {
+      const accessToken = mapboxgl.accessToken;
+      if (!accessToken) {
+        throw new Error('Mapbox access token not available');
+      }
+
+      const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?access_token=${accessToken}&geometries=geojson&overview=full&steps=true&annotations=duration,distance`;
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Directions API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
+        const totalMinutes = Math.round(route.duration / 60);
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        
+        // Format time display
+        let timeDisplay;
+        if (hours > 0) {
+          timeDisplay = minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+        } else {
+          timeDisplay = `${minutes}m`;
+        }
+        
+        return {
+          duration: timeDisplay,
+          totalMinutes: totalMinutes,
+          distance: Math.round(route.distance / 1000 * 10) / 10, // Convert meters to kilometers
+          routeData: data // Return full route data for display
+        };
+      } else {
+        throw new Error('No routes found');
+      }
+    } catch (error) {
+      console.error('Error calculating travel time:', error);
+      return null;
+    }
+  };
+
+  // Function to reverse geocode coordinates to get location name
+  const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
+    try {
+      const accessToken = mapboxgl.accessToken;
+      if (!accessToken) {
+        throw new Error('Mapbox access token not available');
+      }
+
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${accessToken}&types=address,poi,place,locality,neighborhood`;
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Geocoding API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.features && data.features.length > 0) {
+        // Try to get the most specific address first, then fall back to place names
+        const feature = data.features[0];
+        const placeName = feature.place_name || feature.text || 'Unknown Location';
+        return placeName;
+      } else {
+        return 'Unknown Location';
+      }
+    } catch (error) {
+      console.error('Error reverse geocoding:', error);
+      return 'Unknown Location';
+    }
+  };
+
+  // Function to display route on map
+  const displayRoute = (routeData: any) => {
+    if (!map.current || !routeData) return;
+
+    // Remove existing route if any
+    if (map.current.getSource('route')) {
+      map.current.removeLayer('route');
+      map.current.removeSource('route');
+    }
+
+    // Add route source
+    map.current.addSource('route', {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        properties: {},
+        geometry: routeData.routes[0].geometry
+      }
+    });
+
+    // Add route layer
+    map.current.addLayer({
+      id: 'route',
+      type: 'line',
+      source: 'route',
+      layout: {
+        'line-join': 'round',
+        'line-cap': 'round'
+      },
+      paint: {
+        'line-color': '#FF4F0B',
+        'line-width': 4,
+        'line-opacity': 0.8
+      }
+    });
+
+    // Fit map to route bounds
+    const coordinates = routeData.routes[0].geometry.coordinates;
+    const bounds = coordinates.reduce((bounds: any, coord: any) => {
+      return bounds.extend(coord);
+    }, new mapboxgl.LngLatBounds(coordinates[0], coordinates[0]));
+
+    map.current.fitBounds(bounds, {
+      padding: 50
+    });
+  };
+
+  // Function to create popup content with travel time
+  const createPopupContentWithTravelTime = async (marker: Marker) => {
+    let travelTimeInfo = '';
+    
+    if (userLocation && marker.latitude && marker.longitude) {
+      const travelData = await calculateTravelTime(
+        userLocation,
+        { lat: marker.latitude, lng: marker.longitude }
+      );
+      
+      if (travelData) {
+        // Store route data and display route automatically
+        setRouteData(travelData.routeData);
+        setShowRoute(true);
+        displayRoute(travelData.routeData);
+        
+        travelTimeInfo = `
+          <div class="mt-3 pt-3 border-t border-gray-300">
+            <div class="flex items-center gap-2 mb-1">
+              <svg class="w-4 h-4 text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              <span class="text-sm font-medium text-gray-700">Travel time</span>
+            </div>
+            <div class="text-xs text-gray-500 ml-6">${travelData.duration} (${travelData.distance} km)</div>
+          </div>
+        `;
+      }
+    }
+
+    // Get geocoded location name from coordinates
+    let locationName = marker.locationName || marker.title;
+    if (marker.latitude && marker.longitude) {
+      try {
+        const geocodedName = await reverseGeocode(marker.latitude, marker.longitude);
+        locationName = geocodedName;
+      } catch (error) {
+        console.error('Error getting geocoded location name:', error);
+        // Fall back to original location name if geocoding fails
+      }
+    }
+
+    return `
+      <div class="w-[200px]">
+        <div class="bg-gray-50 px-3 py-2 border-b border-gray-200">
+          <h4 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Report Details</h4>
+        </div>
+        <div class="p-3">
+          <div class="flex items-start gap-2 mb-2">
+            <svg class="w-4 h-4 text-gray-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+            </svg>
+            <div class="min-w-0 flex-1">
+              <span class="text-sm font-medium text-gray-900 break-words leading-tight block">${locationName}</span>
+              <span class="text-xs text-gray-500 font-mono block mt-1">${marker.latitude?.toFixed(6)}, ${marker.longitude?.toFixed(6)}</span>
+            </div>
+          </div>
+          
+          ${travelTimeInfo}
+        </div>
+      </div>
+    `;
+  };
+
+  // Get user's current location on component mount
+  useEffect(() => {
+    const getLocation = async () => {
+      try {
+        const location = await getUserLocation();
+        setUserLocation(location);
+        console.log('User location obtained:', location);
+      } catch (error) {
+        console.error('Error getting user location:', error);
+        // Don't set error state, just log it - travel time will be unavailable
+      }
+    };
+
+    getLocation();
+  }, []);
 
   // Initialize map
   useEffect(() => {
@@ -514,6 +733,71 @@ export function MapboxMap({
         // Add navigation controls
         map.current.addControl(new mapboxgl.NavigationControl());
 
+        // Add geocoder if enabled
+        if (showGeocoder) {
+          const geocoder = new MapboxGeocoder({
+            accessToken: mapboxgl.accessToken,
+            mapboxgl: mapboxgl,
+            marker: false, // We'll handle markers ourselves
+            placeholder: 'Search for a location, institution, or facility...',
+            bbox: [120.0, 14.0, 122.0, 15.0], // Focus on Philippines area
+            proximity: { longitude: 121.5556, latitude: 14.1139 }, // Center on Lucban, Quezon
+            countries: 'ph', // Limit to Philippines
+            types: 'place,locality,neighborhood,address,poi,region,district',
+            language: 'en',
+            limit: 10,
+            minLength: 2,
+            autocomplete: true,
+            fuzzyMatch: true
+          });
+
+          // Add geocoder to map
+          map.current.addControl(geocoder, 'top-left');
+          geocoderRef.current = geocoder;
+
+          // Handle geocoder result
+          geocoder.on('result', async (e) => {
+            const result = e.result;
+            const coordinates = result.geometry.coordinates;
+            const address = result.place_name || result.text || 'Selected location';
+            
+            // Center the map on the selected location
+            if (map.current) {
+              map.current.flyTo({
+                center: coordinates,
+                zoom: 16, // Zoom in closer to the selected location
+                essential: true
+              });
+            }
+
+            // Display route if user location is available
+            if (userLocation && map.current) {
+              try {
+                const routeData = await calculateTravelTime(
+                  { lat: userLocation.lat, lng: userLocation.lng },
+                  { lat: coordinates[1], lng: coordinates[0] }
+                );
+                
+                if (routeData && routeData.routeData) {
+                  setRouteData(routeData.routeData);
+                  setShowRoute(true);
+                  displayRoute(routeData.routeData);
+                }
+              } catch (error) {
+                console.error('Error calculating route:', error);
+              }
+            }
+            
+            if (onGeocoderResult) {
+              onGeocoderResult({
+                lng: coordinates[0],
+                lat: coordinates[1],
+                address: address
+              });
+            }
+          });
+        }
+
         map.current.on('load', () => {
           console.log('Map loaded successfully');
           clearTimeout(loadTimeout);
@@ -528,13 +812,41 @@ export function MapboxMap({
         });
 
         if (onMapClick) {
-          map.current.on('click', (e) => {
+          map.current.on('click', async (e) => {
+            // Center the map on the clicked location
+            map.current.flyTo({
+              center: [e.lngLat.lng, e.lngLat.lat],
+              zoom: 12, // Zoom in closer to the clicked location
+              essential: true
+            });
+
+            // Display route if user location is available
+            if (userLocation) {
+              try {
+                const routeData = await calculateTravelTime(
+                  { lat: userLocation.lat, lng: userLocation.lng },
+                  { lat: e.lngLat.lat, lng: e.lngLat.lng }
+                );
+                
+                if (routeData && routeData.routeData) {
+                  setRouteData(routeData.routeData);
+                  setShowRoute(true);
+                  displayRoute(routeData.routeData);
+                }
+              } catch (error) {
+                console.error('Error calculating route:', error);
+              }
+            }
+            
             onMapClick(e.lngLat);
           });
         }
 
         return () => {
           clearTimeout(loadTimeout);
+          if (geocoderRef.current) {
+            geocoderRef.current = null;
+          }
           if (map.current) {
             map.current.remove();
             map.current = null;
@@ -563,10 +875,17 @@ export function MapboxMap({
   useEffect(() => {
     if (!map.current || !mapLoaded) return;
 
+    // Don't auto-center if we're in location selection mode (showOnlyCurrentLocation)
+    // This allows the map to stay centered on user-selected locations
+    if (showOnlyCurrentLocation) {
+      console.log('Skipping auto-center in location selection mode');
+      return;
+    }
+
     console.log('Setting map center to:', center, 'zoom:', zoom);
     map.current.setCenter(center);
     map.current.setZoom(zoom);
-  }, [center, zoom, mapLoaded]);
+  }, [center, zoom, mapLoaded, showOnlyCurrentLocation]);
 
   // Handle markers and popups
   useEffect(() => {
@@ -579,8 +898,164 @@ export function MapboxMap({
       popupRef.current.remove();
     }
 
+    // Handle single marker (from database)
+    if (singleMarker) {
+      const el = createMarkerElement(singleMarker.type);
+      const markerInstance = new mapboxgl.Marker({
+        element: el,
+        anchor: 'bottom'
+      })
+      .setLngLat(singleMarker.coordinates)
+      .addTo(map.current);
 
-    // Filter markers based on active filters
+      markersRef.current.push(markerInstance);
+
+      // Add click event to marker
+      el.addEventListener('click', async () => {
+        if (popupRef.current) {
+          popupRef.current.remove();
+        }
+
+        const popup = new mapboxgl.Popup({
+          offset: 25,
+          closeButton: false,
+          closeOnClick: true,
+          className: 'custom-popup',
+          maxWidth: '200px'
+        })
+        .setLngLat(singleMarker.coordinates)
+        .setHTML(await createPopupContentWithTravelTime(singleMarker))
+        .addTo(map.current);
+
+        popupRef.current = popup;
+      });
+
+      // Add current location marker if available and not showing only current location
+      if (userLocation && !showOnlyCurrentLocation) {
+        console.log('Adding current location marker at:', userLocation);
+        
+        const currentLocationEl = document.createElement('div');
+        currentLocationEl.className = 'marker';
+        currentLocationEl.style.width = '20px';
+        currentLocationEl.style.height = '20px';
+        currentLocationEl.style.backgroundColor = '#3B82F6';
+        currentLocationEl.style.borderRadius = '50%';
+        currentLocationEl.style.border = '3px solid white';
+        currentLocationEl.style.boxShadow = '0 0 12px rgba(59, 130, 246, 0.6)';
+        currentLocationEl.style.cursor = 'pointer';
+        currentLocationEl.style.zIndex = '1000';
+        currentLocationEl.style.position = 'relative';
+        currentLocationEl.title = 'Your current location';
+
+        const currentLocationMarker = new mapboxgl.Marker({
+          element: currentLocationEl,
+          anchor: 'bottom'
+        })
+        .setLngLat([userLocation.lng, userLocation.lat])
+        .addTo(map.current);
+
+        markersRef.current.push(currentLocationMarker);
+      }
+
+      // Add clicked location marker if provided
+      if (clickedLocation) {
+        const clickedLocationEl = document.createElement('div');
+        clickedLocationEl.className = 'marker';
+        clickedLocationEl.style.width = '24px';
+        clickedLocationEl.style.height = '24px';
+        clickedLocationEl.style.backgroundColor = '#FF4F0B';
+        clickedLocationEl.style.borderRadius = '50%';
+        clickedLocationEl.style.border = '3px solid white';
+        clickedLocationEl.style.boxShadow = '0 0 12px rgba(255, 79, 11, 0.6)';
+        clickedLocationEl.style.cursor = 'pointer';
+        clickedLocationEl.style.zIndex = '1000';
+        clickedLocationEl.style.position = 'relative';
+        clickedLocationEl.title = 'Selected location';
+
+        const clickedLocationMarker = new mapboxgl.Marker({
+          element: clickedLocationEl,
+          anchor: 'bottom'
+        })
+        .setLngLat([clickedLocation.lng, clickedLocation.lat])
+        .addTo(map.current);
+
+        markersRef.current.push(clickedLocationMarker);
+
+        // Add popup for clicked location
+        const clickedPopup = new mapboxgl.Popup({
+          offset: 25,
+          closeButton: false,
+          closeOnClick: true,
+          className: 'custom-popup',
+          maxWidth: '200px'
+        })
+        .setLngLat([clickedLocation.lng, clickedLocation.lat])
+        .setHTML(`
+          <div class="w-[200px]">
+            <div class="bg-gray-50 px-3 py-2 border-b border-gray-200">
+              <h4 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Selected Location</h4>
+            </div>
+            <div class="p-3">
+              <div class="flex items-start gap-2 mb-2">
+                <svg class="w-4 h-4 text-gray-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                </svg>
+                <div class="min-w-0 flex-1">
+                  <span class="text-sm font-medium text-gray-900 break-words leading-tight block">${clickedLocation.address}</span>
+                  <span class="text-xs text-gray-500 font-mono block mt-1">${clickedLocation.lat.toFixed(6)}, ${clickedLocation.lng.toFixed(6)}</span>
+                </div>
+              </div>
+              <div class="mt-3 pt-3 border-t border-gray-300">
+                <div class="flex items-center gap-2 mb-1">
+                  <svg class="w-4 h-4 text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  </svg>
+                  <span class="text-sm font-medium text-gray-700">Travel time</span>
+                </div>
+                <div class="text-xs text-gray-500 ml-6" id="travel-time-${clickedLocation.lat}-${clickedLocation.lng}">Calculating...</div>
+              </div>
+            </div>
+          </div>
+        `)
+        .addTo(map.current);
+
+        // Calculate and update travel time asynchronously, and display route
+        if (userLocation) {
+          calculateTravelTime(
+            { lat: userLocation.lat, lng: userLocation.lng },
+            { lat: clickedLocation.lat, lng: clickedLocation.lng }
+          ).then(travelTimeData => {
+            if (travelTimeData) {
+              // Update travel time display
+              const travelTimeElement = document.getElementById(`travel-time-${clickedLocation.lat}-${clickedLocation.lng}`);
+              if (travelTimeElement) {
+                travelTimeElement.textContent = `${travelTimeData.duration} (${travelTimeData.distance} km)`;
+              }
+              
+              // Display route automatically
+              if (travelTimeData.routeData) {
+                setRouteData(travelTimeData.routeData);
+                setShowRoute(true);
+                displayRoute(travelTimeData.routeData);
+              }
+            }
+          }).catch(error => {
+            console.error('Error calculating travel time:', error);
+            const travelTimeElement = document.getElementById(`travel-time-${clickedLocation.lat}-${clickedLocation.lng}`);
+            if (travelTimeElement) {
+              travelTimeElement.textContent = 'Unable to calculate';
+            }
+          });
+        }
+
+        popupRef.current = clickedPopup;
+      }
+
+      return; // Exit early since we're showing a single marker
+    }
+
+    // Filter markers based on active filters (for multiple markers)
     const filteredMarkers = sampleMarkers.filter(marker => {
       if (!activeFilters) return true;
       
@@ -601,7 +1076,7 @@ export function MapboxMap({
         .addTo(map.current!);
 
       // Add click event to marker
-      el.addEventListener('click', () => {
+      el.addEventListener('click', async () => {
         if (popupRef.current) {
           popupRef.current.remove();
         }
@@ -609,17 +1084,32 @@ export function MapboxMap({
         popupRef.current = new mapboxgl.Popup({ 
           offset: [0, -10],
           closeButton: false,
+          closeOnClick: true,
           className: 'custom-popup',
-          maxWidth: '380px'
+          maxWidth: '200px'
         })
           .setLngLat(marker.coordinates)
-          .setHTML(createPopupContent(marker))
+          .setHTML(await createPopupContentWithTravelTime(marker))
           .addTo(map.current!);
       });
 
       markersRef.current.push(markerInstance);
     });
-  }, [mapLoaded, activeFilters]);
+  }, [mapLoaded, activeFilters, singleMarker, userLocation, showOnlyCurrentLocation, clickedLocation]);
+
+  // Handle route display
+  useEffect(() => {
+    if (map.current && mapLoaded && routeData && showRoute) {
+      displayRoute(routeData);
+    }
+  }, [mapLoaded, routeData, showRoute]);
+
+  // Handle route display for location selection mode
+  useEffect(() => {
+    if (map.current && mapLoaded && routeData && showOnlyCurrentLocation) {
+      displayRoute(routeData);
+    }
+  }, [mapLoaded, routeData, showOnlyCurrentLocation]);
 
   // Handle heatmap
   useEffect(() => {
@@ -718,7 +1208,7 @@ export function MapboxMap({
       <div 
         ref={mapContainer} 
         className="w-full h-full rounded-lg"
-        style={{ width: '100%', height: '100%', minHeight: '500px' }}
+        style={{ width: '100%', height: '100%', minHeight: '480px' }}
       />
       
       {!mapLoaded && !mapError && (

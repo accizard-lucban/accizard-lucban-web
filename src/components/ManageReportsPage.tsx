@@ -39,61 +39,6 @@ export function ManageReportsPage() {
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [selectedReports, setSelectedReports] = useState<string[]>([]);
   const [reports, setReports] = useState<any[]>([]);
-  const mockReports = [{
-    id: "REP-001",
-    userId: "USR-001",
-    type: "Fire",
-    reportedBy: "Juan dela Cruz",
-    barangay: "Brgy. Poblacion",
-    description: "House fire reported on Main Street. Multiple units dispatched.",
-    responders: "Fire Station 1, Rescue Team Alpha",
-    location: "123 Main Street, Brgy. Poblacion, Makati City",
-    dateSubmitted: "01/15/25",
-    timeSubmitted: "2:30 PM",
-    status: "Pending",
-    attachedMedia: ["fire_scene_1.jpg", "fire_scene_2.jpg"],
-    attachedDocument: "incident_report_001.pdf",
-    mobileNumber: "+63 912 345 6789",
-    timeOfDispatch: "14:45",
-    timeOfArrival: "15:10",
-    coordinates: "14.5995, 120.9842"
-  }, {
-    id: "REP-002",
-    userId: "USR-002",
-    type: "Flooding",
-    reportedBy: "Maria Santos",
-    barangay: "Brgy. San Roque",
-    description: "Flash flood affecting residential area after heavy rainfall.",
-    responders: "Emergency Response Team, Local Barangay Officials",
-    location: "Riverside Avenue, Brgy. San Roque, Quezon City",
-    dateSubmitted: "01/14/25",
-    timeSubmitted: "9:15 AM",
-    status: "Ongoing",
-    attachedMedia: ["flood_area_1.jpg"],
-    attachedDocument: "flood_assessment.pdf",
-    mobileNumber: "+63 917 876 5432",
-    timeOfDispatch: "09:30",
-    timeOfArrival: "10:15",
-    coordinates: "14.6342, 121.0355"
-  }, {
-    id: "REP-003",
-    userId: "USR-003",
-    type: "Medical Emergency",
-    reportedBy: "Pedro Garcia",
-    barangay: "Brgy. Magsaysay",
-    description: "Elderly person experiencing chest pains, ambulance requested.",
-    responders: "Paramedic Unit 2, Hospital Emergency Team",
-    location: "456 Health Street, Brgy. Magsaysay, Manila",
-    dateSubmitted: "01/13/25",
-    timeSubmitted: "10:45 PM",
-    status: "Responded",
-    attachedMedia: ["medical_response.jpg"],
-    attachedDocument: "medical_report_003.pdf",
-    mobileNumber: "+63 998 123 4567",
-    timeOfDispatch: "22:50",
-    timeOfArrival: "23:05",
-    coordinates: "14.5964, 120.9445"
-  }];
   
   // Fetch current user information
   useEffect(() => {
@@ -183,8 +128,8 @@ export function ManageReportsPage() {
           // Get admin-added media from the report data
           const adminMedia = Array.isArray(data.adminMedia) ? data.adminMedia : [];
 
-          // Use mock coordinates for testing if Firebase data doesn't have coordinates
-          const mockCoordinates = mockReports[index % mockReports.length]?.coordinates || "14.5995, 120.9842";
+          // Use default coordinates if Firebase data doesn't have coordinates
+          const defaultCoordinates = "14.5995, 120.9842";
 
           return {
             id: data.reportId || doc.id,
@@ -204,7 +149,7 @@ export function ManageReportsPage() {
             mobileNumber: "", // Not in your schema, will show empty
             timeOfDispatch: "", // Not in your schema, will show empty
             timeOfArrival: "", // Not in your schema, will show empty
-            coordinates: data.coordinates || mockCoordinates // Use Firebase coordinates if available, otherwise use mock
+            coordinates: data.coordinates || defaultCoordinates // Use Firebase coordinates if available, otherwise use default
           };
         });
         console.log("Fetched reports:", fetched);
@@ -495,7 +440,11 @@ export function ManageReportsPage() {
   const [directionsReport, setDirectionsReport] = useState<any>(null);
   const [previewTab, setPreviewTab] = useState("details");
   const [isPreviewEditMode, setIsPreviewEditMode] = useState(false);
+  const [isDispatchEditMode, setIsDispatchEditMode] = useState(false);
+  const [isPatientEditMode, setIsPatientEditMode] = useState(false);
   const [previewEditData, setPreviewEditData] = useState<any>(null);
+  const [showLocationMap, setShowLocationMap] = useState(false);
+  const [newLocation, setNewLocation] = useState<{lat: number, lng: number, address: string} | null>(null);
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [uploadingDocument, setUploadingDocument] = useState(false);
   const [currentUser, setCurrentUser] = useState<{ id: string; username: string; name: string; userType: string } | null>(null);
@@ -728,9 +677,10 @@ export function ManageReportsPage() {
         const fileExtension = file.name.split('.').pop() || '';
         const fileName = `media_${timestamp}_${randomSuffix}.${fileExtension}`;
         
-        // Create storage reference
-        const storageRef = ref(storage, `reports/${selectedReport.id}/media/${fileName}`);
-        console.log('Storage path:', `reports/${selectedReport.id}/media/${fileName}`);
+        // Create storage reference using the same structure as mobile app
+        // Structure: report_images/{userId}/{reportId}/admin/{fileName}
+        const storageRef = ref(storage, `report_images/${selectedReport.userId}/${selectedReport.id}/admin/${fileName}`);
+        console.log('Storage path:', `report_images/${selectedReport.userId}/${selectedReport.id}/admin/${fileName}`);
         
         // Upload file
         console.log('Uploading bytes...');
@@ -946,6 +896,86 @@ export function ManageReportsPage() {
     } catch (error) {
       console.error('Error deleting admin image:', error);
       toast.error('Failed to delete admin image. Please try again.');
+    }
+  };
+
+  // Function to reverse geocode coordinates to get address
+  const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
+    try {
+      const accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+      if (!accessToken) {
+        throw new Error('Mapbox access token not available');
+      }
+
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${accessToken}&types=address,poi,place,locality,neighborhood`;
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Geocoding API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.features && data.features.length > 0) {
+        const feature = data.features[0];
+        return feature.place_name || feature.text || 'Unknown Location';
+      } else {
+        return 'Unknown Location';
+      }
+    } catch (error) {
+      console.error('Error reverse geocoding:', error);
+      return 'Unknown Location';
+    }
+  };
+
+  // Function to handle map click for location selection
+  const handleMapClick = async (lngLat: { lng: number; lat: number }) => {
+    try {
+      const address = await reverseGeocode(lngLat.lat, lngLat.lng);
+      setNewLocation({
+        lat: lngLat.lat,
+        lng: lngLat.lng,
+        address: address
+      });
+    } catch (error) {
+      console.error('Error getting address for clicked location:', error);
+      toast.error('Failed to get address for selected location');
+    }
+  };
+
+  // Function to save new location
+  const handleSaveLocation = async () => {
+    if (newLocation && selectedReport) {
+      try {
+        // Update the database
+        await updateDoc(doc(db, "reports", selectedReport.id), {
+          location: newLocation.address,
+          coordinates: `${newLocation.lat}, ${newLocation.lng}`,
+          updatedAt: serverTimestamp(),
+          lastModifiedBy: currentUser?.id
+        });
+
+        // Update the local state
+        setPreviewEditData((d: any) => ({
+          ...d,
+          location: newLocation.address,
+          coordinates: `${newLocation.lat}, ${newLocation.lng}`
+        }));
+
+        // Update the selectedReport state to reflect the change
+        setSelectedReport((prev: any) => ({
+          ...prev,
+          location: newLocation.address,
+          coordinates: `${newLocation.lat}, ${newLocation.lng}`
+        }));
+
+        setShowLocationMap(false);
+        setNewLocation(null);
+        toast.success('Location updated successfully!');
+      } catch (error) {
+        console.error('Error updating location:', error);
+        toast.error('Failed to update location. Please try again.');
+      }
     }
   };
 
@@ -1461,12 +1491,11 @@ export function ManageReportsPage() {
               </TabsList>
 
               <TabsContent value="directions" className="mt-4 flex-1 min-h-0 flex flex-col">
-                <div className="bg-gray-200 rounded-lg flex-1 w-full relative overflow-hidden" style={{ minHeight: '500px' }}>
+                <div className="flex-1 w-full relative" style={{ minHeight: '800px', maxHeight: 'calc(90vh - 200px)' }}>
                   {selectedReport ? (
                     <div 
                       id="report-map-container"
                       className="w-full h-full rounded-lg overflow-hidden"
-                      style={{ height: '100%', minHeight: '500px' }}
                     >
                       <MapboxMap 
                         center={selectedReport.coordinates ? 
@@ -1487,6 +1516,30 @@ export function ManageReportsPage() {
                           })() : 
                           [120.9842, 14.5995] as [number, number]}
                         zoom={14}
+                        singleMarker={selectedReport.coordinates ? 
+                          (() => {
+                            try {
+                              const coords = selectedReport.coordinates.split(',').map(coord => parseFloat(coord.trim()));
+                              if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
+                                return {
+                                  id: selectedReport.id || 'report-marker',
+                                  type: selectedReport.incidentType || 'Emergency',
+                                  title: selectedReport.location || 'Report Location',
+                                  description: selectedReport.description || 'Emergency report location',
+                                  reportId: selectedReport.id,
+                                  coordinates: [coords[1], coords[0]] as [number, number], // Convert to [longitude, latitude]
+                                  status: selectedReport.status,
+                                  locationName: selectedReport.location,
+                                  latitude: coords[0],
+                                  longitude: coords[1]
+                                };
+                              }
+                            } catch (error) {
+                              console.error('Error parsing coordinates for marker:', error);
+                            }
+                            return undefined;
+                          })() : 
+                          undefined}
                       />
                     </div>
                   ) : (
@@ -1669,14 +1722,23 @@ export function ManageReportsPage() {
                     <TableRow>
                       <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Location</TableCell>
                       <TableCell>
-                        {isPreviewEditMode ? (
-                          <Input value={previewEditData?.location} onChange={e => setPreviewEditData((d: any) => ({ ...d, location: e.target.value }))} />
-                        ) : (
-                          <>
-                            <div>{selectedReport?.location}</div>
-                            <div className="text-xs text-gray-500 mt-1">{selectedReport?.coordinates || '14.5995, 120.9842'}</div>
-                          </>
-                        )}
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1">
+                            <div className="text-gray-900">{previewEditData?.location || selectedReport?.location}</div>
+                            <div className="text-xs text-gray-500 mt-1">{previewEditData?.coordinates || selectedReport?.coordinates || '14.5995, 120.9842'}</div>
+                          </div>
+                          {isPreviewEditMode && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setShowLocationMap(true)}
+                              className="flex items-center gap-1"
+                            >
+                              <MapPin className="h-4 w-4" />
+                              Pin Location
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                     <TableRow>
@@ -1987,17 +2049,17 @@ export function ManageReportsPage() {
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-2">
                   <div className="text-lg font-semibold text-gray-900">Dispatch Form</div>
                   <div className="flex gap-2 flex-wrap">
-                    {isPreviewEditMode ? (
+                    {isDispatchEditMode ? (
                       <Button size="sm" className="bg-[#FF4F0B] text-white hover:bg-[#FF4F0B]/90" onClick={async () => {
                         console.log('Saving dispatch form:', dispatchData);
                         await saveDispatchDataToDatabase(selectedReport.id, dispatchData);
-                        setIsPreviewEditMode(false);
+                        setIsDispatchEditMode(false);
                       }}>
                         Save
                       </Button>
                     ) : (
                       <Button size="sm" variant="outline" onClick={() => {
-                        setIsPreviewEditMode(true);
+                        setIsDispatchEditMode(true);
                       }}>
                         <Edit className="h-4 w-4" />
                       </Button>
@@ -2030,7 +2092,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Time of Dispatch</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <div className="flex items-center gap-2">
                               <Input 
                                 type="time" 
@@ -2056,7 +2118,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Time of Arrival</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <div className="flex items-center gap-2">
                               <Input 
                                 type="time" 
@@ -2099,7 +2161,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Hospital Arrival</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <div className="flex items-center gap-2">
                               <Input 
                                 type="time" 
@@ -2125,7 +2187,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Returned to OPCEN</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <div className="flex items-center gap-2">
                               <Input 
                                 type="time" 
@@ -2151,7 +2213,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Disaster Related</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <Select value={dispatchData.disasterRelated} onValueChange={v => setDispatchData(d => ({ ...d, disasterRelated: v }))}>
                                 <SelectTrigger><SelectValue placeholder="Select option" /></SelectTrigger>
                                 <SelectContent>
@@ -2173,7 +2235,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Agency Present</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <Select value={dispatchData.agencyPresent} onValueChange={v => setDispatchData(d => ({ ...d, agencyPresent: v }))}>
                                 <SelectTrigger><SelectValue placeholder="Select agency" /></SelectTrigger>
                                 <SelectContent>
@@ -2237,7 +2299,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Type of Emergency</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <Select value={dispatchData.typeOfEmergency} onValueChange={v => setDispatchData(d => ({ 
                                 ...d, 
                                 typeOfEmergency: v, 
@@ -2288,7 +2350,7 @@ export function ManageReportsPage() {
                             <TableRow>
                               <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Vehicle Involved</TableCell>
                               <TableCell>
-                                {isPreviewEditMode ? (
+                                {isPatientEditMode ? (
                                   <Select value={dispatchData.vehicleInvolved} onValueChange={v => setDispatchData(d => ({ ...d, vehicleInvolved: v }))}>
                                     <SelectTrigger><SelectValue placeholder="Select vehicle involved" /></SelectTrigger>
                                     <SelectContent>
@@ -2304,7 +2366,7 @@ export function ManageReportsPage() {
                             <TableRow>
                               <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Classification of Injury</TableCell>
                               <TableCell>
-                                {isPreviewEditMode ? (
+                                {isPatientEditMode ? (
                                   <Select value={dispatchData.injuryClassification} onValueChange={v => setDispatchData(d => ({ ...d, injuryClassification: v, majorInjuryTypes: [], minorInjuryTypes: [] }))}>
                                     <SelectTrigger><SelectValue placeholder="Select injury classification" /></SelectTrigger>
                                     <SelectContent>
@@ -2328,7 +2390,7 @@ export function ManageReportsPage() {
                               <TableRow>
                                 <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Major Injury Types</TableCell>
                                 <TableCell>
-                                  {isPreviewEditMode ? (
+                                  {isPatientEditMode ? (
                                     <div className="space-y-2">
                                       {majorInjuryTypeOptions.map((injuryType) => (
                                         <div key={injuryType} className="flex items-center space-x-2">
@@ -2377,7 +2439,7 @@ export function ManageReportsPage() {
                               <TableRow>
                                 <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Minor Injury Types</TableCell>
                                 <TableCell>
-                                  {isPreviewEditMode ? (
+                                  {isPatientEditMode ? (
                                     <div className="space-y-2">
                                       {minorInjuryTypeOptions.map((injuryType) => (
                                         <div key={injuryType} className="flex items-center space-x-2">
@@ -2429,7 +2491,7 @@ export function ManageReportsPage() {
                             <TableRow>
                               <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Medical Classification</TableCell>
                               <TableCell>
-                                {isPreviewEditMode ? (
+                                {isPatientEditMode ? (
                                   <Select value={dispatchData.medicalClassification} onValueChange={v => setDispatchData(d => ({ ...d, medicalClassification: v, majorMedicalSymptoms: [], minorMedicalSymptoms: [] }))}>
                                     <SelectTrigger><SelectValue placeholder="Select medical classification" /></SelectTrigger>
                                     <SelectContent>
@@ -2453,7 +2515,7 @@ export function ManageReportsPage() {
                               <TableRow>
                                 <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Major Medical Symptoms</TableCell>
                                 <TableCell>
-                                  {isPreviewEditMode ? (
+                                  {isPatientEditMode ? (
                                     <div className="space-y-2">
                                       {majorMedicalSymptomsOptions.map((symptom) => (
                                         <div key={symptom} className="flex items-center space-x-2">
@@ -2502,7 +2564,7 @@ export function ManageReportsPage() {
                               <TableRow>
                                 <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Minor Medical Symptoms</TableCell>
                                 <TableCell>
-                                  {isPreviewEditMode ? (
+                                  {isPatientEditMode ? (
                                     <div className="space-y-2">
                                       {minorMedicalSymptomsOptions.map((symptom) => (
                                         <div key={symptom} className="flex items-center space-x-2">
@@ -2554,7 +2616,7 @@ export function ManageReportsPage() {
                             <TableRow>
                               <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Chief Complaint</TableCell>
                               <TableCell>
-                                {isPreviewEditMode ? (
+                                {isPatientEditMode ? (
                                   <Textarea 
                                     value={dispatchData.chiefComplaint} 
                                     onChange={e => setDispatchData(d => ({ ...d, chiefComplaint: e.target.value }))} 
@@ -2570,7 +2632,7 @@ export function ManageReportsPage() {
                             <TableRow>
                               <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Diagnosis</TableCell>
                               <TableCell>
-                                {isPreviewEditMode ? (
+                                {isPatientEditMode ? (
                                   <Textarea 
                                     value={dispatchData.diagnosis} 
                                     onChange={e => setDispatchData(d => ({ ...d, diagnosis: e.target.value }))} 
@@ -2586,7 +2648,7 @@ export function ManageReportsPage() {
                             <TableRow>
                               <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Nature of Illness</TableCell>
                               <TableCell>
-                                {isPreviewEditMode ? (
+                                {isPatientEditMode ? (
                                   <div className="space-y-3">
                                     <RadioGroup 
                                       value={dispatchData.natureOfIllness} 
@@ -2645,7 +2707,7 @@ export function ManageReportsPage() {
                           <TableRow>
                             <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Actions Taken</TableCell>
                             <TableCell>
-                              {isPreviewEditMode ? (
+                              {isPatientEditMode ? (
                                 <div className="space-y-3">
                                   <div className="space-y-2">
                                     {actionsTakenOptions.map((action) => (
@@ -2884,17 +2946,17 @@ export function ManageReportsPage() {
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-2">
                   <div className="text-lg font-semibold text-gray-900">Patient Information</div>
                   <div className="flex gap-2 flex-wrap">
-                    {isPreviewEditMode ? (
+                    {isPatientEditMode ? (
                       <Button size="sm" className="bg-[#FF4F0B] text-white hover:bg-[#FF4F0B]/90" onClick={() => {
                         console.log('Saving patient information:', currentPatient);
                         toast.success('Patient information saved successfully!');
-                        setIsPreviewEditMode(false);
+                        setIsPatientEditMode(false);
                       }}>
                         Save
                       </Button>
                     ) : (
                       <Button size="sm" variant="outline" onClick={() => {
-                        setIsPreviewEditMode(true);
+                        setIsPatientEditMode(true);
                       }}>
                         <Edit className="h-4 w-4" />
                       </Button>
@@ -2957,7 +3019,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Name</TableCell>
                           <TableCell>
-                              {isPreviewEditMode ? (
+                              {isPatientEditMode ? (
                                 <Input 
                                   value={currentPatient.name} 
                                   onChange={e => updateCurrentPatient({ name: e.target.value })} 
@@ -2971,7 +3033,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Contact Number</TableCell>
                           <TableCell>
-                              {isPreviewEditMode ? (
+                              {isPatientEditMode ? (
                                 <Input 
                                   value={currentPatient.contactNumber} 
                                   onChange={e => updateCurrentPatient({ contactNumber: e.target.value })} 
@@ -2985,7 +3047,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Address</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <Textarea 
                                 value={currentPatient.address} 
                                 onChange={e => updateCurrentPatient(d => ({ ...d, address: e.target.value }))} 
@@ -3000,7 +3062,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Religion</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <Select value={currentPatient.religion} onValueChange={v => updateCurrentPatient(d => ({ ...d, religion: v }))}>
                                 <SelectTrigger><SelectValue placeholder="Select religion" /></SelectTrigger>
                                 <SelectContent>
@@ -3029,7 +3091,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Birthday</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <Input 
                                 type="date" 
                                 value={currentPatient.birthday} 
@@ -3043,7 +3105,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Blood Type</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <Select value={currentPatient.bloodType} onValueChange={v => updateCurrentPatient(d => ({ ...d, bloodType: v }))}>
                                 <SelectTrigger><SelectValue placeholder="Select blood type" /></SelectTrigger>
                                 <SelectContent>
@@ -3072,7 +3134,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Civil Status</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <Select value={currentPatient.civilStatus} onValueChange={v => updateCurrentPatient(d => ({ ...d, civilStatus: v }))}>
                                 <SelectTrigger><SelectValue placeholder="Select civil status" /></SelectTrigger>
                                 <SelectContent>
@@ -3097,7 +3159,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Age</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <Input 
                                 type="number" 
                                 value={currentPatient.age} 
@@ -3114,7 +3176,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">PWD (Person with Disability)</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <Select value={currentPatient.pwd} onValueChange={v => updateCurrentPatient(d => ({ ...d, pwd: v }))}>
                                 <SelectTrigger><SelectValue placeholder="Select PWD status" /></SelectTrigger>
                                 <SelectContent>
@@ -3136,7 +3198,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Age Group</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <Select value={currentPatient.ageGroup} onValueChange={v => updateCurrentPatient(d => ({ ...d, ageGroup: v }))}>
                                 <SelectTrigger><SelectValue placeholder="Select age group" /></SelectTrigger>
                                 <SelectContent>
@@ -3161,7 +3223,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Gender</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <Select value={currentPatient.gender} onValueChange={v => updateCurrentPatient(d => ({ ...d, gender: v }))}>
                                 <SelectTrigger><SelectValue placeholder="Select gender" /></SelectTrigger>
                                 <SelectContent>
@@ -3185,7 +3247,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Name of Companion/Relative</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <Input 
                                 value={currentPatient.companionName} 
                                 onChange={e => updateCurrentPatient(d => ({ ...d, companionName: e.target.value }))} 
@@ -3199,7 +3261,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Companion Contact Number</TableCell>
                           <TableCell>
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <Input 
                                 value={currentPatient.companionContact} 
                                 onChange={e => updateCurrentPatient(d => ({ ...d, companionContact: e.target.value }))} 
@@ -3221,7 +3283,7 @@ export function ManageReportsPage() {
                         <div>
                           <h4 className="font-medium text-gray-700 mb-3">Eyes Response</h4>
                           <div className="space-y-2">
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <RadioGroup value={currentPatient.gcs.eyes} onValueChange={v => updateCurrentPatient({ gcs: { ...currentPatient.gcs, eyes: v } })}>
                                 {[
                                   { value: "4", label: "4 - Spontaneous" },
@@ -3260,7 +3322,7 @@ export function ManageReportsPage() {
                         <div>
                           <h4 className="font-medium text-gray-700 mb-3">Verbal Response</h4>
                           <div className="space-y-2">
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <RadioGroup value={currentPatient.gcs.verbal} onValueChange={v => updateCurrentPatient({ gcs: { ...currentPatient.gcs, verbal: v } })}>
                                 {[
                                   { value: "5", label: "5 - Oriented" },
@@ -3301,7 +3363,7 @@ export function ManageReportsPage() {
                         <div>
                           <h4 className="font-medium text-gray-700 mb-3">Motor Response</h4>
                           <div className="space-y-2">
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <RadioGroup value={currentPatient.gcs.motor} onValueChange={v => updateCurrentPatient({ gcs: { ...currentPatient.gcs, motor: v } })}>
                                 {[
                                   { value: "6", label: "6 - Obey Commands" },
@@ -3449,7 +3511,7 @@ export function ManageReportsPage() {
                         <div>
                           <h4 className="font-medium text-gray-700 mb-3">Skin</h4>
                           <div className="space-y-2">
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <RadioGroup value={currentPatient.perfusion.skin} onValueChange={v => updateCurrentPatient({ perfusion: { ...currentPatient.perfusion, skin: v } })}>
                                 {[
                                   { value: "Normal", label: "Normal" },
@@ -3488,7 +3550,7 @@ export function ManageReportsPage() {
                         <div>
                           <h4 className="font-medium text-gray-700 mb-3">Pulse</h4>
                           <div className="space-y-2">
-                            {isPreviewEditMode ? (
+                            {isDispatchEditMode ? (
                               <RadioGroup value={currentPatient.perfusion.pulse} onValueChange={v => updateCurrentPatient({ perfusion: { ...currentPatient.perfusion, pulse: v } })}>
                                 {[
                                   { value: "Regular", label: "Regular" },
@@ -3841,6 +3903,87 @@ export function ManageReportsPage() {
               <DialogClose asChild>
                 <Button variant="outline">Close</Button>
               </DialogClose>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Location Map Modal */}
+        <Dialog open={showLocationMap} onOpenChange={setShowLocationMap}>
+          <DialogContent className="sm:max-w-[800px] max-h-[90vh] bg-white flex flex-col overflow-hidden">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <MapPin className="h-5 w-5 text-orange-600" />
+                Select New Location
+              </DialogTitle>
+              <DialogDescription>
+                Click on the map to select a new location for this report. The address will be automatically updated.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="flex-1 min-h-0 flex flex-col">
+              <div className="flex-1 min-h-0 border rounded-lg">
+                <MapboxMap 
+                  onMapClick={handleMapClick}
+                  showOnlyCurrentLocation={true}
+                  clickedLocation={newLocation}
+                  showGeocoder={true}
+                  onGeocoderResult={handleMapClick}
+                  singleMarker={selectedReport?.coordinates ? 
+                    (() => {
+                      try {
+                        const coords = selectedReport.coordinates.split(',').map(coord => parseFloat(coord.trim()));
+                        if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
+                          return {
+                            id: selectedReport.id || 'report-marker',
+                            type: selectedReport.type || 'Emergency',
+                            title: selectedReport.location || 'Report Location',
+                            description: selectedReport.description || 'Emergency report location',
+                            reportId: selectedReport.id,
+                            coordinates: [coords[1], coords[0]] as [number, number],
+                            status: selectedReport.status,
+                            locationName: selectedReport.location,
+                            latitude: coords[0],
+                            longitude: coords[1]
+                          };
+                        }
+                      } catch (error) {
+                        console.error('Error parsing coordinates:', error);
+                      }
+                      return undefined;
+                    })() : 
+                    undefined}
+                  center={selectedReport?.coordinates ? 
+                    (() => {
+                      try {
+                        const coords = selectedReport.coordinates.split(',').map(coord => parseFloat(coord.trim()));
+                        if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
+                          return [coords[1], coords[0]] as [number, number];
+                        }
+                      } catch (error) {
+                        console.error('Error parsing coordinates:', error);
+                      }
+                      return [121.5556, 14.1139] as [number, number]; // Center on Lucban, Quezon
+                    })() : 
+                    [121.5556, 14.1139] as [number, number]} // Center on Lucban, Quezon
+                  zoom={14}
+                />
+              </div>
+            </div>
+            
+            <DialogFooter className="flex gap-2">
+              <Button variant="outline" onClick={() => {
+                setShowLocationMap(false);
+                setNewLocation(null);
+              }}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleSaveLocation}
+                disabled={!newLocation}
+                className="bg-[#FF4F0B] text-white hover:bg-[#FF4F0B]/90"
+              >
+                Save Location
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

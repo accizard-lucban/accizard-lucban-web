@@ -224,7 +224,7 @@ Files are organized in Firebase Storage with the following structure:
 
 ```
 storage/
-├── profiles/
+├── profile-pictures-web/
 │   └── {userId}/
 │       └── profile_{timestamp}_{random}.{ext}
 ├── validIds/
@@ -236,9 +236,13 @@ storage/
 ├── announcements/
 │   └── {announcementId}/
 │       └── media_{timestamp}_{random}.{ext}
-├── reports/
-│   └── {reportId}/
-│       └── media_{timestamp}_{random}.{ext}
+├── report_images/
+│   └── {userId}/
+│       └── {reportId}/
+│           ├── images/           ← Mobile app images
+│           │   └── image_{timestamp}_{random}.{ext}
+│           └── admin/            ← Web app admin images
+│               └── media_{timestamp}_{random}.{ext}
 └── general/
     └── {userId}/
         └── {filename}_{timestamp}_{random}.{ext}
@@ -258,12 +262,16 @@ service firebase.storage {
     }
     
     // Or more specific rules
-    match /profiles/{userId}/{fileName} {
+    match /profile-pictures-web/{userId}/{fileName} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
     
     match /validIds/{userId}/{fileName} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    match /report_images/{userId}/{reportId}/{allPaths=**} {
+      allow read, write: if request.auth != null;
     }
   }
 }
@@ -320,7 +328,7 @@ const ProfilePictureUpload = () => {
       userId="user123"
       multiple={false}
       maxFiles={1}
-      acceptedTypes={ALLOWED_IMAGE_TYPES}
+      acceptedTypes={ALLOWED_IMAGE_TYPES} 
       onUploadComplete={handleFileSelect}
       uploadButtonText="Upload Profile Picture"
     />

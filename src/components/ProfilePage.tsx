@@ -148,7 +148,7 @@ export function ProfilePage() {
         // Create a unique filename
         const timestamp = Date.now();
         const fileExtension = file.name.split('.').pop() || 'jpg';
-        const filename = `profile-pictures/${userRole.id}-${timestamp}.${fileExtension}`;
+        const filename = `profile-pictures-web/${userRole.id}-${timestamp}.${fileExtension}`;
         
         console.log("Uploading to path:", filename);
         console.log("Storage instance:", storage);

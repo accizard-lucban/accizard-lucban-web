@@ -107,7 +107,7 @@ export const uploadProfilePicture = async (
   userId: string,
   onProgress?: UploadProgressCallback
 ): Promise<{ url: string; path: string; fileName: string }> => {
-  return uploadFile(file, 'profile', userId, `profiles/${userId}/profile`, onProgress);
+  return uploadFile(file, 'profile', userId, `profile-pictures-web/${userId}/profile`, onProgress);
 };
 
 // Upload valid ID image
