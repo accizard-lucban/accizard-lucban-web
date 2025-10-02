@@ -160,6 +160,12 @@ export function ManageReportsPage() {
       console.error("Error subscribing to reports:", err);
     }
   }, []);
+
+  // Fetch team members from database
+  useEffect(() => {
+    fetchTeamMembers();
+  }, []);
+
   const [formData, setFormData] = useState({
     type: "",
     reportedBy: "",
@@ -312,6 +318,15 @@ export function ManageReportsPage() {
     "Delta Team",
     "Echo Team"
   ]);
+  // Team definitions for automatic assignment - now dynamic from database
+  const [teamAlpha, setTeamAlpha] = useState<string[]>([]);
+  const [teamSulu, setTeamSulu] = useState<string[]>([]);
+  
+  // Team management state
+  const [showTeamManagement, setShowTeamManagement] = useState(false);
+  const [newMemberName, setNewMemberName] = useState("");
+  const [selectedTeamForManagement, setSelectedTeamForManagement] = useState<"Team Alpha" | "Team Sulu">("Team Alpha");
+
   const [driverOptions, setDriverOptions] = useState([
     "John Smith",
     "Jane Doe",
@@ -459,6 +474,27 @@ export function ManageReportsPage() {
     return now.toTimeString().slice(0, 5);
   };
 
+  // Function to automatically assign responders based on alternating teams starting from October 1, 2025
+  const getAutoAssignedResponders = () => {
+    const today = new Date();
+    const referenceDate = new Date('2025-10-01'); // October 1, 2025 - Team Alpha starts
+    
+    // Calculate days since reference date
+    const timeDiff = today.getTime() - referenceDate.getTime();
+    const daysSinceReference = Math.floor(timeDiff / (1000 * 3600 * 24)) + 1; // +1 to make Oct 1 = Day 1
+    
+    // Odd days = Team Alpha, Even days = Team Sulu
+    const isOddDay = daysSinceReference % 2 === 1;
+    const assignedTeam = isOddDay ? teamAlpha : teamSulu;
+    const teamName = isOddDay ? "Team Alpha" : "Team Sulu";
+    
+    return {
+      team: teamName,
+      members: assignedTeam,
+      dayOfMonth: daysSinceReference
+    };
+  };
+
   // Function to save dispatch data to database
   const saveDispatchDataToDatabase = async (reportId: string, dispatchData: any) => {
     try {
@@ -503,6 +539,87 @@ export function ManageReportsPage() {
     }
     return null;
   };
+
+  // Team management functions
+  const fetchTeamMembers = async () => {
+    try {
+      // Fetch Team Alpha members
+      const alphaDoc = await getDocs(query(collection(db, "teamMembers"), where("team", "==", "Team Alpha")));
+      if (!alphaDoc.empty) {
+        const alphaData = alphaDoc.docs[0].data();
+        setTeamAlpha(alphaData.members || []);
+      }
+
+      // Fetch Team Sulu members
+      const suluDoc = await getDocs(query(collection(db, "teamMembers"), where("team", "==", "Team Sulu")));
+      if (!suluDoc.empty) {
+        const suluData = suluDoc.docs[0].data();
+        setTeamSulu(suluData.members || []);
+      }
+    } catch (error) {
+      console.error("Error fetching team members:", error);
+      // Fallback to empty arrays if database fails
+      setTeamAlpha([]);
+      setTeamSulu([]);
+    }
+  };
+
+  const addTeamMember = async (teamName: string, memberName: string) => {
+    try {
+      const teamRef = collection(db, "teamMembers");
+      const teamQuery = query(teamRef, where("team", "==", teamName));
+      const teamSnapshot = await getDocs(teamQuery);
+      
+      if (teamSnapshot.empty) {
+        // Create new team document
+        await updateDoc(doc(db, "teamMembers", `${teamName.toLowerCase().replace(" ", "_")}`), {
+          team: teamName,
+          members: [memberName],
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+      } else {
+        // Update existing team document
+        const teamData = teamSnapshot.docs[0].data();
+        const updatedMembers = [...(teamData.members || []), memberName];
+        await updateDoc(doc(db, "teamMembers", teamSnapshot.docs[0].id), {
+          members: updatedMembers,
+          updatedAt: serverTimestamp()
+        });
+      }
+      
+      // Refresh team data
+      await fetchTeamMembers();
+      toast.success(`Added ${memberName} to ${teamName}`);
+    } catch (error) {
+      console.error("Error adding team member:", error);
+      toast.error("Failed to add team member");
+    }
+  };
+
+  const removeTeamMember = async (teamName: string, memberName: string) => {
+    try {
+      const teamQuery = query(collection(db, "teamMembers"), where("team", "==", teamName));
+      const teamSnapshot = await getDocs(teamQuery);
+      
+      if (!teamSnapshot.empty) {
+        const teamData = teamSnapshot.docs[0].data();
+        const updatedMembers = (teamData.members || []).filter((member: string) => member !== memberName);
+        await updateDoc(doc(db, "teamMembers", teamSnapshot.docs[0].id), {
+          members: updatedMembers,
+          updatedAt: serverTimestamp()
+        });
+        
+        // Refresh team data
+        await fetchTeamMembers();
+        toast.success(`Removed ${memberName} from ${teamName}`);
+      }
+    } catch (error) {
+      console.error("Error removing team member:", error);
+      toast.error("Failed to remove team member");
+    }
+  };
+
   const [dispatchData, setDispatchData] = useState({
     receivedBy: "",
     timeCallReceived: "",
@@ -1229,32 +1346,39 @@ export function ManageReportsPage() {
                             size="sm"
                             variant="outline"
                             onClick={async () => {
-                              setSelectedReport(report);
-                              setShowPreviewModal(true);
-                              
-                              // Load existing dispatch data from database
-                              const existingDispatchData = await loadDispatchDataFromDatabase(report.id);
-                              
-                              // Only auto-populate if no existing dispatch data AND no receivedBy/timeCallReceived
-                              if (!existingDispatchData || (!existingDispatchData.receivedBy && !existingDispatchData.timeCallReceived)) {
-                                if (currentUser) {
-                                  const newDispatchData = {
-                                    receivedBy: currentUser.name,
-                                    timeCallReceived: getCurrentTime()
-                                  };
-                                  
-                                  // Set the data in state
-                                  setDispatchData(prev => ({
-                                    ...prev,
-                                    ...newDispatchData
-                                  }));
-                                  
-                                  // Immediately save to database to prevent other users from overwriting
-                                  await saveDispatchDataToDatabase(report.id, {
-                                    ...existingDispatchData,
-                                    ...newDispatchData
-                                  });
+                              try {
+                                console.log("Opening report preview for:", report);
+                                setSelectedReport(report);
+                                setShowPreviewModal(true);
+                                setPreviewTab("details"); // Reset to details tab
+                                
+                                // Load existing dispatch data from database
+                                const existingDispatchData = await loadDispatchDataFromDatabase(report.id);
+                                
+                                // Only auto-populate if no existing dispatch data AND no receivedBy/timeCallReceived
+                                if (!existingDispatchData || (!existingDispatchData.receivedBy && !existingDispatchData.timeCallReceived)) {
+                                  if (currentUser) {
+                                    const newDispatchData = {
+                                      receivedBy: currentUser.name,
+                                      timeCallReceived: getCurrentTime()
+                                    };
+                                    
+                                    // Set the data in state
+                                    setDispatchData(prev => ({
+                                      ...prev,
+                                      ...newDispatchData
+                                    }));
+                                    
+                                    // Immediately save to database to prevent other users from overwriting
+                                    await saveDispatchDataToDatabase(report.id, {
+                                      ...existingDispatchData,
+                                      ...newDispatchData
+                                    });
+                                  }
                                 }
+                              } catch (error) {
+                                console.error("Error opening report preview:", error);
+                                toast.error("Failed to open report preview");
                               }
                             }}
                           >
@@ -1285,7 +1409,7 @@ export function ManageReportsPage() {
             {/* Pagination */}
             <div className="border-t border-gray-200 px-6 py-3 flex items-center justify-between">
               <div className="text-sm text-gray-700">
-                Showing 1 to 3 of 3 results
+                Showing {reports.length > 0 ? 1 : 0} to {reports.length} of {reports.length} results
               </div>
               <div className="flex space-x-2">
                 <Button variant="outline" size="sm" disabled>
@@ -1426,8 +1550,16 @@ export function ManageReportsPage() {
 
         {/* Preview Report Modal */}
         <Dialog open={showPreviewModal} onOpenChange={(open) => {
+          console.log("Preview modal state change:", open, "selectedReport:", selectedReport);
           setShowPreviewModal(open);
           if (!open) {
+            // Reset all states when modal is closed
+            setSelectedReport(null);
+            setPreviewTab("details");
+            setIsPreviewEditMode(false);
+            setIsDispatchEditMode(false);
+            setIsPatientEditMode(false);
+            setPreviewEditData(null);
             // Reset dispatch data when modal is closed
             setDispatchData({
               receivedBy: "",
@@ -1466,23 +1598,26 @@ export function ManageReportsPage() {
           }
         }}>
           <DialogContent className="sm:max-w-[900px] max-h-[90vh] bg-white flex flex-col overflow-hidden">
-            {/* Header Row: Title, ID, and Action Buttons */}
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900">Report Preview</h2>
-                <div className="text-sm text-gray-700">{selectedReport?.id && `Report ID: ${selectedReport.id}`}</div>
-              </div>
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={handlePrintPreview}>
-                  <Printer className="h-4 w-4" />
-                </Button>
-                <Button size="sm" variant="outline">
-                  <Download className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-            {/* Navigation Tabs */}
-            <Tabs value={previewTab} onValueChange={setPreviewTab} className="w-full flex-1 flex flex-col">
+            {selectedReport ? (
+              <>
+                {/* Header Row: Title, ID, and Action Buttons */}
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-900">Report Preview</h2>
+                    <div className="text-sm text-gray-700">Report ID: {selectedReport.id}</div>
+                    <div className="text-xs text-gray-500">Debug: selectedReport exists, previewTab: {previewTab}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={handlePrintPreview}>
+                      <Printer className="h-4 w-4" />
+                    </Button>
+                    <Button size="sm" variant="outline">
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                {/* Navigation Tabs */}
+                <Tabs value={previewTab} onValueChange={setPreviewTab} className="w-full flex-1 flex flex-col">
               <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="directions">Directions</TabsTrigger>
                 <TabsTrigger value="details">Report Details</TabsTrigger>
@@ -2060,6 +2195,17 @@ export function ManageReportsPage() {
                     ) : (
                       <Button size="sm" variant="outline" onClick={() => {
                         setIsDispatchEditMode(true);
+                        // Automatically assign responders when entering edit mode
+                        const autoAssigned = getAutoAssignedResponders();
+                        setDispatchData(d => ({
+                          ...d,
+                          responders: [{
+                            id: `auto-${Date.now()}`,
+                            team: autoAssigned.team,
+                            drivers: [],
+                            responders: autoAssigned.members
+                          }]
+                        }));
                       }}>
                         <Edit className="h-4 w-4" />
                       </Button>
@@ -2080,7 +2226,68 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Responders</TableCell>
                           <TableCell>
-                            <div className="text-gray-500 text-center py-4">No team assignment data available</div>
+                            {isDispatchEditMode ? (
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setShowTeamManagement(true)}
+                                    className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                                  >
+                                    <Plus className="h-4 w-4 mr-1" />
+                                    Manage Teams
+                                  </Button>
+                                 
+                                </div>
+                                {dispatchData.responders && dispatchData.responders.length > 0 ? (
+                                  <div className="space-y-1">
+                                    {dispatchData.responders.map((responder: any, index: number) => (
+                                      <div key={responder.id || index} className="flex items-center justify-between">
+                                        <div className="text-sm">
+                                          <span className="font-medium">{responder.team}:</span> {responder.responders ? responder.responders.join(", ") : "No members"}
+                                        </div>
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() => {
+                                            setDispatchData(d => ({
+                                              ...d,
+                                              responders: d.responders ? d.responders.filter((_: any, i: number) => i !== index) : []
+                                            }));
+                                          }}
+                                          className="text-red-600 hover:text-red-700 p-1"
+                                        >
+                                          <X className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="text-gray-500 text-sm py-2">No responders assigned</div>
+                                )}
+                              </div>
+                            ) : (
+                              dispatchData.responders && dispatchData.responders.length > 0 ? (
+                                <div className="space-y-1">
+                                  {dispatchData.responders.map((responder: any, index: number) => (
+                                    <div key={responder.id || index} className="text-sm">
+                                      <span className="font-medium">{responder.team}:</span> {responder.responders ? responder.responders.join(", ") : "No members"}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="text-sm text-gray-500">
+                                  <span className="font-medium">{(() => {
+                                    const autoAssigned = getAutoAssignedResponders();
+                                    return autoAssigned.team;
+                                  })()}:</span> {(() => {
+                                    const autoAssigned = getAutoAssignedResponders();
+                                    return autoAssigned.members.join(", ");
+                                  })()}
+                                </div>
+                              )
+                            )}
                           </TableCell>
                         </TableRow>
                         <TableRow>
@@ -3009,7 +3216,7 @@ export function ManageReportsPage() {
                       
                       {patients.length === 1 && (
                         <div className="text-sm text-gray-600">
-                          Single patient case. Click "Add New Patient" to add additional patients.
+                          Click "Add New Patient" to add additional patients.
                         </div>
                       )}
                     </div>
@@ -3820,6 +4027,15 @@ export function ManageReportsPage() {
               </TabsContent>
 
             </Tabs>
+              </>
+            ) : (
+              <div className="flex items-center justify-center h-64">
+                <div className="text-center">
+                  <div className="text-gray-500 text-lg">Loading report preview...</div>
+                  <div className="text-sm text-gray-400 mt-2">selectedReport: {selectedReport ? 'exists' : 'null'}</div>
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
 
@@ -3983,6 +4199,112 @@ export function ManageReportsPage() {
                 className="bg-[#FF4F0B] text-white hover:bg-[#FF4F0B]/90"
               >
                 Save Location
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Team Management Modal */}
+        <Dialog open={showTeamManagement} onOpenChange={setShowTeamManagement}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Manage Team Members</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-6">
+              {/* Team Selection */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Select Team</label>
+                <div className="flex gap-2">
+                  <Button
+                    variant={selectedTeamForManagement === "Team Alpha" ? "default" : "outline"}
+                    onClick={() => setSelectedTeamForManagement("Team Alpha")}
+                  >
+                    Team Alpha
+                  </Button>
+                  <Button
+                    variant={selectedTeamForManagement === "Team Sulu" ? "default" : "outline"}
+                    onClick={() => setSelectedTeamForManagement("Team Sulu")}
+                  >
+                    Team Sulu
+                  </Button>
+                </div>
+              </div>
+
+              {/* Add New Member */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Add New Member</label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Enter member name"
+                    value={newMemberName}
+                    onChange={(e) => setNewMemberName(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button
+                    onClick={() => {
+                      if (newMemberName.trim()) {
+                        addTeamMember(selectedTeamForManagement, newMemberName.trim());
+                        setNewMemberName("");
+                      }
+                    }}
+                    disabled={!newMemberName.trim()}
+                  >
+                    Add
+                  </Button>
+                </div>
+              </div>
+
+              {/* Current Members */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Current Members</label>
+                <div className="border rounded-lg p-4 max-h-60 overflow-y-auto">
+                  {selectedTeamForManagement === "Team Alpha" ? (
+                    teamAlpha.length > 0 ? (
+                      <div className="space-y-2">
+                        {teamAlpha.map((member, index) => (
+                          <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                            <span className="text-sm">{member}</span>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => removeTeamMember("Team Alpha", member)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-gray-500 text-center py-4">No members in Team Alpha</div>
+                    )
+                  ) : (
+                    teamSulu.length > 0 ? (
+                      <div className="space-y-2">
+                        {teamSulu.map((member, index) => (
+                          <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                            <span className="text-sm">{member}</span>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => removeTeamMember("Team Sulu", member)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-gray-500 text-center py-4">No members in Team Sulu</div>
+                    )
+                  )}
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={() => setShowTeamManagement(false)}>
+                Close
               </Button>
             </DialogFooter>
           </DialogContent>
