@@ -57,19 +57,28 @@ export function LoginForm() {
       return;
     }
     try {
+      console.log("Attempting Firebase Auth login with:", email);
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
+      console.log("Firebase Auth successful. User email:", user.email);
       
       // Check if the user exists in the superAdmin collection
+      console.log("Checking superAdmin collection...");
       const superadminQuery = query(
         collection(db, "superAdmin"), 
         where("email", "==", user.email)
       );
       const superadminSnapshot = await getDocs(superadminQuery);
       
+      console.log("SuperAdmin query results:", superadminSnapshot.size, "documents found");
+      if (superadminSnapshot.size > 0) {
+        console.log("First document data:", superadminSnapshot.docs[0].data());
+      }
+      
       if (superadminSnapshot.empty) {
         // User exists in Firebase Auth but not in superAdmin collection
         // Sign them out and show error
+        console.log("User not found in superAdmin collection, signing out...");
         await auth.signOut();
         setError("Access denied. You are not authorized to access the web application.");
         toast.error("Access denied. You are not authorized to access the web application.");
@@ -77,6 +86,7 @@ export function LoginForm() {
       }
       
       // User is in superAdmin collection, allow access
+      console.log("Login successful! Navigating to dashboard...");
       toast.success("Login successful!");
       navigate("/dashboard");
     } catch (err: any) {

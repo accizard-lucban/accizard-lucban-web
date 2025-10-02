@@ -108,19 +108,33 @@ export function ManageReportsPage() {
           let timeSubmitted = "";
           try {
             const timestamp: any = data.timestamp;
-            if (timestamp && typeof timestamp.toDate === "function") {
-              const d = timestamp.toDate();
-              // MM/dd/yy and h:mm a formatting
-              const mm = String(d.getMonth() + 1).padStart(2, "0");
-              const dd = String(d.getDate()).padStart(2, "0");
-              const yy = String(d.getFullYear()).slice(-2);
-              dateSubmitted = `${mm}/${dd}/${yy}`;
-              const hours12 = d.getHours() % 12 || 12;
-              const minutes = String(d.getMinutes()).padStart(2, "0");
-              const ampm = d.getHours() >= 12 ? "PM" : "AM";
-              timeSubmitted = `${hours12}:${minutes} ${ampm}`;
+            if (timestamp) {
+              let d;
+              if (typeof timestamp.toDate === "function") {
+                d = timestamp.toDate();
+              } else if (timestamp instanceof Date) {
+                d = timestamp;
+              } else if (typeof timestamp === "number") {
+                d = new Date(timestamp);
+              } else if (typeof timestamp === "string") {
+                d = new Date(timestamp);
+              }
+              
+              if (d && !isNaN(d.getTime())) {
+                // MM/dd/yy and h:mm a formatting
+                const mm = String(d.getMonth() + 1).padStart(2, "0");
+                const dd = String(d.getDate()).padStart(2, "0");
+                const yy = String(d.getFullYear()).slice(-2);
+                dateSubmitted = `${mm}/${dd}/${yy}`;
+                const hours12 = d.getHours() % 12 || 12;
+                const minutes = String(d.getMinutes()).padStart(2, "0");
+                const ampm = d.getHours() >= 12 ? "PM" : "AM";
+                timeSubmitted = `${hours12}:${minutes} ${ampm}`;
+              }
             }
-          } catch {}
+          } catch (error) {
+            console.log("Error parsing timestamp:", error);
+          }
 
           // Map imageUrls to attachedMedia (from mobile users)
           const mobileMedia = Array.isArray(data.imageUrls) ? data.imageUrls : [];
@@ -134,8 +148,8 @@ export function ManageReportsPage() {
           return {
             id: data.reportId || doc.id,
             userId: data.userId || "",
-            type: data.category || "",
-            reportedBy: "", // Not in your schema, will show empty
+            type: data.reportType || "", // Map from Firestore reportType field
+            reportedBy: data.reporterName || "", // Map from Firestore reporterName field
             barangay: "", // Not in your schema, will show empty
             description: data.description || "",
             responders: "", // Not in your schema, will show empty
@@ -146,13 +160,36 @@ export function ManageReportsPage() {
             mobileMedia,
             adminMedia,
             attachedDocument: "", // Not in your schema, will show empty
-            mobileNumber: "", // Not in your schema, will show empty
+            mobileNumber: data.reporterMobile || "", // Map from Firestore reporterMobile field
             timeOfDispatch: "", // Not in your schema, will show empty
             timeOfArrival: "", // Not in your schema, will show empty
             coordinates: data.coordinates || defaultCoordinates // Use Firebase coordinates if available, otherwise use default
           };
         });
         console.log("Fetched reports:", fetched);
+        
+        // Check for new reports and trigger alert
+        if (previousReportCount > 0 && fetched.length > previousReportCount) {
+          const newReports = fetched.slice(0, fetched.length - previousReportCount);
+          if (newReports.length > 0) {
+            const latestNewReport = newReports[0];
+            console.log("New report detected:", latestNewReport);
+            
+            // Set alert data and show modal
+            setNewReportData(latestNewReport);
+            setShowNewReportAlert(true);
+            
+            // Play alarm sound
+            playAlarmSound();
+            
+            // Auto-hide alert after 10 seconds
+            setTimeout(() => {
+              setShowNewReportAlert(false);
+            }, 10000);
+          }
+        }
+        
+        setPreviousReportCount(fetched.length);
         setReports(fetched);
       });
       return () => unsubscribe();
@@ -468,10 +505,55 @@ export function ManageReportsPage() {
   const [previewImageName, setPreviewImageName] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
-  // Helper function to get current time in HH:MM format
+  // New report alert state
+  const [showNewReportAlert, setShowNewReportAlert] = useState(false);
+  const [newReportData, setNewReportData] = useState<any>(null);
+  const [previousReportCount, setPreviousReportCount] = useState(0);
+
+  // Helper function to get current time in HH:MM AM/PM format
   const getCurrentTime = () => {
     const now = new Date();
-    return now.toTimeString().slice(0, 5);
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12; // Convert to 12-hour format
+    const displayMinutes = minutes.toString().padStart(2, '0');
+    return `${displayHours}:${displayMinutes} ${ampm}`;
+  };
+
+  // Function to play alarming sound for new reports
+  const playAlarmSound = () => {
+    try {
+      // Create a simple alarm sound using Web Audio API
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      // Set alarm sound properties
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime); // High frequency
+      oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.2);
+      oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.3);
+      
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+      
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + 0.5);
+    } catch (error) {
+      console.log("Could not play alarm sound:", error);
+      // Fallback: try to play a simple beep using a data URL
+      try {
+        const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmGgU7k9n1unEiBC13yO/eizEIHWq+8+OWT');
+        audio.volume = 0.3;
+        audio.play().catch(() => console.log("Audio playback failed"));
+      } catch (fallbackError) {
+        console.log("Fallback audio also failed:", fallbackError);
+      }
+    }
   };
 
   // Function to automatically assign responders based on alternating teams starting from October 1, 2025
@@ -536,6 +618,51 @@ export function ManageReportsPage() {
       }
     } catch (error) {
       console.error("Error loading dispatch data:", error);
+    }
+    return null;
+  };
+
+  // Function to save patient data to database
+  const savePatientDataToDatabase = async (reportId: string, patientData: any) => {
+    try {
+      // First, get the current document to merge with existing data
+      const reportDoc = await getDocs(query(collection(db, "reports"), where("reportId", "==", reportId)));
+      if (!reportDoc.empty) {
+        const docId = reportDoc.docs[0].id;
+        const currentData = reportDoc.docs[0].data();
+        
+        // Merge with existing patientInfo if it exists
+        const mergedPatientInfo = {
+          ...currentData.patientInfo,
+          patients: patientData.patients || patientData
+        };
+        
+        await updateDoc(doc(db, "reports", docId), {
+          patientInfo: mergedPatientInfo,
+          updatedAt: serverTimestamp(),
+          lastModifiedBy: currentUser?.id
+        });
+        toast.success("Patient information saved successfully!");
+      }
+    } catch (error) {
+      console.error("Error saving patient data:", error);
+      toast.error("Failed to save patient information");
+    }
+  };
+
+  // Function to load existing patient data from database
+  const loadPatientDataFromDatabase = async (reportId: string) => {
+    try {
+      const reportDoc = await getDocs(query(collection(db, "reports"), where("reportId", "==", reportId)));
+      if (!reportDoc.empty) {
+        const data = reportDoc.docs[0].data();
+        if (data.patientInfo && data.patientInfo.patients) {
+          setPatients(data.patientInfo.patients);
+          return data.patientInfo;
+        }
+      }
+    } catch (error) {
+      console.error("Error loading patient data:", error);
     }
     return null;
   };
@@ -1309,14 +1436,18 @@ export function ManageReportsPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <button
-                          type="button"
-                          className="text-blue-600 hover:underline focus:outline-none"
-                          onClick={() => navigate("/manage-users", { state: { tab: "residents", search: report.userId } })}
-                          title="View Resident Account"
-                        >
-                          {report.userId}
-                        </button>
+                        {report.reportedBy ? (
+                          <button
+                            type="button"
+                            className="text-blue-600 hover:underline focus:outline-none"
+                            onClick={() => navigate("/manage-users", { state: { tab: "residents", search: report.reportedBy } })}
+                            title="View Resident Account"
+                          >
+                            {report.reportedBy}
+                          </button>
+                        ) : (
+                          <span className="text-gray-400 italic">Not specified</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         {report.dateSubmitted}
@@ -1354,6 +1485,9 @@ export function ManageReportsPage() {
                                 
                                 // Load existing dispatch data from database
                                 const existingDispatchData = await loadDispatchDataFromDatabase(report.id);
+                                
+                                // Load existing patient data from database
+                                await loadPatientDataFromDatabase(report.id);
                                 
                                 // Only auto-populate if no existing dispatch data AND no receivedBy/timeCallReceived
                                 if (!existingDispatchData || (!existingDispatchData.receivedBy && !existingDispatchData.timeCallReceived)) {
@@ -1595,6 +1729,46 @@ export function ManageReportsPage() {
               },
               responders: []
             });
+            // Reset patient data when modal is closed
+            setPatients([{
+              id: 1,
+              name: "",
+              contactNumber: "",
+              address: "",
+              religion: "",
+              birthday: "",
+              bloodType: "",
+              civilStatus: "",
+              age: "",
+              pwd: "",
+              ageGroup: "",
+              gender: "",
+              companionName: "",
+              companionContact: "",
+              gcs: {
+                eyes: "",
+                verbal: "",
+                motor: ""
+              },
+              pupil: "",
+              lungSounds: "",
+              perfusion: {
+                skin: "",
+                pulse: ""
+              },
+              vitalSigns: {
+                timeTaken: "",
+                temperature: "",
+                pulseRate: "",
+                respiratoryRate: "",
+                bloodPressure: "",
+                spo2: "",
+                spo2WithO2Support: false,
+                randomBloodSugar: "",
+                painScale: ""
+              }
+            }]);
+            setCurrentPatientIndex(0);
           }
         }}>
           <DialogContent className="sm:max-w-[900px] max-h-[90vh] bg-white flex flex-col overflow-hidden">
@@ -1605,7 +1779,6 @@ export function ManageReportsPage() {
                   <div>
                     <h2 className="text-2xl font-bold text-gray-900">Report Preview</h2>
                     <div className="text-sm text-gray-700">Report ID: {selectedReport.id}</div>
-                    <div className="text-xs text-gray-500">Debug: selectedReport exists, previewTab: {previewTab}</div>
                   </div>
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" onClick={handlePrintPreview}>
@@ -1678,7 +1851,7 @@ export function ManageReportsPage() {
                       />
                     </div>
                   ) : (
-                    <div className="text-gray-500 text-center flex items-center justify-center h-full">
+                    <div className="text-gray-400 text-center flex items-center justify-center h-full">
                       <div>
                         <MapPin className="h-12 w-12 mx-auto mb-2" />
                         <p>No location data available</p>
@@ -1690,10 +1863,10 @@ export function ManageReportsPage() {
 
               <TabsContent value="details" className="mt-4 flex-1 min-h-0 flex flex-col">
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-2">
-                  <div className="text-lg font-semibold text-gray-900">Report Details</div>
+                  <div className="text-lg font-semibold text-gray-800">Report Details</div>
                   <div className="flex gap-2 flex-wrap">
                     {isPreviewEditMode ? (
-                      <Button size="sm" className="bg-[#FF4F0B] text-white hover:bg-[#FF4F0B]/90" onClick={() => {
+                      <Button size="sm" className="bg-brand-red hover:bg-brand-red-700 text-white" onClick={() => {
                         console.log('Saving changes:', previewEditData);
                         setSelectedReport(previewEditData);
                         setIsPreviewEditMode(false);
@@ -1702,7 +1875,7 @@ export function ManageReportsPage() {
                         Save
                       </Button>
                     ) : (
-                      <Button size="sm" variant="outline" onClick={() => {
+                      <Button size="sm" variant="outline" className="border-gray-300 text-gray-800 hover:bg-gray-50" onClick={() => {
                         setIsPreviewEditMode(true);
                         setPreviewEditData({ ...selectedReport });
                         setSelectedFiles([]); // Clear any previously selected files
@@ -1717,26 +1890,21 @@ export function ManageReportsPage() {
                     <Table className="w-full min-w-[600px]">
                     <TableBody>
                       <TableRow>
-                        <TableCell className="font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Date & Time Submitted</TableCell>
+                        <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Date & Time Submitted</TableCell>
                         <TableCell>
                           {selectedReport?.dateSubmitted && selectedReport?.timeSubmitted ? (
-                            <div className="flex items-center gap-3">
-                              <div className="flex items-center gap-2">
-                                <Calendar className="h-4 w-4 text-blue-600" />
-                                <span className="font-semibold text-blue-800">{selectedReport.dateSubmitted}</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Clock className="h-4 w-4 text-blue-600" />
-                                <span className="font-medium text-blue-700">{selectedReport.timeSubmitted}</span>
-                              </div>
+                            <div>
+                              {selectedReport.dateSubmitted}
+                              <br />
+                              <span className="text-xs text-gray-600">{selectedReport.timeSubmitted}</span>
                             </div>
                           ) : (
-                            <span className="text-gray-500">Not available</span>
+                            <span className="text-gray-400">Not available</span>
                           )}
                         </TableCell>
                       </TableRow>
                       <TableRow>
-                        <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Status</TableCell>
+                        <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Status</TableCell>
                         <TableCell>
                           {isPreviewEditMode ? (
                             <Select value={previewEditData?.status} onValueChange={v => setPreviewEditData((d: any) => ({ ...d, status: v }))}>
@@ -1764,7 +1932,7 @@ export function ManageReportsPage() {
                         </TableCell>
                       </TableRow>
                       <TableRow>
-                        <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Report Type</TableCell>
+                        <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Report Type</TableCell>
                       <TableCell>
                         {isPreviewEditMode ? (
                           <Select value={previewEditData?.type} onValueChange={v => setPreviewEditData((d: any) => ({ ...d, type: v }))}>
@@ -1800,37 +1968,38 @@ export function ManageReportsPage() {
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Reported By</TableCell>
+                      <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Reported By</TableCell>
                       <TableCell>
                         {isPreviewEditMode ? (
                           <Input value={previewEditData?.reportedBy} onChange={e => setPreviewEditData((d: any) => ({ ...d, reportedBy: e.target.value }))} />
                         ) : (
-                          <>
+                          selectedReport?.reportedBy ? (
                             <Button
                               variant="link"
-                              className="p-0 h-auto text-blue-600 hover:text-blue-800 mr-2"
-                              onClick={() => navigate("/manage-users", { state: { tab: "residents", search: selectedReport?.userId } })}
+                              className="p-0 h-auto text-brand-red hover:text-brand-red-700"
+                              onClick={() => navigate("/manage-users", { state: { tab: "residents", search: selectedReport?.reportedBy } })}
                               title="View Resident Account"
                             >
-                              {selectedReport?.userId}
+                              {selectedReport?.reportedBy}
                             </Button>
-                            <span className="text-gray-700">{selectedReport?.reportedBy}</span>
-                          </>
+                          ) : (
+                            <span className="text-gray-400 italic">Not specified</span>
+                          )
                         )}
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Mobile Number</TableCell>
+                      <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Mobile Number</TableCell>
                       <TableCell>
                         {isPreviewEditMode ? (
                           <Input value={previewEditData?.mobileNumber} onChange={e => setPreviewEditData((d: any) => ({ ...d, mobileNumber: e.target.value }))} />
                         ) : (
-                          selectedReport?.mobileNumber
+                          selectedReport?.mobileNumber || <span className="text-gray-400 italic">Not specified</span>
                         )}
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Barangay</TableCell>
+                      <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Barangay</TableCell>
                       <TableCell>
                         {isPreviewEditMode ? (
                           <Select value={previewEditData?.barangay} onValueChange={v => setPreviewEditData((d: any) => ({ ...d, barangay: v }))}>
@@ -1840,12 +2009,12 @@ export function ManageReportsPage() {
                             </SelectContent>
                           </Select>
                         ) : (
-                          selectedReport?.barangay
+                          selectedReport?.barangay || <span className="text-gray-400 italic">Edit to add Barangay</span>
                         )}
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Description</TableCell>
+                      <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Description</TableCell>
                       <TableCell>
                         {isPreviewEditMode ? (
                           <Textarea value={previewEditData?.description} onChange={e => setPreviewEditData((d: any) => ({ ...d, description: e.target.value }))} />
@@ -1855,12 +2024,12 @@ export function ManageReportsPage() {
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Location</TableCell>
+                      <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Location</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <div className="flex-1">
-                            <div className="text-gray-900">{previewEditData?.location || selectedReport?.location}</div>
-                            <div className="text-xs text-gray-500 mt-1">{previewEditData?.coordinates || selectedReport?.coordinates || '14.5995, 120.9842'}</div>
+                            <div className="text-gray-800">{previewEditData?.location || selectedReport?.location}</div>
+                            <div className="text-xs text-gray-600 mt-1">{previewEditData?.coordinates || selectedReport?.coordinates || '14.5995, 120.9842'}</div>
                           </div>
                           {isPreviewEditMode && (
                             <Button
@@ -1877,13 +2046,13 @@ export function ManageReportsPage() {
                       </TableCell>
                     </TableRow>
                     <TableRow>
-                      <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Attached Media</TableCell>
+                      <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Attached Media</TableCell>
                       <TableCell>
                         <div className="space-y-4">
                           {/* Mobile User Media Section */}
                           <div>
                             <div className="mb-2">
-                              <h4 className="text-sm font-medium text-gray-700">Mobile User Media</h4>
+                              <h4 className="text-sm font-medium text-gray-800">Mobile User Media</h4>
                             </div>
                         <div className="flex flex-wrap gap-3 mb-2">
                               {(() => {
@@ -1892,7 +2061,7 @@ export function ManageReportsPage() {
                                 
                                 if (!mobileMediaArray || mobileMediaArray.length === 0) {
                                   return (
-                                    <div className="text-gray-500 text-sm italic">
+                                    <div className="text-gray-400 text-sm italic">
                                       No mobile attachments
                                     </div>
                                   );
@@ -1985,7 +2154,7 @@ export function ManageReportsPage() {
                           {/* Admin Added Media Section */}
                           <div className="border-t border-gray-200 pt-4">
                             <div className="mb-2">
-                              <h4 className="text-sm font-medium text-gray-700">Admin Added Media</h4>
+                              <h4 className="text-sm font-medium text-gray-800">Admin Added Media</h4>
                             </div>
                             <div className="flex flex-wrap gap-3 mb-2">
                               {(() => {
@@ -1994,7 +2163,7 @@ export function ManageReportsPage() {
                                 
                                 if (!adminMediaArray || adminMediaArray.length === 0) {
                                   return (
-                                    <div className="text-gray-500 text-sm italic">
+                                    <div className="text-gray-400 text-sm italic">
                                       No admin attachments
                                     </div>
                                   );
@@ -2233,7 +2402,7 @@ export function ManageReportsPage() {
                                     size="sm"
                                     variant="outline"
                                     onClick={() => setShowTeamManagement(true)}
-                                    className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                                    className="border-gray-300 text-gray-800 hover:bg-gray-50"
                                   >
                                     <Plus className="h-4 w-4 mr-1" />
                                     Manage Teams
@@ -2243,48 +2412,33 @@ export function ManageReportsPage() {
                                 {dispatchData.responders && dispatchData.responders.length > 0 ? (
                                   <div className="space-y-1">
                                     {dispatchData.responders.map((responder: any, index: number) => (
-                                      <div key={responder.id || index} className="flex items-center justify-between">
-                                        <div className="text-sm">
-                                          <span className="font-medium">{responder.team}:</span> {responder.responders ? responder.responders.join(", ") : "No members"}
-                                        </div>
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          onClick={() => {
-                                            setDispatchData(d => ({
-                                              ...d,
-                                              responders: d.responders ? d.responders.filter((_: any, i: number) => i !== index) : []
-                                            }));
-                                          }}
-                                          className="text-red-600 hover:text-red-700 p-1"
-                                        >
-                                          <X className="h-3 w-3" />
-                                        </Button>
+                                      <div key={responder.id || index} className="text-sm text-gray-800">
+                                        <span className="font-medium text-gray-800">{responder.team}:</span> <span className="text-gray-600">{responder.responders ? responder.responders.join(", ") : "No members"}</span>
                                       </div>
                                     ))}
                                   </div>
                                 ) : (
-                                  <div className="text-gray-500 text-sm py-2">No responders assigned</div>
+                                  <div className="text-gray-600 text-sm py-2">No responders assigned</div>
                                 )}
                               </div>
                             ) : (
                               dispatchData.responders && dispatchData.responders.length > 0 ? (
                                 <div className="space-y-1">
                                   {dispatchData.responders.map((responder: any, index: number) => (
-                                    <div key={responder.id || index} className="text-sm">
-                                      <span className="font-medium">{responder.team}:</span> {responder.responders ? responder.responders.join(", ") : "No members"}
+                                    <div key={responder.id || index} className="text-sm text-gray-800">
+                                      <span className="font-medium text-gray-800">{responder.team}:</span> <span className="text-gray-600">{responder.responders ? responder.responders.join(", ") : "No members"}</span>
                                     </div>
                                   ))}
                                 </div>
                               ) : (
-                                <div className="text-sm text-gray-500">
-                                  <span className="font-medium">{(() => {
+                                <div className="text-sm text-gray-800">
+                                  <span className="font-medium text-gray-800">{(() => {
                                     const autoAssigned = getAutoAssignedResponders();
                                     return autoAssigned.team;
-                                  })()}:</span> {(() => {
+                                  })()}:</span> <span className="text-gray-600">{(() => {
                                     const autoAssigned = getAutoAssignedResponders();
                                     return autoAssigned.members.join(", ");
-                                  })()}
+                                  })()}</span>
                                 </div>
                               )
                             )}
@@ -3151,18 +3305,18 @@ export function ManageReportsPage() {
 
               <TabsContent value="patient" className="mt-4 flex-1 min-h-0 flex flex-col">
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-2">
-                  <div className="text-lg font-semibold text-gray-900">Patient Information</div>
+                  <div className="text-lg font-semibold text-gray-800">Patient Information</div>
                   <div className="flex gap-2 flex-wrap">
                     {isPatientEditMode ? (
-                      <Button size="sm" className="bg-[#FF4F0B] text-white hover:bg-[#FF4F0B]/90" onClick={() => {
-                        console.log('Saving patient information:', currentPatient);
-                        toast.success('Patient information saved successfully!');
+                      <Button size="sm" className="bg-brand-red hover:bg-brand-red-700 text-white" onClick={async () => {
+                        console.log('Saving patient information:', patients);
+                        await savePatientDataToDatabase(selectedReport.id, patients);
                         setIsPatientEditMode(false);
                       }}>
                         Save
                       </Button>
                     ) : (
-                      <Button size="sm" variant="outline" onClick={() => {
+                      <Button size="sm" variant="outline" className="border-gray-300 text-gray-800 hover:bg-gray-50" onClick={() => {
                         setIsPatientEditMode(true);
                       }}>
                         <Edit className="h-4 w-4" />
@@ -3174,10 +3328,10 @@ export function ManageReportsPage() {
                 <div className="flex-1 overflow-y-auto border rounded-lg min-h-0 max-h-[400px]">
                   <div className="p-4 space-y-6 pb-8">
                     {/* Patient Management Header */}
-                    <div className="bg-blue-50 p-4 rounded-lg border">
+                    <div className="bg-gray-100 p-4 rounded-lg border border-gray-200">
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold text-gray-900">Patient Management</h3>
-                        <Button onClick={addNewPatient} className="bg-blue-600 hover:bg-blue-700">
+                        <h3 className="text-lg font-semibold text-gray-800">Patient Management</h3>
+                        <Button onClick={addNewPatient} className="bg-brand-red hover:bg-brand-red-700 text-white">
                           <Plus className="h-4 w-4 mr-2" />
                           Add New Patient
                         </Button>
@@ -3185,7 +3339,7 @@ export function ManageReportsPage() {
                       
                       {patients.length > 1 && (
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium text-gray-700">Select Patient:</Label>
+                          <Label className="text-sm font-medium text-gray-800">Select Patient:</Label>
                           <div className="flex flex-wrap gap-2">
                             {patients.map((patient, index) => (
                               <div key={patient.id} className="flex items-center gap-2">
@@ -3193,7 +3347,7 @@ export function ManageReportsPage() {
                                   variant={currentPatientIndex === index ? "default" : "outline"}
                                   size="sm"
                                   onClick={() => setCurrentPatientIndex(index)}
-                                  className="text-xs"
+                                  className={`text-xs ${currentPatientIndex === index ? 'bg-brand-red hover:bg-brand-red-700 text-white' : 'border-gray-300 text-gray-800 hover:bg-gray-50'}`}
                                 >
                                   Patient {index + 1}
                                   {patient.name && ` - ${patient.name}`}
@@ -3224,54 +3378,56 @@ export function ManageReportsPage() {
                       <Table className="w-full min-w-[600px]">
                         <TableBody>
                         <TableRow>
-                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Name</TableCell>
+                          <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Name</TableCell>
                           <TableCell>
                               {isPatientEditMode ? (
                                 <Input 
                                   value={currentPatient.name} 
                                   onChange={e => updateCurrentPatient({ name: e.target.value })} 
                                   placeholder="Enter patient's full name"
+                                  className="border-gray-300 focus:ring-brand-red focus:border-brand-red"
                                 />
                               ) : (
-                                currentPatient.name || "Not specified"
+                                <span className="text-gray-800">{currentPatient.name || <span className="text-gray-400 italic">Not specified</span>}</span>
                               )}
                           </TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Contact Number</TableCell>
+                          <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Contact Number</TableCell>
                           <TableCell>
                               {isPatientEditMode ? (
                                 <Input 
                                   value={currentPatient.contactNumber} 
                                   onChange={e => updateCurrentPatient({ contactNumber: e.target.value })} 
                                   placeholder="Enter contact number"
+                                  className="border-gray-300 focus:ring-brand-red focus:border-brand-red"
                                 />
                               ) : (
-                                currentPatient.contactNumber || "Not specified"
+                                <span className="text-gray-800">{currentPatient.contactNumber || <span className="text-gray-400 italic">Not specified</span>}</span>
                               )}
                           </TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Address</TableCell>
+                          <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Address</TableCell>
                           <TableCell>
-                            {isDispatchEditMode ? (
+                            {isPatientEditMode ? (
                               <Textarea 
                                 value={currentPatient.address} 
                                 onChange={e => updateCurrentPatient(d => ({ ...d, address: e.target.value }))} 
                                 placeholder="Enter complete address"
-                                className="min-h-[80px]"
+                                className="min-h-[80px] border-gray-300 focus:ring-brand-red focus:border-brand-red"
                               />
                             ) : (
-                              currentPatient.address || "Not specified"
+                              <span className="text-gray-800">{currentPatient.address || <span className="text-gray-400 italic">Not specified</span>}</span>
                             )}
                           </TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Religion</TableCell>
+                          <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Religion</TableCell>
                           <TableCell>
-                            {isDispatchEditMode ? (
+                            {isPatientEditMode ? (
                               <Select value={currentPatient.religion} onValueChange={v => updateCurrentPatient(d => ({ ...d, religion: v }))}>
-                                <SelectTrigger><SelectValue placeholder="Select religion" /></SelectTrigger>
+                                <SelectTrigger className="border-gray-300 focus:ring-brand-red focus:border-brand-red"><SelectValue placeholder="Select religion" /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="Catholic">Catholic</SelectItem>
                                   <SelectItem value="Protestant">Protestant</SelectItem>
@@ -3286,35 +3442,36 @@ export function ManageReportsPage() {
                               </Select>
                             ) : (
                               currentPatient.religion ? (
-                                <Badge className="bg-purple-100 text-purple-800">
+                                <Badge className="bg-gray-100 text-gray-800">
                                   {currentPatient.religion}
                                 </Badge>
                               ) : (
-                                "Not specified"
+                                <span className="text-gray-400 italic">Not specified</span>
                               )
                             )}
                           </TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Birthday</TableCell>
+                          <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Birthday</TableCell>
                           <TableCell>
-                            {isDispatchEditMode ? (
+                            {isPatientEditMode ? (
                               <Input 
                                 type="date" 
                                 value={currentPatient.birthday} 
                                 onChange={e => updateCurrentPatient(d => ({ ...d, birthday: e.target.value }))} 
+                                className="border-gray-300 focus:ring-brand-red focus:border-brand-red"
                               />
                             ) : (
-                              currentPatient.birthday ? new Date(currentPatient.birthday).toLocaleDateString() : "Not specified"
+                              <span className="text-gray-800">{currentPatient.birthday ? new Date(currentPatient.birthday).toLocaleDateString() : <span className="text-gray-400 italic">Not specified</span>}</span>
                             )}
                           </TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Blood Type</TableCell>
+                          <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Blood Type</TableCell>
                           <TableCell>
-                            {isDispatchEditMode ? (
+                            {isPatientEditMode ? (
                               <Select value={currentPatient.bloodType} onValueChange={v => updateCurrentPatient(d => ({ ...d, bloodType: v }))}>
-                                <SelectTrigger><SelectValue placeholder="Select blood type" /></SelectTrigger>
+                                <SelectTrigger className="border-gray-300 focus:ring-brand-red focus:border-brand-red"><SelectValue placeholder="Select blood type" /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="A+">A+</SelectItem>
                                   <SelectItem value="A-">A-</SelectItem>
@@ -3333,17 +3490,17 @@ export function ManageReportsPage() {
                                   {currentPatient.bloodType}
                                 </Badge>
                               ) : (
-                                "Not specified"
+                                <span className="text-gray-400 italic">Not specified</span>
                               )
                             )}
                           </TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Civil Status</TableCell>
+                          <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Civil Status</TableCell>
                           <TableCell>
-                            {isDispatchEditMode ? (
+                            {isPatientEditMode ? (
                               <Select value={currentPatient.civilStatus} onValueChange={v => updateCurrentPatient(d => ({ ...d, civilStatus: v }))}>
-                                <SelectTrigger><SelectValue placeholder="Select civil status" /></SelectTrigger>
+                                <SelectTrigger className="border-gray-300 focus:ring-brand-red focus:border-brand-red"><SelectValue placeholder="Select civil status" /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="Single">Single</SelectItem>
                                   <SelectItem value="Married">Married</SelectItem>
@@ -3354,19 +3511,19 @@ export function ManageReportsPage() {
                               </Select>
                             ) : (
                               currentPatient.civilStatus ? (
-                                <Badge className="bg-blue-100 text-blue-800">
+                                <Badge className="bg-gray-100 text-gray-800">
                                   {currentPatient.civilStatus}
                                 </Badge>
                               ) : (
-                                "Not specified"
+                                <span className="text-gray-400 italic">Not specified</span>
                               )
                             )}
                           </TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Age</TableCell>
+                          <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Age</TableCell>
                           <TableCell>
-                            {isDispatchEditMode ? (
+                            {isPatientEditMode ? (
                               <Input 
                                 type="number" 
                                 value={currentPatient.age} 
@@ -3374,18 +3531,19 @@ export function ManageReportsPage() {
                                 placeholder="Enter age"
                                 min="0"
                                 max="150"
+                                className="border-gray-300 focus:ring-brand-red focus:border-brand-red"
                               />
                             ) : (
-                              currentPatient.age ? `${currentPatient.age} years old` : "Not specified"
+                              <span className="text-gray-800">{currentPatient.age ? `${currentPatient.age} years old` : <span className="text-gray-400 italic">Not specified</span>}</span>
                             )}
                           </TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">PWD (Person with Disability)</TableCell>
+                          <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">PWD (Person with Disability)</TableCell>
                           <TableCell>
-                            {isDispatchEditMode ? (
+                            {isPatientEditMode ? (
                               <Select value={currentPatient.pwd} onValueChange={v => updateCurrentPatient(d => ({ ...d, pwd: v }))}>
-                                <SelectTrigger><SelectValue placeholder="Select PWD status" /></SelectTrigger>
+                                <SelectTrigger className="border-gray-300 focus:ring-brand-red focus:border-brand-red"><SelectValue placeholder="Select PWD status" /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="Yes">Yes</SelectItem>
                                   <SelectItem value="No">No</SelectItem>
@@ -3393,21 +3551,21 @@ export function ManageReportsPage() {
                               </Select>
                             ) : (
                               currentPatient.pwd ? (
-                                <Badge className={currentPatient.pwd === "Yes" ? "bg-orange-100 text-orange-800" : "bg-green-100 text-green-800"}>
+                                <Badge className={currentPatient.pwd === "Yes" ? "bg-yellow-100 text-yellow-800" : "bg-green-100 text-green-800"}>
                                   {currentPatient.pwd}
                                 </Badge>
                               ) : (
-                                "Not specified"
+                                <span className="text-gray-400 italic">Not specified</span>
                               )
                             )}
                           </TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Age Group</TableCell>
+                          <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Age Group</TableCell>
                           <TableCell>
-                            {isDispatchEditMode ? (
+                            {isPatientEditMode ? (
                               <Select value={currentPatient.ageGroup} onValueChange={v => updateCurrentPatient(d => ({ ...d, ageGroup: v }))}>
-                                <SelectTrigger><SelectValue placeholder="Select age group" /></SelectTrigger>
+                                <SelectTrigger className="border-gray-300 focus:ring-brand-red focus:border-brand-red"><SelectValue placeholder="Select age group" /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="Infant">Infant (0-2 years)</SelectItem>
                                   <SelectItem value="Child">Child (3-12 years)</SelectItem>
@@ -3418,21 +3576,21 @@ export function ManageReportsPage() {
                               </Select>
                             ) : (
                               currentPatient.ageGroup ? (
-                                <Badge className="bg-indigo-100 text-indigo-800">
+                                <Badge className="bg-gray-100 text-gray-800">
                                   {currentPatient.ageGroup}
                                 </Badge>
                               ) : (
-                                "Not specified"
+                                <span className="text-gray-400 italic">Not specified</span>
                               )
                             )}
                           </TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Gender</TableCell>
+                          <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Gender</TableCell>
                           <TableCell>
-                            {isDispatchEditMode ? (
+                            {isPatientEditMode ? (
                               <Select value={currentPatient.gender} onValueChange={v => updateCurrentPatient(d => ({ ...d, gender: v }))}>
-                                <SelectTrigger><SelectValue placeholder="Select gender" /></SelectTrigger>
+                                <SelectTrigger className="border-gray-300 focus:ring-brand-red focus:border-brand-red"><SelectValue placeholder="Select gender" /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="Male">Male</SelectItem>
                                   <SelectItem value="Female">Female</SelectItem>
@@ -3442,17 +3600,17 @@ export function ManageReportsPage() {
                               </Select>
                             ) : (
                               currentPatient.gender ? (
-                                <Badge className="bg-pink-100 text-pink-800">
+                                <Badge className="bg-gray-100 text-gray-800">
                                   {currentPatient.gender}
                                 </Badge>
                               ) : (
-                                "Not specified"
+                                <span className="text-gray-400 italic">Not specified</span>
                               )
                             )}
                           </TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Name of Companion/Relative</TableCell>
+                          <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Name of Companion/Relative</TableCell>
                           <TableCell>
                             {isDispatchEditMode ? (
                               <Input 
@@ -3466,7 +3624,7 @@ export function ManageReportsPage() {
                           </TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Companion Contact Number</TableCell>
+                          <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Companion Contact Number</TableCell>
                           <TableCell>
                             {isDispatchEditMode ? (
                               <Input 
@@ -3484,11 +3642,11 @@ export function ManageReportsPage() {
                     
                     {/* Glasgow Coma Scale Section */}
                     <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Glasgow Coma Scale (GCS)</h3>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Glasgow Coma Scale (GCS)</h3>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         {/* Eyes Response */}
                         <div>
-                          <h4 className="font-medium text-gray-700 mb-3">Eyes Response</h4>
+                          <h4 className="text-sm font-medium text-gray-800 mb-3">Eyes Response</h4>
                           <div className="space-y-2">
                             {isDispatchEditMode ? (
                               <RadioGroup value={currentPatient.gcs.eyes} onValueChange={v => updateCurrentPatient({ gcs: { ...currentPatient.gcs, eyes: v } })}>
@@ -3527,7 +3685,7 @@ export function ManageReportsPage() {
 
                         {/* Verbal Response */}
                         <div>
-                          <h4 className="font-medium text-gray-700 mb-3">Verbal Response</h4>
+                          <h4 className="text-sm font-medium text-gray-800 mb-3">Verbal Response</h4>
                           <div className="space-y-2">
                             {isDispatchEditMode ? (
                               <RadioGroup value={currentPatient.gcs.verbal} onValueChange={v => updateCurrentPatient({ gcs: { ...currentPatient.gcs, verbal: v } })}>
@@ -3568,7 +3726,7 @@ export function ManageReportsPage() {
 
                         {/* Motor Response */}
                         <div>
-                          <h4 className="font-medium text-gray-700 mb-3">Motor Response</h4>
+                          <h4 className="text-sm font-medium text-gray-800 mb-3">Motor Response</h4>
                           <div className="space-y-2">
                             {isDispatchEditMode ? (
                               <RadioGroup value={currentPatient.gcs.motor} onValueChange={v => updateCurrentPatient({ gcs: { ...currentPatient.gcs, motor: v } })}>
@@ -3613,7 +3771,7 @@ export function ManageReportsPage() {
                       {/* GCS Total Score Display */}
                       <div className="mt-4 p-3 bg-white rounded border">
                         <div className="flex items-center justify-between">
-                          <span className="font-medium text-gray-700">GCS Total Score:</span>
+                          <span className="text-sm font-medium text-gray-800">GCS Total Score:</span>
                           <span className="text-2xl font-bold text-blue-600">
                             {(() => {
                               const eyesScore = currentPatient.gcs.eyes ? parseInt(currentPatient.gcs.eyes) : 0;
@@ -3643,7 +3801,7 @@ export function ManageReportsPage() {
 
                     {/* Pupil Assessment Section */}
                     <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Pupil Assessment</h3>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Pupil Assessment</h3>
                       <div className="max-w-md">
                         {isPreviewEditMode ? (
                           <RadioGroup value={currentPatient.pupil} onValueChange={v => updateCurrentPatient(d => ({ ...d, pupil: v }))}>
@@ -3676,7 +3834,7 @@ export function ManageReportsPage() {
 
                     {/* Lung Sounds Section */}
                     <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Lung Sounds</h3>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Lung Sounds</h3>
                       <div className="max-w-md">
                         {isPreviewEditMode ? (
                           <RadioGroup value={currentPatient.lungSounds} onValueChange={v => updateCurrentPatient(d => ({ ...d, lungSounds: v }))}>
@@ -3712,11 +3870,11 @@ export function ManageReportsPage() {
 
                     {/* Perfusion Section */}
                     <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Perfusion Assessment</h3>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Perfusion Assessment</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Skin Assessment */}
                         <div>
-                          <h4 className="font-medium text-gray-700 mb-3">Skin</h4>
+                          <h4 className="text-sm font-medium text-gray-800 mb-3">Skin</h4>
                           <div className="space-y-2">
                             {isDispatchEditMode ? (
                               <RadioGroup value={currentPatient.perfusion.skin} onValueChange={v => updateCurrentPatient({ perfusion: { ...currentPatient.perfusion, skin: v } })}>
@@ -3755,7 +3913,7 @@ export function ManageReportsPage() {
 
                         {/* Pulse Assessment */}
                         <div>
-                          <h4 className="font-medium text-gray-700 mb-3">Pulse</h4>
+                          <h4 className="text-sm font-medium text-gray-800 mb-3">Pulse</h4>
                           <div className="space-y-2">
                             {isDispatchEditMode ? (
                               <RadioGroup value={currentPatient.perfusion.pulse} onValueChange={v => updateCurrentPatient({ perfusion: { ...currentPatient.perfusion, pulse: v } })}>
@@ -3792,11 +3950,11 @@ export function ManageReportsPage() {
                     
                     {/* Vital Signs Section */}
                     <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Vital Signs</h3>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Vital Signs</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {/* Time Taken */}
                         <div>
-                          <Label className="text-sm font-medium text-gray-700">Time Taken</Label>
+                          <Label className="text-sm font-medium text-gray-800">Time Taken</Label>
                           {isPreviewEditMode ? (
                             <Input 
                               type="time" 
@@ -3819,7 +3977,7 @@ export function ManageReportsPage() {
 
                         {/* Temperature */}
                         <div>
-                          <Label className="text-sm font-medium text-gray-700">Temperature (°C)</Label>
+                          <Label className="text-sm font-medium text-gray-800">Temperature (°C)</Label>
                           {isPreviewEditMode ? (
                             <Input 
                               type="number" 
@@ -3844,7 +4002,7 @@ export function ManageReportsPage() {
 
                         {/* Pulse Rate */}
                         <div>
-                          <Label className="text-sm font-medium text-gray-700">Pulse Rate (bpm)</Label>
+                          <Label className="text-sm font-medium text-gray-800">Pulse Rate (bpm)</Label>
                           {isPreviewEditMode ? (
                             <Input 
                               type="number" 
@@ -3868,7 +4026,7 @@ export function ManageReportsPage() {
 
                         {/* Respiratory Rate */}
                         <div>
-                          <Label className="text-sm font-medium text-gray-700">Respiratory Rate (breaths/min)</Label>
+                          <Label className="text-sm font-medium text-gray-800">Respiratory Rate (breaths/min)</Label>
                           {isPreviewEditMode ? (
                             <Input 
                               type="number" 
@@ -3892,7 +4050,7 @@ export function ManageReportsPage() {
 
                         {/* Blood Pressure */}
                         <div>
-                          <Label className="text-sm font-medium text-gray-700">Blood Pressure (mmHg)</Label>
+                          <Label className="text-sm font-medium text-gray-800">Blood Pressure (mmHg)</Label>
                           {isPreviewEditMode ? (
                             <Input 
                               value={currentPatient.vitalSigns.bloodPressure} 
@@ -3915,7 +4073,7 @@ export function ManageReportsPage() {
 
                         {/* SPO2 */}
                         <div>
-                          <Label className="text-sm font-medium text-gray-700">SPO2 (%)</Label>
+                          <Label className="text-sm font-medium text-gray-800">SPO2 (%)</Label>
                           {isPreviewEditMode ? (
                             <div className="mt-1 space-y-2">
                               <Input 
@@ -3958,7 +4116,7 @@ export function ManageReportsPage() {
 
                         {/* Random Blood Sugar */}
                         <div>
-                          <Label className="text-sm font-medium text-gray-700">Random Blood Sugar (mg/dL)</Label>
+                          <Label className="text-sm font-medium text-gray-800">Random Blood Sugar (mg/dL)</Label>
                           {isPreviewEditMode ? (
                             <Input 
                               type="number" 
@@ -3982,7 +4140,7 @@ export function ManageReportsPage() {
 
                         {/* Pain Scale */}
                         <div>
-                          <Label className="text-sm font-medium text-gray-700">Pain Scale (0-10)</Label>
+                          <Label className="text-sm font-medium text-gray-800">Pain Scale (0-10)</Label>
                           {isPreviewEditMode ? (
                             <Select value={currentPatient.vitalSigns.painScale} onValueChange={v => updateCurrentPatient({ vitalSigns: { ...currentPatient.vitalSigns, painScale: v } })}>
                               <SelectTrigger className="mt-1">
@@ -4307,6 +4465,73 @@ export function ManageReportsPage() {
                 Close
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* New Report Alert Modal */}
+        <Dialog open={showNewReportAlert} onOpenChange={setShowNewReportAlert}>
+          <DialogContent className="max-w-md border-red-500 bg-red-50">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-bold text-red-800 flex items-center gap-2">
+                <div className="w-3 h-3 bg-red-600 rounded-full animate-pulse"></div>
+                🚨 NEW EMERGENCY REPORT
+              </DialogTitle>
+            </DialogHeader>
+            {newReportData && (
+              <div className="space-y-4 py-4">
+                <div className="bg-white p-4 rounded-lg border border-red-200">
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h4 className="font-semibold text-gray-800">Report ID: {newReportData.id}</h4>
+                        <p className="text-sm text-gray-600">Type: {newReportData.type}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-medium text-gray-800">{newReportData.dateSubmitted}</p>
+                        <p className="text-sm text-gray-600">{newReportData.timeSubmitted}</p>
+                      </div>
+                    </div>
+                    
+                    {newReportData.description && (
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">Description:</p>
+                        <p className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
+                          {newReportData.description.length > 100 
+                            ? `${newReportData.description.substring(0, 100)}...` 
+                            : newReportData.description}
+                        </p>
+                      </div>
+                    )}
+                    
+                    {newReportData.location && (
+                      <div>
+                        <p className="text-sm font-medium text-gray-700">Location:</p>
+                        <p className="text-sm text-gray-600">{newReportData.location}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="flex gap-2">
+                  <Button 
+                    onClick={() => {
+                      setShowNewReportAlert(false);
+                      // You can add navigation to the specific report here
+                    }}
+                    className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    View Report
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setShowNewReportAlert(false)}
+                    className="flex-1 border-red-300 text-red-700 hover:bg-red-100"
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </div>

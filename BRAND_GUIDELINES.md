@@ -22,6 +22,15 @@ When creating or modifying components, use these exact color classes:
 - **Muted text**: `text-gray-400`
 - **Brand text**: `text-brand-red`
 
+### Text Sizes
+- **Page titles**: `text-2xl font-bold`
+- **Section headers**: `text-lg font-semibold`
+- **Card titles**: `text-base font-semibold`
+- **Form labels**: `text-sm font-medium`
+- **Body text**: `text-sm`
+- **Small text**: `text-xs`
+- **Large numbers/stats**: `text-xl font-bold`
+
 ### Backgrounds
 - **Page background**: `bg-gray-50`
 - **Card background**: `bg-white`
@@ -52,6 +61,16 @@ When creating or modifying components, use these exact color classes:
 ### Cards
 ```tsx
 <Card className="bg-white border-gray-200">
+```
+
+### Text Sizes
+```tsx
+<h1 className="text-2xl font-bold text-gray-800">Page Title</h1>
+<h2 className="text-lg font-semibold text-gray-800">Section Header</h2>
+<h3 className="text-base font-semibold text-gray-800">Card Title</h3>
+<label className="text-sm font-medium text-gray-800">Form Label</label>
+<p className="text-sm text-gray-600">Body text</p>
+<span className="text-xs text-gray-400">Small text</span>
 ```
 
 ## Avoid These Colors
