@@ -163,7 +163,9 @@ export function ChatSupportPage() {
                               {user.profilePicture ? (
                                 <img src={user.profilePicture} alt="Profile" className="h-8 w-8 rounded-full object-cover" />
                               ) : (
-                                <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-400">?</div>
+                                <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center">
+                                  <User className="h-4 w-4 text-gray-400" />
+                                </div>
                               )}
                             </button>
                             <div>
@@ -176,7 +178,7 @@ export function ChatSupportPage() {
                               <p className="text-xs text-gray-500 mt-1">{user.email}</p>
                             </div>
                           </div>
-                          <Button size="icon" variant="ghost" className="text-red-600 hover:text-red-700" onClick={e => { e.stopPropagation(); setChatSessions(prev => prev.filter(cs => cs.id !== user.id)); if (selectedSession?.id === user.id) setSelectedSession(null); }} title="Delete Chat Session">
+                          <Button size="icon" variant="ghost" className="text-brand-red hover:text-brand-red-700" onClick={e => { e.stopPropagation(); setChatSessions(prev => prev.filter(cs => cs.id !== user.id)); if (selectedSession?.id === user.id) setSelectedSession(null); }} title="Delete Chat Session">
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
@@ -202,7 +204,9 @@ export function ChatSupportPage() {
                             {user.profilePicture ? (
                               <img src={user.profilePicture} alt="Profile" className="h-8 w-8 rounded-full object-cover" />
                             ) : (
-                              <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-400">?</div>
+                              <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center">
+                                <User className="h-4 w-4 text-gray-400" />
+                              </div>
                             )}
                             <div>
                               <div className="flex items-center space-x-2">
@@ -214,7 +218,7 @@ export function ChatSupportPage() {
                               <p className="text-xs text-gray-500 mt-1">{user.email}</p>
                             </div>
                           </div>
-                          <Button size="sm" className="bg-[#FF4F0B] text-white" onClick={() => handleStartChat(user)}>
+                          <Button size="sm" className="bg-brand-orange hover:bg-brand-orange-400 text-white" onClick={() => handleStartChat(user)}>
                             Start Chat
                           </Button>
                         </div>
@@ -242,7 +246,9 @@ export function ChatSupportPage() {
                         {selectedSession.profilePicture ? (
                           <img src={selectedSession.profilePicture} alt="Profile" className="h-10 w-10 rounded-full object-cover" />
                         ) : (
-                          <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-400">?</div>
+                          <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
+                            <User className="h-5 w-5 text-gray-400" />
+                          </div>
                         )}
                       </button>
                       <div>
@@ -285,7 +291,7 @@ export function ChatSupportPage() {
                         />
                         <Popover>
                           <PopoverTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-500 hover:text-[#FF4F0B]">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-gray-500 hover:text-brand-orange">
                               <Paperclip className="h-5 w-5" />
                             </Button>
                           </PopoverTrigger>
@@ -305,7 +311,7 @@ export function ChatSupportPage() {
                       </div>
                       <Button
                         onClick={handleSendMessage}
-                        className="bg-[#FF4F0B] hover:bg-[#FF4F0B]/90 text-white"
+                        className="bg-brand-orange hover:bg-brand-orange-400 text-white"
                       >
                         <Send className="h-4 w-4" />
                       </Button>
@@ -315,7 +321,7 @@ export function ChatSupportPage() {
               ) : (
                 <CardContent className="flex-1 flex items-center justify-center">
                   <div className="text-center text-gray-500">
-                    <MessageSquare className="h-12 w-12 mx-auto mb-4 text-[#FF4F0B]" />
+                    <MessageSquare className="h-12 w-12 mx-auto mb-4 text-brand-orange" />
                     <p className="text-lg font-medium">Select a chat session</p>
                     <p className="text-sm">Choose a conversation from the list to start chatting</p>
                   </div>

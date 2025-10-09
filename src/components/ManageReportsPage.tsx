@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Eye, Edit, Trash2, Plus, FileText, Calendar, Clock, MapPin, Upload, FileIcon, Image, Printer, Download, X } from "lucide-react";
+import { Eye, Edit, Trash2, Plus, FileText, Calendar, Clock, MapPin, Upload, FileIcon, Image, Printer, Download, X, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -20,9 +20,10 @@ import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { MapboxMap } from "./MapboxMap";
 import { db } from "@/lib/firebase";
-import { collection, onSnapshot, orderBy, query, getDocs, where, updateDoc, doc, serverTimestamp } from "firebase/firestore";
+import { collection, onSnapshot, orderBy, query, getDocs, getDoc, where, updateDoc, doc, serverTimestamp, deleteDoc } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebase";
 import { getAuth } from "firebase/auth";
@@ -39,6 +40,14 @@ export function ManageReportsPage() {
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [selectedReports, setSelectedReports] = useState<string[]>([]);
   const [reports, setReports] = useState<any[]>([]);
+  const [viewedReports, setViewedReports] = useState<Set<string>>(new Set());
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [reportToDelete, setReportToDelete] = useState<string | null>(null);
+  const [showBatchDeleteDialog, setShowBatchDeleteDialog] = useState(false);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   
   // Fetch current user information
   useEffect(() => {
@@ -100,6 +109,8 @@ export function ManageReportsPage() {
     try {
       const reportsQuery = query(collection(db, "reports"), orderBy("timestamp", "desc"));
       const unsubscribe = onSnapshot(reportsQuery, (snapshot) => {
+        console.log("Snapshot received:", snapshot.docs.length, "documents");
+        
         const fetched = snapshot.docs.map((doc, index) => {
           const data: any = doc.data() || {};
           
@@ -142,18 +153,20 @@ export function ManageReportsPage() {
           // Get admin-added media from the report data
           const adminMedia = Array.isArray(data.adminMedia) ? data.adminMedia : [];
 
-          // Use default coordinates if Firebase data doesn't have coordinates
-          const defaultCoordinates = "14.5995, 120.9842";
+          // Use default coordinates if Firebase data doesn't have separate lat/lng fields
+          const defaultLatitude = 14.1139;  // Lucban, Quezon
+          const defaultLongitude = 121.5556; // Lucban, Quezon
 
           return {
             id: data.reportId || doc.id,
+            firestoreId: doc.id, // Store the actual Firestore document ID for deletion
             userId: data.userId || "",
             type: data.reportType || "", // Map from Firestore reportType field
             reportedBy: data.reporterName || "", // Map from Firestore reporterName field
             barangay: "", // Not in your schema, will show empty
             description: data.description || "",
             responders: "", // Not in your schema, will show empty
-            location: data.location || "",
+            location: data.locationName || data.location || "", // Use locationName from Firestore, fallback to location
             dateSubmitted,
             timeSubmitted,
             status: data.status || "Pending",
@@ -163,12 +176,18 @@ export function ManageReportsPage() {
             mobileNumber: data.reporterMobile || "", // Map from Firestore reporterMobile field
             timeOfDispatch: "", // Not in your schema, will show empty
             timeOfArrival: "", // Not in your schema, will show empty
-            coordinates: data.coordinates || defaultCoordinates // Use Firebase coordinates if available, otherwise use default
+            // Use separate latitude and longitude fields from Firestore
+            latitude: data.latitude || defaultLatitude,
+            longitude: data.longitude || defaultLongitude,
+            // Keep coordinates for backward compatibility (formatted as string)
+            coordinates: data.latitude && data.longitude ? `${data.latitude}, ${data.longitude}` : `${defaultLatitude}, ${defaultLongitude}`
           };
         });
-        console.log("Fetched reports:", fetched);
         
-        // Check for new reports and trigger alert
+        console.log("Processed reports:", fetched.length, "reports");
+        console.log("Report IDs:", fetched.map(r => r.id));
+        
+        // Check for new reports and trigger alert (only if count increased)
         if (previousReportCount > 0 && fetched.length > previousReportCount) {
           const newReports = fetched.slice(0, fetched.length - previousReportCount);
           if (newReports.length > 0) {
@@ -189,8 +208,11 @@ export function ManageReportsPage() {
           }
         }
         
+        // Always update the reports state (this handles deletions automatically)
         setPreviousReportCount(fetched.length);
         setReports(fetched);
+        
+        console.log("Reports state updated with", fetched.length, "reports");
       });
       return () => unsubscribe();
     } catch (err) {
@@ -234,7 +256,51 @@ export function ManageReportsPage() {
     });
   };
   const handleDeleteReport = (reportId: string) => {
-    console.log(`Deleting report with ID: ${reportId}`);
+    setReportToDelete(reportId);
+    setShowDeleteDialog(true);
+  };
+
+  const confirmDeleteReport = async () => {
+    if (!reportToDelete) {
+      console.error("No report ID to delete");
+      return;
+    }
+
+    console.log("Attempting to delete report:", reportToDelete);
+
+    try {
+      // Delete the report from Firestore
+      await deleteDoc(doc(db, "reports", reportToDelete));
+      console.log("Successfully deleted report from Firestore:", reportToDelete);
+      
+      // Remove from viewed reports if it exists
+      setViewedReports(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(reportToDelete);
+        console.log("Removed from viewed reports:", reportToDelete);
+        return newSet;
+      });
+      
+      // Remove from selected reports if it exists
+      setSelectedReports(prev => {
+        const filtered = prev.filter(id => id !== reportToDelete);
+        console.log("Removed from selected reports:", reportToDelete);
+        return filtered;
+      });
+      
+      toast.success("Report deleted successfully");
+      setShowDeleteDialog(false);
+      setReportToDelete(null);
+      
+      // Force a small delay to ensure Firestore listener has processed the change
+      setTimeout(() => {
+        console.log("Delete operation completed");
+      }, 100);
+      
+    } catch (error) {
+      console.error("Error deleting report:", error);
+      toast.error("Failed to delete report. Please try again.");
+    }
   };
   const handlePinOnMap = (report: any) => {
     console.log("Redirecting to map for report:", report.id);
@@ -385,13 +451,159 @@ export function ManageReportsPage() {
   const truncateLocation = (location: string, maxLength: number = 30) => {
     return location.length > maxLength ? `${location.substring(0, maxLength)}...` : location;
   };
+  
+  // Filter and paginate reports
+  const filteredReports = reports.filter(report => {
+    // Search filter
+    const searchMatch = searchTerm === "" || 
+      report.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      report.reportedBy?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      report.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      report.location?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    // Type filter - convert kebab-case to Title Case for matching
+    const typeMatch = typeFilter === "all" || 
+      report.type === typeFilter || 
+      report.type?.toLowerCase().replace(/ /g, '-') === typeFilter.toLowerCase();
+    
+    // Status filter - convert kebab-case to Title Case for matching
+    const statusMatch = statusFilter === "all" || 
+      report.status === statusFilter ||
+      report.status?.toLowerCase().replace(/ /g, '-') === statusFilter.toLowerCase();
+    
+    // Date filter
+    let dateMatch = true;
+    if (date?.from) {
+      try {
+        const [month, day, year] = report.dateSubmitted.split('/');
+        const fullYear = 2000 + parseInt(year);
+        const reportDate = new Date(fullYear, parseInt(month) - 1, parseInt(day));
+        
+        if (date.from) {
+          dateMatch = reportDate >= date.from;
+        }
+        if (date.to && dateMatch) {
+          dateMatch = reportDate <= date.to;
+        }
+      } catch (error) {
+        dateMatch = true;
+      }
+    }
+    
+    return searchMatch && typeMatch && statusMatch && dateMatch;
+  });
+  
+  // Calculate pagination
+  const totalPages = Math.ceil(filteredReports.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedReports = filteredReports.slice(startIndex, endIndex);
+  
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, typeFilter, statusFilter, date]);
+  
+  // Calculate dynamic statistics
+  const totalReports = reports.length;
+  
+  const reportsThisWeek = useMemo(() => {
+    const now = new Date();
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    
+    return reports.filter(report => {
+      try {
+        if (!report.dateSubmitted || !report.timeSubmitted) return false;
+        
+        // Parse MM/DD/YY format
+        const [month, day, year] = report.dateSubmitted.split('/');
+        const fullYear = 2000 + parseInt(year);
+        
+        // Parse HH:MM AM/PM format
+        const timeMatch = report.timeSubmitted.match(/(\d+):(\d+)\s*(AM|PM)/i);
+        if (!timeMatch) return false;
+        
+        let hours = parseInt(timeMatch[1]);
+        const minutes = parseInt(timeMatch[2]);
+        const ampm = timeMatch[3].toUpperCase();
+        
+        if (ampm === 'PM' && hours !== 12) hours += 12;
+        if (ampm === 'AM' && hours === 12) hours = 0;
+        
+        const reportDate = new Date(fullYear, parseInt(month) - 1, parseInt(day), hours, minutes);
+        
+        return reportDate >= oneWeekAgo && reportDate <= now;
+      } catch (error) {
+        console.error('Error parsing report date:', error);
+        return false;
+      }
+    }).length;
+  }, [reports]);
+  
+  const pendingReports = reports.filter(report => report.status === 'Pending').length;
+  
+  const handlePreviousPage = () => {
+    setCurrentPage(prev => Math.max(prev - 1, 1));
+  };
+  
+  const handleNextPage = () => {
+    setCurrentPage(prev => Math.min(prev + 1, totalPages));
+  };
+  
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
   const handleBatchStatusUpdate = (newStatus: string) => {
     console.log(`Updating status to ${newStatus} for reports:`, selectedReports);
     // Implement the actual status update logic here
   };
   const handleBatchDelete = () => {
-    console.log("Deleting reports:", selectedReports);
-    // Implement the actual delete logic here
+    setShowBatchDeleteDialog(true);
+  };
+
+  const confirmBatchDelete = async () => {
+    if (!selectedReports || selectedReports.length === 0) {
+      console.error("No reports selected for deletion");
+      return;
+    }
+
+    console.log("Attempting to delete reports:", selectedReports);
+
+    try {
+      // Delete all selected reports from Firestore
+      const deletePromises = selectedReports.map(reportId => {
+        console.log("Deleting report:", reportId);
+        return deleteDoc(doc(db, "reports", reportId));
+      });
+      
+      await Promise.all(deletePromises);
+      console.log("Successfully deleted all reports from Firestore");
+      
+      // Remove from viewed reports
+      setViewedReports(prev => {
+        const newSet = new Set(prev);
+        selectedReports.forEach(id => {
+          newSet.delete(id);
+          console.log("Removed from viewed reports:", id);
+        });
+        return newSet;
+      });
+      
+      // Clear selected reports
+      setSelectedReports([]);
+      
+      toast.success(`Successfully deleted ${selectedReports.length} report(s)`);
+      setShowBatchDeleteDialog(false);
+      
+      // Force a small delay to ensure Firestore listener has processed the changes
+      setTimeout(() => {
+        console.log("Batch delete operation completed");
+      }, 100);
+      
+    } catch (error) {
+      console.error("Error deleting reports:", error);
+      toast.error("Failed to delete some reports. Please try again.");
+    }
   };
   const handleCheckboxChange = (reportId: string) => {
     setSelectedReports(prev => 
@@ -401,7 +613,15 @@ export function ManageReportsPage() {
     );
   };
   const handleSelectAll = (checked: boolean) => {
-    setSelectedReports(checked ? reports.map(report => report.id) : []);
+    if (checked) {
+      // Add all reports on current page to selection
+      const pageReportIds = paginatedReports.map(report => report.firestoreId);
+      setSelectedReports(prev => [...new Set([...prev, ...pageReportIds])]);
+    } else {
+      // Remove all reports on current page from selection
+      const pageReportIds = paginatedReports.map(report => report.firestoreId);
+      setSelectedReports(prev => prev.filter(id => !pageReportIds.includes(id)));
+    }
   };
   const handlePrintTable = () => {
     window.print();
@@ -429,6 +649,46 @@ export function ManageReportsPage() {
       `);
       printWindow.document.close();
       printWindow.print();
+    }
+  };
+
+  // Function to determine if a report is "new" (within last 24 hours and not viewed)
+  const isNewReport = (report: any) => {
+    try {
+      // Check if report has already been viewed
+      if (viewedReports.has(report.id)) {
+        return false;
+      }
+
+      // Parse the date and time from the report
+      const [datePart, timePart] = [report.dateSubmitted, report.timeSubmitted];
+      if (!datePart || !timePart) return false;
+      
+      // Parse MM/DD/YY format
+      const [month, day, year] = datePart.split('/');
+      const fullYear = 2000 + parseInt(year);
+      
+      // Parse HH:MM AM/PM format
+      const timeMatch = timePart.match(/(\d+):(\d+)\s*(AM|PM)/i);
+      if (!timeMatch) return false;
+      
+      let hours = parseInt(timeMatch[1]);
+      const minutes = parseInt(timeMatch[2]);
+      const ampm = timeMatch[3].toUpperCase();
+      
+      if (ampm === 'PM' && hours !== 12) hours += 12;
+      if (ampm === 'AM' && hours === 12) hours = 0;
+      
+      // Create the report timestamp
+      const reportDate = new Date(fullYear, parseInt(month) - 1, parseInt(day), hours, minutes);
+      const now = new Date();
+      const diffInHours = (now.getTime() - reportDate.getTime()) / (1000 * 60 * 60);
+      
+      // Consider "new" if within last 24 hours and not viewed
+      return diffInHours <= 24 && diffInHours >= 0;
+    } catch (error) {
+      console.error('Error checking if report is new:', error);
+      return false;
     }
   };
   
@@ -521,10 +781,53 @@ export function ManageReportsPage() {
     return `${displayHours}:${displayMinutes} ${ampm}`;
   };
 
+  // Helper function to get current time in HH:MM (24-hour) format for time inputs
+  const getCurrentTime24Hour = () => {
+    const now = new Date();
+    const hours = now.getHours().toString().padStart(2, '0');
+    const minutes = now.getMinutes().toString().padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
+
   // Function to play alarming sound for new reports
   const playAlarmSound = () => {
     try {
-      // Create a simple alarm sound using Web Audio API
+      // Play the custom alarm sound from the uploaded MP3 file
+      const audio = new Audio('/accizard-uploads/alarmsoundfx.mp3');
+      audio.volume = 0.7; // Adjust volume as needed (0.0 to 1.0)
+      
+      // Set a timeout to fall back to Web Audio API if MP3 fails to load
+      const fallbackTimeout = setTimeout(() => {
+        console.log("MP3 loading too slow, falling back to Web Audio API");
+        playWebAudioAlarm();
+      }, 2000); // 2 second timeout
+      
+      audio.addEventListener('canplaythrough', () => {
+        clearTimeout(fallbackTimeout); // Cancel fallback if MP3 loads successfully
+        audio.play().catch((error) => {
+          console.log("MP3 playback failed, using fallback:", error);
+          playWebAudioAlarm();
+        });
+      });
+      
+      audio.addEventListener('error', () => {
+        clearTimeout(fallbackTimeout);
+        console.log("MP3 file error, using fallback");
+        playWebAudioAlarm();
+      });
+      
+      // Start loading the audio
+      audio.load();
+      
+    } catch (error) {
+      console.log("Error initializing MP3 alarm, using fallback:", error);
+      playWebAudioAlarm();
+    }
+  };
+
+  // Fallback function using Web Audio API
+  const playWebAudioAlarm = () => {
+    try {
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
@@ -532,26 +835,26 @@ export function ManageReportsPage() {
       oscillator.connect(gainNode);
       gainNode.connect(audioContext.destination);
       
-      // Set alarm sound properties
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime); // High frequency
-      oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
+      // More attention-grabbing alarm pattern
+      oscillator.frequency.setValueAtTime(1000, audioContext.currentTime);
       oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.2);
-      oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.3);
+      oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.4);
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.6);
       
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+      gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 1.0);
       
       oscillator.start(audioContext.currentTime);
-      oscillator.stop(audioContext.currentTime + 0.5);
+      oscillator.stop(audioContext.currentTime + 1.0);
     } catch (error) {
-      console.log("Could not play alarm sound:", error);
-      // Fallback: try to play a simple beep using a data URL
+      console.log("Web Audio API also failed:", error);
+      // Final fallback: try to play a simple beep using a data URL
       try {
-        const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmGgU7k9n1unEiBC13yO/eizEIHWq+8+OWT');
-        audio.volume = 0.3;
-        audio.play().catch(() => console.log("Audio playback failed"));
-      } catch (fallbackError) {
-        console.log("Fallback audio also failed:", fallbackError);
+        const fallbackAudio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmGgU7k9n1unEiBC13yO/eizEIHWq+8+OWT');
+        fallbackAudio.volume = 0.3;
+        fallbackAudio.play().catch(() => console.log("Final fallback audio also failed"));
+      } catch (finalError) {
+        console.log("All audio playback methods failed:", finalError);
       }
     }
   };
@@ -578,13 +881,16 @@ export function ManageReportsPage() {
   };
 
   // Function to save dispatch data to database
-  const saveDispatchDataToDatabase = async (reportId: string, dispatchData: any) => {
+  const saveDispatchDataToDatabase = async (firestoreId: string, dispatchData: any) => {
     try {
-      // First, get the current document to merge with existing data
-      const reportDoc = await getDocs(query(collection(db, "reports"), where("reportId", "==", reportId)));
-      if (!reportDoc.empty) {
-        const docId = reportDoc.docs[0].id;
-        const currentData = reportDoc.docs[0].data();
+      // Use the Firestore document ID directly
+      const docRef = doc(db, "reports", firestoreId);
+      
+      // Get existing data
+      const docSnap = await getDoc(docRef);
+      
+      if (docSnap.exists()) {
+        const currentData = docSnap.data();
         
         // Merge with existing dispatchInfo if it exists
         const mergedDispatchInfo = {
@@ -592,7 +898,7 @@ export function ManageReportsPage() {
           ...dispatchData
         };
         
-        await updateDoc(doc(db, "reports", docId), {
+        await updateDoc(docRef, {
           dispatchInfo: mergedDispatchInfo,
           updatedAt: serverTimestamp(),
           lastModifiedBy: currentUser?.id
@@ -606,11 +912,14 @@ export function ManageReportsPage() {
   };
 
   // Function to load existing dispatch data from database
-  const loadDispatchDataFromDatabase = async (reportId: string) => {
+  const loadDispatchDataFromDatabase = async (firestoreId: string) => {
     try {
-      const reportDoc = await getDocs(query(collection(db, "reports"), where("reportId", "==", reportId)));
-      if (!reportDoc.empty) {
-        const data = reportDoc.docs[0].data();
+      // Use the Firestore document ID directly
+      const docRef = doc(db, "reports", firestoreId);
+      const docSnap = await getDoc(docRef);
+      
+      if (docSnap.exists()) {
+        const data = docSnap.data();
         if (data.dispatchInfo) {
           setDispatchData(data.dispatchInfo);
           return data.dispatchInfo;
@@ -623,13 +932,14 @@ export function ManageReportsPage() {
   };
 
   // Function to save patient data to database
-  const savePatientDataToDatabase = async (reportId: string, patientData: any) => {
+  const savePatientDataToDatabase = async (firestoreId: string, patientData: any) => {
     try {
-      // First, get the current document to merge with existing data
-      const reportDoc = await getDocs(query(collection(db, "reports"), where("reportId", "==", reportId)));
-      if (!reportDoc.empty) {
-        const docId = reportDoc.docs[0].id;
-        const currentData = reportDoc.docs[0].data();
+      // Use the Firestore document ID directly
+      const docRef = doc(db, "reports", firestoreId);
+      const docSnap = await getDoc(docRef);
+      
+      if (docSnap.exists()) {
+        const currentData = docSnap.data();
         
         // Merge with existing patientInfo if it exists
         const mergedPatientInfo = {
@@ -637,7 +947,7 @@ export function ManageReportsPage() {
           patients: patientData.patients || patientData
         };
         
-        await updateDoc(doc(db, "reports", docId), {
+        await updateDoc(docRef, {
           patientInfo: mergedPatientInfo,
           updatedAt: serverTimestamp(),
           lastModifiedBy: currentUser?.id
@@ -651,11 +961,14 @@ export function ManageReportsPage() {
   };
 
   // Function to load existing patient data from database
-  const loadPatientDataFromDatabase = async (reportId: string) => {
+  const loadPatientDataFromDatabase = async (firestoreId: string) => {
     try {
-      const reportDoc = await getDocs(query(collection(db, "reports"), where("reportId", "==", reportId)));
-      if (!reportDoc.empty) {
-        const data = reportDoc.docs[0].data();
+      // Use the Firestore document ID directly
+      const docRef = doc(db, "reports", firestoreId);
+      const docSnap = await getDoc(docRef);
+      
+      if (docSnap.exists()) {
+        const data = docSnap.data();
         if (data.patientInfo && data.patientInfo.patients) {
           setPatients(data.patientInfo.patients);
           return data.patientInfo;
@@ -1191,8 +1504,8 @@ export function ManageReportsPage() {
   const handleSaveLocation = async () => {
     if (newLocation && selectedReport) {
       try {
-        // Update the database
-        await updateDoc(doc(db, "reports", selectedReport.id), {
+        // Update the database using the Firestore document ID
+        await updateDoc(doc(db, "reports", selectedReport.firestoreId), {
           location: newLocation.address,
           coordinates: `${newLocation.lat}, ${newLocation.lng}`,
           updatedAt: serverTimestamp(),
@@ -1225,46 +1538,46 @@ export function ManageReportsPage() {
 
   return (
     <Layout>
-
+      <TooltipProvider>
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <Card>
-            <CardContent className="p-6">
+          <Card className="border-0 shadow-lg overflow-hidden">
+            <CardContent className="p-6 bg-gradient-to-br from-amber-500 to-orange-600">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Total Reports</p>
-                  <p className="text-2xl font-bold text-gray-900">156</p>
+                  <p className="text-sm font-medium text-white/90">Total Reports</p>
+                  <p className="text-2xl font-bold text-white">{totalReports}</p>
                 </div>
-                <div className="h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
-                  <FileText className="h-4 w-4 text-blue-600" />
+                <div className="h-12 w-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center">
+                  <FileText className="h-6 w-6 text-white" />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="p-6">
+          <Card className="border-0 shadow-lg overflow-hidden">
+            <CardContent className="p-6 bg-gradient-to-br  from-amber-500 to-orange-600">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Reports This Week</p>
-                  <p className="text-2xl font-bold text-gray-900">23</p>
+                  <p className="text-sm font-medium text-white/90">Reports This Week</p>
+                  <p className="text-2xl font-bold text-white">{reportsThisWeek}</p>
                 </div>
-                <div className="h-8 w-8 bg-green-100 rounded-full flex items-center justify-center">
-                  <Calendar className="h-4 w-4 text-green-600" />
+                <div className="h-12 w-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center">
+                  <Calendar className="h-6 w-6 text-white" />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="p-6">
+          <Card className="border-0 shadow-lg overflow-hidden">
+            <CardContent className="p-6 bg-gradient-to-br from-amber-500 to-orange-600">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Pending Reports</p>
-                  <p className="text-2xl font-bold text-gray-900">8</p>
+                  <p className="text-sm font-medium text-white/90">Pending Reports</p>
+                  <p className="text-2xl font-bold text-white">{pendingReports}</p>
                 </div>
-                <div className="h-8 w-8 bg-yellow-100 rounded-full flex items-center justify-center">
-                  <Clock className="h-4 w-4 text-yellow-600" />
+                <div className="h-12 w-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center">
+                  <Clock className="h-6 w-6 text-white" />
                 </div>
               </div>
             </CardContent>
@@ -1272,28 +1585,34 @@ export function ManageReportsPage() {
         </div>
 
         {/* Search and Filters */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Search and Filter</CardTitle>
+        <Card className="mb-6 border-0 shadow-lg overflow-hidden">
+          <CardHeader className="bg-orange-500 text-white">
+            <CardTitle className="text-white">Search and Filter</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="bg-gradient-to-br from-orange-50 to-red-50 pt-6">
             <div className="space-y-4">
               {/* Search Bar */}
-              <div className="w-full">
-                <Input placeholder="Search reports..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full" />
+              <div className="w-full relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                <Input 
+                  placeholder="Search reports..." 
+                  value={searchTerm} 
+                  onChange={e => setSearchTerm(e.target.value)} 
+                  className="w-full pl-10 bg-white border-gray-300 focus:ring-orange-500 focus:border-orange-500 hover:border-orange-400 transition-colors" 
+                />
               </div>
 
               {/* Filters */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Date Range */}
                 <div>
-                  <Label className="text-sm font-medium">Date Range</Label>
+                  <Label className="text-sm font-medium text-gray-800">Date Range</Label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"
                         className={cn(
-                          "w-full justify-start text-left font-normal",
+                          "w-full justify-start text-left font-normal bg-white border-gray-300 hover:border-orange-400 hover:bg-orange-50 transition-colors",
                           !date && "text-muted-foreground"
                         )}
                       >
@@ -1326,9 +1645,9 @@ export function ManageReportsPage() {
                 </div>
 
                 <div>
-                  <Label className="text-sm font-medium">Report Type</Label>
+                  <Label className="text-sm font-medium text-gray-800">Report Type</Label>
                   <Select value={typeFilter} onValueChange={setTypeFilter}>
-                    <SelectTrigger>
+                    <SelectTrigger className="bg-white border-gray-300 hover:border-orange-400 hover:bg-orange-50 transition-colors">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1347,9 +1666,9 @@ export function ManageReportsPage() {
                 </div>
 
                 <div>
-                  <Label className="text-sm font-medium">Status</Label>
+                  <Label className="text-sm font-medium text-gray-800">Status</Label>
                   <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger>
+                    <SelectTrigger className="bg-white border-gray-300 hover:border-orange-400 hover:bg-orange-50 transition-colors">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1367,79 +1686,120 @@ export function ManageReportsPage() {
           </CardContent>
         </Card>
 
-        <div className="">
         <div className="flex items-end gap-4 mb-6">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button onClick={() => setShowAddModal(true)} className="bg-brand-orange hover:bg-brand-orange-400 text-white">
+                <Plus className="h-4 w-4 mr-2" />
+                Add New Report
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Create a new emergency report manually</p>
+            </TooltipContent>
+          </Tooltip>
           
-          <Button onClick={() => setShowAddModal(true)} className="bg-[#FF4F0B] text-white">
-            <Plus className="h-4 w-4 mr-2" />
-            Add New Report
-          </Button>
-          <Button onClick={handlePrintTable} className="bg-[#FF4F0B] text-white">
-            <Printer className="h-4 w-4 mr-2" />
-            Print Table
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button onClick={handlePrintTable} className="bg-brand-orange hover:bg-brand-orange-400 text-white">
+                <Printer className="h-4 w-4 mr-2" />
+                Print Table
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Print the reports table</p>
+            </TooltipContent>
+          </Tooltip>
+          
           {selectedReports.length > 0 && (
             <>
-              <Button onClick={handleBatchDelete} variant="destructive" className="bg-red-500 text-white ml-auto">
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete Selected
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button onClick={handleBatchDelete} variant="destructive" className="bg-brand-red hover:bg-brand-red-700 text-white ml-auto">
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete Selected
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Delete {selectedReports.length} selected report(s)</p>
+                </TooltipContent>
+              </Tooltip>
             </>
           )}
         </div>
 
         {/* Reports Table */}
-        <Card>
-          <CardContent className="p-0">
+        <Card className="border-0 shadow-lg overflow-hidden">
+          <CardContent className="p-0 bg-gradient-to-br from-orange-50 via-white to-red-50">
             <div className="overflow-x-auto">
               <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12">
+                <TableHeader className="bg-orange-500">
+                  <TableRow className="hover:bg-transparent border-none">
+                    <TableHead className="w-12 text-white">
                       <Checkbox
-                        checked={reports.length > 0 && selectedReports.length === reports.length}
+                        checked={paginatedReports.length > 0 && paginatedReports.every(report => selectedReports.includes(report.firestoreId))}
                         onCheckedChange={(checked: boolean) => handleSelectAll(checked)}
+                        className="border-white data-[state=checked]:bg-white data-[state=checked]:text-orange-500 hover:border-orange-200"
                       />
                     </TableHead>
-                    <TableHead>Report ID</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Reported By</TableHead>
-                    <TableHead>Date Submitted</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead className="text-white font-semibold">Report ID</TableHead>
+                    <TableHead className="text-white font-semibold">Type</TableHead>
+                    <TableHead className="text-white font-semibold">Reported By</TableHead>
+                    <TableHead className="text-white font-semibold">Date Submitted</TableHead>
+                    <TableHead className="text-white font-semibold">Status</TableHead>
+                    <TableHead className="text-white font-semibold">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {reports.map(report => (
+                  {paginatedReports.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8">
+                        <div className="flex flex-col items-center justify-center text-gray-500">
+                          <FileText className="h-12 w-12 mb-2 text-gray-400" />
+                          <p className="text-lg font-medium">No reports found</p>
+                          <p className="text-sm">Try adjusting your filters or search terms</p>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    paginatedReports.map(report => (
                     <TableRow key={report.id}>
                       <TableCell>
                         <Checkbox
-                          checked={selectedReports.includes(report.id)}
-                          onCheckedChange={() => handleCheckboxChange(report.id)}
+                          checked={selectedReports.includes(report.firestoreId)}
+                          onCheckedChange={() => handleCheckboxChange(report.firestoreId)}
+                          className="border-gray-400 data-[state=checked]:bg-orange-500 data-[state=checked]:text-white data-[state=checked]:border-orange-500 hover:border-orange-500"
                         />
                       </TableCell>
                       <TableCell className="font-medium">{report.id}</TableCell>
                       <TableCell>
-                        <Badge className={
-                          report.type === 'Road Crash' ? 'bg-red-100 text-red-800 hover:bg-red-50' :
-                          report.type === 'Medical Emergency' ? 'bg-green-100 text-green-800 hover:bg-green-50' :
-                          report.type === 'Flooding' ? 'bg-blue-100 text-blue-800 hover:bg-blue-50' :
-                          report.type === 'Volcanic Activity' ? 'bg-orange-100 text-orange-800 hover:bg-orange-50' :
-                          report.type === 'Landslide' ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-50' :
-                          report.type === 'Earthquake' ? 'bg-purple-100 text-purple-800 hover:bg-purple-50' :
-                          report.type === 'Civil Disturbance' ? 'bg-pink-100 text-pink-800 hover:bg-pink-50' :
-                          report.type === 'Armed Conflict' ? 'bg-red-100 text-red-800 hover:bg-red-50' :
-                          report.type === 'Infectious Disease' ? 'bg-indigo-100 text-indigo-800 hover:bg-indigo-50' :
-                          'bg-gray-100 text-gray-800 hover:bg-gray-50'
-                        }>
-                          {report.type}
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge className={
+                            report.type === 'Road Crash' ? 'bg-red-100 text-red-800 hover:bg-red-50' :
+                            report.type === 'Medical Emergency' ? 'bg-green-100 text-green-800 hover:bg-green-50' :
+                            report.type === 'Flooding' ? 'bg-blue-100 text-blue-800 hover:bg-blue-50' :
+                            report.type === 'Volcanic Activity' ? 'bg-orange-100 text-orange-800 hover:bg-orange-50' :
+                            report.type === 'Landslide' ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-50' :
+                            report.type === 'Earthquake' ? 'bg-purple-100 text-purple-800 hover:bg-purple-50' :
+                            report.type === 'Civil Disturbance' ? 'bg-pink-100 text-pink-800 hover:bg-pink-50' :
+                            report.type === 'Armed Conflict' ? 'bg-red-100 text-red-800 hover:bg-red-50' :
+                            report.type === 'Infectious Disease' ? 'bg-indigo-100 text-indigo-800 hover:bg-indigo-50' :
+                            'bg-gray-100 text-gray-800 hover:bg-gray-50'
+                          }>
+                            {report.type}
+                          </Badge>
+                          {isNewReport(report) && (
+                            <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-50 font-semibold animate-pulse">
+                              NEW
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         {report.reportedBy ? (
                           <button
                             type="button"
-                            className="text-blue-600 hover:underline focus:outline-none"
+                            className="text-brand-orange hover:underline focus:outline-none"
                             onClick={() => navigate("/manage-users", { state: { tab: "residents", search: report.reportedBy } })}
                             title="View Resident Account"
                           >
@@ -1473,83 +1833,183 @@ export function ManageReportsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={async () => {
-                              try {
-                                console.log("Opening report preview for:", report);
-                                setSelectedReport(report);
-                                setShowPreviewModal(true);
-                                setPreviewTab("details"); // Reset to details tab
-                                
-                                // Load existing dispatch data from database
-                                const existingDispatchData = await loadDispatchDataFromDatabase(report.id);
-                                
-                                // Load existing patient data from database
-                                await loadPatientDataFromDatabase(report.id);
-                                
-                                // Only auto-populate if no existing dispatch data AND no receivedBy/timeCallReceived
-                                if (!existingDispatchData || (!existingDispatchData.receivedBy && !existingDispatchData.timeCallReceived)) {
-                                  if (currentUser) {
-                                    const newDispatchData = {
-                                      receivedBy: currentUser.name,
-                                      timeCallReceived: getCurrentTime()
-                                    };
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={async () => {
+                                  try {
+                                    console.log("Opening report preview for:", report);
+                                    setSelectedReport(report);
+                                    setShowPreviewModal(true);
+                                    setPreviewTab("details"); // Reset to details tab
                                     
-                                    // Set the data in state
-                                    setDispatchData(prev => ({
-                                      ...prev,
-                                      ...newDispatchData
-                                    }));
+                                    // Mark report as viewed
+                                    setViewedReports(prev => new Set(prev).add(report.id));
                                     
-                                    // Immediately save to database to prevent other users from overwriting
-                                    await saveDispatchDataToDatabase(report.id, {
-                                      ...existingDispatchData,
-                                      ...newDispatchData
-                                    });
+                                    // Load existing dispatch data from database using Firestore document ID
+                                    const existingDispatchData = await loadDispatchDataFromDatabase(report.firestoreId);
+                                    
+                                    // Load existing patient data from database using Firestore document ID
+                                    await loadPatientDataFromDatabase(report.firestoreId);
+                                    
+                                    // Only auto-populate if no existing dispatch data AND no receivedBy/timeCallReceived
+                                    if (!existingDispatchData || (!existingDispatchData.receivedBy && !existingDispatchData.timeCallReceived)) {
+                                      if (currentUser) {
+                                        const newDispatchData = {
+                                          receivedBy: currentUser.name,
+                                          timeCallReceived: getCurrentTime()
+                                        };
+                                        
+                                        // Set the data in state
+                                        setDispatchData(prev => ({
+                                          ...prev,
+                                          ...newDispatchData
+                                        }));
+                                        
+                                        // Immediately save to database to prevent other users from overwriting using Firestore document ID
+                                        await saveDispatchDataToDatabase(report.firestoreId, {
+                                          ...existingDispatchData,
+                                          ...newDispatchData
+                                        });
+                                      }
+                                    }
+                                  } catch (error) {
+                                    console.error("Error opening report preview:", error);
+                                    toast.error("Failed to open report preview");
                                   }
-                                }
-                              } catch (error) {
-                                console.error("Error opening report preview:", error);
-                                toast.error("Failed to open report preview");
-                              }
-                            }}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handlePinOnMap(report)}
-                          >
-                            <MapPin className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleDeleteReport(report.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                                }}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>View report details</p>
+                            </TooltipContent>
+                          </Tooltip>
+                          
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handlePinOnMap(report)}
+                              >
+                                <MapPin className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>View location on map</p>
+                            </TooltipContent>
+                          </Tooltip>
+                          
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleDeleteReport(report.firestoreId)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Delete report</p>
+                            </TooltipContent>
+                          </Tooltip>
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  )))}
                 </TableBody>
               </Table>
             </div>
             
             {/* Pagination */}
-            <div className="border-t border-gray-200 px-6 py-3 flex items-center justify-between">
-              <div className="text-sm text-gray-700">
-                Showing {reports.length > 0 ? 1 : 0} to {reports.length} of {reports.length} results
+            <div className="border-t border-orange-200/50 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 bg-gradient-to-r from-orange-50 to-red-50">
+              <div className="flex items-center gap-4">
+                <div className="text-sm text-gray-800 font-medium">
+                  Showing {filteredReports.length > 0 ? startIndex + 1 : 0} to {Math.min(endIndex, filteredReports.length)} of {filteredReports.length} results
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm text-gray-800 font-medium">Rows per page:</Label>
+                  <Select value={itemsPerPage.toString()} onValueChange={(value) => {
+                    setItemsPerPage(Number(value));
+                    setCurrentPage(1);
+                  }}>
+                    <SelectTrigger className="w-[70px] bg-white border-gray-300">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="5">5</SelectItem>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="20">20</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="flex space-x-2">
-                <Button variant="outline" size="sm" disabled>
+              <div className="flex items-center gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handlePreviousPage}
+                  disabled={currentPage === 1}
+                  className="bg-white border-gray-300"
+                >
                   Previous
                 </Button>
-                <Button variant="outline" size="sm" disabled>
+                
+                {/* Page Numbers */}
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+                    
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={currentPage === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => handlePageChange(pageNum)}
+                        className={currentPage === pageNum ? "bg-orange-500 hover:bg-orange-400 text-white" : "bg-white border-gray-300"}
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
+                  {totalPages > 5 && currentPage < totalPages - 2 && (
+                    <>
+                      <span className="px-2 text-gray-700">...</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePageChange(totalPages)}
+                        className="bg-white border-gray-300"
+                      >
+                        {totalPages}
+                      </Button>
+                    </>
+                  )}
+                </div>
+                
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleNextPage}
+                  disabled={currentPage === totalPages || totalPages === 0}
+                  className="bg-white border-gray-300"
+                >
                   Next
                 </Button>
               </div>
@@ -1781,12 +2241,27 @@ export function ManageReportsPage() {
                     <div className="text-sm text-gray-700">Report ID: {selectedReport.id}</div>
                   </div>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={handlePrintPreview}>
-                      <Printer className="h-4 w-4" />
-                    </Button>
-                    <Button size="sm" variant="outline">
-                      <Download className="h-4 w-4" />
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button size="sm" variant="outline" onClick={handlePrintPreview}>
+                          <Printer className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Print report</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button size="sm" variant="outline">
+                          <Download className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Download report</p>
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 </div>
                 {/* Navigation Tabs */}
@@ -1806,47 +2281,23 @@ export function ManageReportsPage() {
                       className="w-full h-full rounded-lg overflow-hidden"
                     >
                       <MapboxMap 
-                        center={selectedReport.coordinates ? 
-                          (() => {
-                            try {
-                              const coords = selectedReport.coordinates.split(',').map(coord => parseFloat(coord.trim()));
-                              console.log('Processing coordinates:', selectedReport.coordinates, 'Parsed:', coords);
-                              if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
-                                // Mock data format is "latitude, longitude" - convert to [longitude, latitude] for Mapbox
-                                const result = [coords[1], coords[0]] as [number, number];
-                                console.log('Final coordinates (center):', result);
-                                return result;
-                              }
-                            } catch (error) {
-                              console.error('Error parsing coordinates:', error);
-                            }
-                            return [120.9842, 14.5995] as [number, number];
-                          })() : 
-                          [120.9842, 14.5995] as [number, number]}
+                        center={selectedReport.latitude && selectedReport.longitude ? 
+                          [selectedReport.longitude, selectedReport.latitude] as [number, number] : 
+                          [121.5556, 14.1139] as [number, number]}
                         zoom={14}
-                        singleMarker={selectedReport.coordinates ? 
-                          (() => {
-                            try {
-                              const coords = selectedReport.coordinates.split(',').map(coord => parseFloat(coord.trim()));
-                              if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
-                                return {
-                                  id: selectedReport.id || 'report-marker',
-                                  type: selectedReport.incidentType || 'Emergency',
-                                  title: selectedReport.location || 'Report Location',
-                                  description: selectedReport.description || 'Emergency report location',
-                                  reportId: selectedReport.id,
-                                  coordinates: [coords[1], coords[0]] as [number, number], // Convert to [longitude, latitude]
-                                  status: selectedReport.status,
-                                  locationName: selectedReport.location,
-                                  latitude: coords[0],
-                                  longitude: coords[1]
-                                };
-                              }
-                            } catch (error) {
-                              console.error('Error parsing coordinates for marker:', error);
-                            }
-                            return undefined;
-                          })() : 
+                        singleMarker={selectedReport.latitude && selectedReport.longitude ? 
+                          {
+                            id: selectedReport.id || 'report-marker',
+                            type: selectedReport.type || 'Emergency',
+                            title: selectedReport.location || 'Report Location',
+                            description: selectedReport.description || 'Emergency report location',
+                            reportId: selectedReport.id,
+                            coordinates: [selectedReport.longitude, selectedReport.latitude] as [number, number],
+                            status: selectedReport.status,
+                            locationName: selectedReport.location,
+                            latitude: selectedReport.latitude,
+                            longitude: selectedReport.longitude
+                          } : 
                           undefined}
                       />
                     </div>
@@ -1862,26 +2313,40 @@ export function ManageReportsPage() {
               </TabsContent>
 
               <TabsContent value="details" className="mt-4 flex-1 min-h-0 flex flex-col">
-                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-2">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-2">
                   <div className="text-lg font-semibold text-gray-800">Report Details</div>
                   <div className="flex gap-2 flex-wrap">
                     {isPreviewEditMode ? (
-                      <Button size="sm" className="bg-brand-red hover:bg-brand-red-700 text-white" onClick={() => {
-                        console.log('Saving changes:', previewEditData);
-                        setSelectedReport(previewEditData);
-                        setIsPreviewEditMode(false);
-                        setSelectedFiles([]); // Clear selected files when saving
-                      }}>
-                        Save
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button size="sm" className="bg-brand-red hover:bg-brand-red-700 text-white" onClick={() => {
+                            console.log('Saving changes:', previewEditData);
+                            setSelectedReport(previewEditData);
+                            setIsPreviewEditMode(false);
+                            setSelectedFiles([]); // Clear selected files when saving
+                          }}>
+                            Save
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Save changes to report details</p>
+                        </TooltipContent>
+                      </Tooltip>
                     ) : (
-                      <Button size="sm" variant="outline" className="border-gray-300 text-gray-800 hover:bg-gray-50" onClick={() => {
-                        setIsPreviewEditMode(true);
-                        setPreviewEditData({ ...selectedReport });
-                        setSelectedFiles([]); // Clear any previously selected files
-                      }}>
-                        <Edit className="h-4 w-4" />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button size="sm" variant="outline" className="border-gray-300 text-gray-800 hover:bg-gray-50" onClick={() => {
+                            setIsPreviewEditMode(true);
+                            setPreviewEditData({ ...selectedReport });
+                            setSelectedFiles([]); // Clear any previously selected files
+                          }}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Edit report details</p>
+                        </TooltipContent>
+                      </Tooltip>
                     )}
                   </div>
                 </div>
@@ -2029,18 +2494,31 @@ export function ManageReportsPage() {
                         <div className="flex items-center gap-2">
                           <div className="flex-1">
                             <div className="text-gray-800">{previewEditData?.location || selectedReport?.location}</div>
-                            <div className="text-xs text-gray-600 mt-1">{previewEditData?.coordinates || selectedReport?.coordinates || '14.5995, 120.9842'}</div>
+                            <div className="text-xs text-gray-600 mt-1">
+                              {previewEditData?.latitude && previewEditData?.longitude 
+                                ? `${previewEditData.latitude}, ${previewEditData.longitude}`
+                                : selectedReport?.latitude && selectedReport?.longitude 
+                                ? `${selectedReport.latitude}, ${selectedReport.longitude}`
+                                : '14.1139, 121.5556'}
+                            </div>
                           </div>
                           {isPreviewEditMode && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setShowLocationMap(true)}
-                              className="flex items-center gap-1"
-                            >
-                              <MapPin className="h-4 w-4" />
-                              Pin Location
-                            </Button>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setShowLocationMap(true)}
+                                  className="flex items-center gap-1"
+                                >
+                                  <MapPin className="h-4 w-4" />
+                                  Pin Location
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Select location on map</p>
+                              </TooltipContent>
+                            </Tooltip>
                           )}
                         </div>
                       </TableCell>
@@ -2138,7 +2616,7 @@ export function ManageReportsPage() {
                                       e.stopPropagation();
                                       handleDeleteImage(media, index);
                                     }}
-                                    className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                                    className="absolute -top-2 -right-2 bg-brand-red hover:bg-brand-red-700 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
                                     title="Delete image"
                                   >
                                     <X className="h-3 w-3" />
@@ -2241,7 +2719,7 @@ export function ManageReportsPage() {
                                       e.stopPropagation();
                                       handleDeleteAdminImage(media, index);
                                     }}
-                                    className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                                    className="absolute -top-2 -right-2 bg-brand-red hover:bg-brand-red-700 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
                                     title="Delete admin image"
                                   >
                                     <X className="h-3 w-3" />
@@ -2283,7 +2761,7 @@ export function ManageReportsPage() {
                                      variant="ghost"
                                      size="sm"
                                      onClick={clearSelectedFiles}
-                                     className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                     className="text-brand-red hover:text-brand-red-700 hover:bg-red-50"
                                    >
                                      Clear All
                                    </Button>
@@ -2302,7 +2780,7 @@ export function ManageReportsPage() {
                                            <FileIcon className="h-6 w-6 text-gray-400" />
                                          )}
                                        </div>
-                                       <div className="absolute -top-1 -right-1 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 cursor-pointer"
+                                       <div className="absolute -top-1 -right-1 bg-brand-red hover:bg-brand-red-700 text-white rounded-full p-1 cursor-pointer"
                                             onClick={() => removeSelectedFile(index)}
                                             title="Remove file">
                                          <X className="h-3 w-3" />
@@ -2323,7 +2801,7 @@ export function ManageReportsPage() {
                                    type="button"
                                    onClick={() => handleMediaUpload()}
                                    disabled={uploadingMedia}
-                                   className="bg-[#FF4F0B] hover:bg-[#FF4F0B]/90 text-white"
+                                   className="bg-brand-orange hover:bg-brand-orange-400 text-white"
                                  >
                                    {uploadingMedia ? (
                                      <>
@@ -2354,30 +2832,44 @@ export function ManageReportsPage() {
                   <div className="text-lg font-semibold text-gray-900">Dispatch Form</div>
                   <div className="flex gap-2 flex-wrap">
                     {isDispatchEditMode ? (
-                      <Button size="sm" className="bg-[#FF4F0B] text-white hover:bg-[#FF4F0B]/90" onClick={async () => {
-                        console.log('Saving dispatch form:', dispatchData);
-                        await saveDispatchDataToDatabase(selectedReport.id, dispatchData);
-                        setIsDispatchEditMode(false);
-                      }}>
-                        Save
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button size="sm" className="bg-brand-orange hover:bg-brand-orange-400 text-white" onClick={async () => {
+                            console.log('Saving dispatch form:', dispatchData);
+                            await saveDispatchDataToDatabase(selectedReport.firestoreId, dispatchData);
+                            setIsDispatchEditMode(false);
+                          }}>
+                            Save
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Save dispatch form data</p>
+                        </TooltipContent>
+                      </Tooltip>
                     ) : (
-                      <Button size="sm" variant="outline" onClick={() => {
-                        setIsDispatchEditMode(true);
-                        // Automatically assign responders when entering edit mode
-                        const autoAssigned = getAutoAssignedResponders();
-                        setDispatchData(d => ({
-                          ...d,
-                          responders: [{
-                            id: `auto-${Date.now()}`,
-                            team: autoAssigned.team,
-                            drivers: [],
-                            responders: autoAssigned.members
-                          }]
-                        }));
-                      }}>
-                        <Edit className="h-4 w-4" />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button size="sm" variant="outline" onClick={() => {
+                            setIsDispatchEditMode(true);
+                            // Automatically assign responders when entering edit mode
+                            const autoAssigned = getAutoAssignedResponders();
+                            setDispatchData(d => ({
+                              ...d,
+                              responders: [{
+                                id: `auto-${Date.now()}`,
+                                team: autoAssigned.team,
+                                drivers: [],
+                                responders: autoAssigned.members
+                              }]
+                            }));
+                          }}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Edit dispatch form</p>
+                        </TooltipContent>
+                      </Tooltip>
                     )}
                   </div>
                 </div>
@@ -2398,15 +2890,22 @@ export function ManageReportsPage() {
                             {isDispatchEditMode ? (
                               <div className="space-y-2">
                                 <div className="flex items-center gap-2">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => setShowTeamManagement(true)}
-                                    className="border-gray-300 text-gray-800 hover:bg-gray-50"
-                                  >
-                                    <Plus className="h-4 w-4 mr-1" />
-                                    Manage Teams
-                                  </Button>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => setShowTeamManagement(true)}
+                                        className="border-gray-300 text-gray-800 hover:bg-gray-50"
+                                      >
+                                        <Plus className="h-4 w-4 mr-1" />
+                                        Manage Teams
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Add or remove team members</p>
+                                    </TooltipContent>
+                                  </Tooltip>
                                  
                                 </div>
                                 {dispatchData.responders && dispatchData.responders.length > 0 ? (
@@ -2461,15 +2960,22 @@ export function ManageReportsPage() {
                                 onChange={e => setDispatchData(d => ({ ...d, timeOfDispatch: e.target.value }))} 
                                   className="flex-1"
                                 />
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => setDispatchData(d => ({ ...d, timeOfDispatch: getCurrentTime() }))}
-                                  className="px-3"
-                                >
-                                  <Clock className="h-4 w-4 mr-1" />
-                                  Now
-                                </Button>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => setDispatchData(d => ({ ...d, timeOfDispatch: getCurrentTime24Hour() }))}
+                                      className="px-3"
+                                    >
+                                      <Clock className="h-4 w-4 mr-1" />
+                                      Now
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Set to current time</p>
+                                  </TooltipContent>
+                                </Tooltip>
                               </div>
                             ) : (
                               dispatchData.timeOfDispatch || "Not specified"
@@ -2487,15 +2993,22 @@ export function ManageReportsPage() {
                                 onChange={e => setDispatchData(d => ({ ...d, timeOfArrival: e.target.value }))} 
                                   className="flex-1"
                                 />
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => setDispatchData(d => ({ ...d, timeOfArrival: getCurrentTime() }))}
-                                  className="px-3"
-                                >
-                                  <Clock className="h-4 w-4 mr-1" />
-                                  Now
-                                </Button>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => setDispatchData(d => ({ ...d, timeOfArrival: getCurrentTime24Hour() }))}
+                                      className="px-3"
+                                    >
+                                      <Clock className="h-4 w-4 mr-1" />
+                                      Now
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Set to current time</p>
+                                  </TooltipContent>
+                                </Tooltip>
                               </div>
                             ) : (
                               dispatchData.timeOfArrival || "Not specified"
@@ -2507,7 +3020,7 @@ export function ManageReportsPage() {
                           <TableCell>
                             {dispatchData.timeOfDispatch && dispatchData.timeOfArrival ? (
                               <div className="flex items-center gap-2">
-                                <span className="font-medium text-blue-600">
+                                <span className="font-medium text-brand-orange">
                                   {calculateResponseTime(dispatchData.timeOfDispatch, dispatchData.timeOfArrival)}
                                 </span>
                                 <span className="text-sm text-gray-500">
@@ -2530,15 +3043,22 @@ export function ManageReportsPage() {
                                 onChange={e => setDispatchData(d => ({ ...d, hospitalArrival: e.target.value }))} 
                                   className="flex-1"
                                 />
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => setDispatchData(d => ({ ...d, hospitalArrival: getCurrentTime() }))}
-                                  className="px-3"
-                                >
-                                  <Clock className="h-4 w-4 mr-1" />
-                                  Now
-                                </Button>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => setDispatchData(d => ({ ...d, hospitalArrival: getCurrentTime24Hour() }))}
+                                      className="px-3"
+                                    >
+                                      <Clock className="h-4 w-4 mr-1" />
+                                      Now
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Set to current time</p>
+                                  </TooltipContent>
+                                </Tooltip>
                               </div>
                             ) : (
                               dispatchData.hospitalArrival || "Not specified"
@@ -2556,15 +3076,22 @@ export function ManageReportsPage() {
                                 onChange={e => setDispatchData(d => ({ ...d, returnedToOpcen: e.target.value }))} 
                                   className="flex-1"
                                 />
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => setDispatchData(d => ({ ...d, returnedToOpcen: getCurrentTime() }))}
-                                  className="px-3"
-                                >
-                                  <Clock className="h-4 w-4 mr-1" />
-                                  Now
-                                </Button>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => setDispatchData(d => ({ ...d, returnedToOpcen: getCurrentTime24Hour() }))}
+                                      className="px-3"
+                                    >
+                                      <Clock className="h-4 w-4 mr-1" />
+                                      Now
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Set to current time</p>
+                                  </TooltipContent>
+                                </Tooltip>
                               </div>
                             ) : (
                               dispatchData.returnedToOpcen || "Not specified"
@@ -2584,7 +3111,7 @@ export function ManageReportsPage() {
                               </Select>
                             ) : (
                               dispatchData.disasterRelated ? (
-                                <Badge className={dispatchData.disasterRelated === "Yes" ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}>
+                                <Badge className={dispatchData.disasterRelated === "Yes" ? "bg-red-100 text-red-800 hover:bg-red-50" : "bg-green-100 text-green-800 hover:bg-green-50"}>
                                   {dispatchData.disasterRelated}
                                 </Badge>
                               ) : (
@@ -2610,7 +3137,7 @@ export function ManageReportsPage() {
                                           e.stopPropagation();
                                           setAgencyOptions(agencyOptions.filter((_, i) => i !== index));
                                         }}
-                                        className="h-6 w-6 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                        className="h-6 w-6 p-0 text-brand-red hover:text-brand-red-700 hover:bg-red-50"
                                       >
                                         <Trash2 className="h-3 w-3" />
                                       </Button>
@@ -2648,7 +3175,7 @@ export function ManageReportsPage() {
                               </Select>
                             ) : (
                               dispatchData.agencyPresent ? (
-                                <Badge className="bg-blue-100 text-blue-800">
+                                <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-50">
                                   {dispatchData.agencyPresent}
                                 </Badge>
                               ) : (
@@ -2695,7 +3222,7 @@ export function ManageReportsPage() {
                               </Select>
                             ) : (
                               dispatchData.typeOfEmergency ? (
-                                <Badge className="bg-orange-100 text-orange-800">
+                                <Badge className="bg-orange-100 text-orange-800 hover:bg-orange-50">
                                   {dispatchData.typeOfEmergency}
                                 </Badge>
                               ) : (
@@ -2711,7 +3238,7 @@ export function ManageReportsPage() {
                             <TableRow>
                               <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Vehicle Involved</TableCell>
                               <TableCell>
-                                {isPatientEditMode ? (
+                                {isDispatchEditMode ? (
                                   <Select value={dispatchData.vehicleInvolved} onValueChange={v => setDispatchData(d => ({ ...d, vehicleInvolved: v }))}>
                                     <SelectTrigger><SelectValue placeholder="Select vehicle involved" /></SelectTrigger>
                                     <SelectContent>
@@ -2727,7 +3254,7 @@ export function ManageReportsPage() {
                             <TableRow>
                               <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Classification of Injury</TableCell>
                               <TableCell>
-                                {isPatientEditMode ? (
+                                {isDispatchEditMode ? (
                                   <Select value={dispatchData.injuryClassification} onValueChange={v => setDispatchData(d => ({ ...d, injuryClassification: v, majorInjuryTypes: [], minorInjuryTypes: [] }))}>
                                     <SelectTrigger><SelectValue placeholder="Select injury classification" /></SelectTrigger>
                                     <SelectContent>
@@ -2736,7 +3263,7 @@ export function ManageReportsPage() {
                                   </Select>
                                 ) : (
                                   dispatchData.injuryClassification ? (
-                                    <Badge className={dispatchData.injuryClassification === "Major" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"}>
+                                    <Badge className={dispatchData.injuryClassification === "Major" ? "bg-red-100 text-red-800 hover:bg-red-50" : "bg-yellow-100 text-yellow-800 hover:bg-yellow-50"}>
                                       {dispatchData.injuryClassification}
                                     </Badge>
                                   ) : (
@@ -2751,7 +3278,7 @@ export function ManageReportsPage() {
                               <TableRow>
                                 <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Major Injury Types</TableCell>
                                 <TableCell>
-                                  {isPatientEditMode ? (
+                                  {isDispatchEditMode ? (
                                     <div className="space-y-2">
                                       {majorInjuryTypeOptions.map((injuryType) => (
                                         <div key={injuryType} className="flex items-center space-x-2">
@@ -2782,7 +3309,7 @@ export function ManageReportsPage() {
                                     dispatchData.majorInjuryTypes.length > 0 ? (
                                       <div className="flex flex-wrap gap-1">
                                         {dispatchData.majorInjuryTypes.map((injuryType, index) => (
-                                          <Badge key={index} className="bg-red-100 text-red-800 text-xs">
+                                          <Badge key={index} className="bg-red-100 text-red-800 hover:bg-red-50 text-xs">
                                             {injuryType}
                                           </Badge>
                                         ))}
@@ -2800,7 +3327,7 @@ export function ManageReportsPage() {
                               <TableRow>
                                 <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Minor Injury Types</TableCell>
                                 <TableCell>
-                                  {isPatientEditMode ? (
+                                  {isDispatchEditMode ? (
                                     <div className="space-y-2">
                                       {minorInjuryTypeOptions.map((injuryType) => (
                                         <div key={injuryType} className="flex items-center space-x-2">
@@ -2831,7 +3358,7 @@ export function ManageReportsPage() {
                                     dispatchData.minorInjuryTypes.length > 0 ? (
                                       <div className="flex flex-wrap gap-1">
                                         {dispatchData.minorInjuryTypes.map((injuryType, index) => (
-                                          <Badge key={index} className="bg-yellow-100 text-yellow-800 text-xs">
+                                          <Badge key={index} className="bg-yellow-100 text-yellow-800 hover:bg-yellow-50 text-xs">
                                             {injuryType}
                                           </Badge>
                                         ))}
@@ -2852,7 +3379,7 @@ export function ManageReportsPage() {
                             <TableRow>
                               <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Medical Classification</TableCell>
                               <TableCell>
-                                {isPatientEditMode ? (
+                                {isDispatchEditMode ? (
                                   <Select value={dispatchData.medicalClassification} onValueChange={v => setDispatchData(d => ({ ...d, medicalClassification: v, majorMedicalSymptoms: [], minorMedicalSymptoms: [] }))}>
                                     <SelectTrigger><SelectValue placeholder="Select medical classification" /></SelectTrigger>
                                     <SelectContent>
@@ -2861,7 +3388,7 @@ export function ManageReportsPage() {
                                   </Select>
                                 ) : (
                                   dispatchData.medicalClassification ? (
-                                    <Badge className={dispatchData.medicalClassification === "Major" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"}>
+                                    <Badge className={dispatchData.medicalClassification === "Major" ? "bg-red-100 text-red-800 hover:bg-red-50" : "bg-yellow-100 text-yellow-800 hover:bg-yellow-50"}>
                                       {dispatchData.medicalClassification}
                                     </Badge>
                                   ) : (
@@ -2876,7 +3403,7 @@ export function ManageReportsPage() {
                               <TableRow>
                                 <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Major Medical Symptoms</TableCell>
                                 <TableCell>
-                                  {isPatientEditMode ? (
+                                  {isDispatchEditMode ? (
                                     <div className="space-y-2">
                                       {majorMedicalSymptomsOptions.map((symptom) => (
                                         <div key={symptom} className="flex items-center space-x-2">
@@ -2907,7 +3434,7 @@ export function ManageReportsPage() {
                                     dispatchData.majorMedicalSymptoms.length > 0 ? (
                                       <div className="flex flex-wrap gap-1">
                                         {dispatchData.majorMedicalSymptoms.map((symptom, index) => (
-                                          <Badge key={index} className="bg-red-100 text-red-800 text-xs">
+                                          <Badge key={index} className="bg-red-100 text-red-800 hover:bg-red-50 text-xs">
                                             {symptom}
                                           </Badge>
                                         ))}
@@ -2925,7 +3452,7 @@ export function ManageReportsPage() {
                               <TableRow>
                                 <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Minor Medical Symptoms</TableCell>
                                 <TableCell>
-                                  {isPatientEditMode ? (
+                                  {isDispatchEditMode ? (
                                     <div className="space-y-2">
                                       {minorMedicalSymptomsOptions.map((symptom) => (
                                         <div key={symptom} className="flex items-center space-x-2">
@@ -2956,7 +3483,7 @@ export function ManageReportsPage() {
                                     dispatchData.minorMedicalSymptoms.length > 0 ? (
                                       <div className="flex flex-wrap gap-1">
                                         {dispatchData.minorMedicalSymptoms.map((symptom, index) => (
-                                          <Badge key={index} className="bg-yellow-100 text-yellow-800 text-xs">
+                                          <Badge key={index} className="bg-yellow-100 text-yellow-800 hover:bg-yellow-50 text-xs">
                                             {symptom}
                                           </Badge>
                                         ))}
@@ -2977,11 +3504,11 @@ export function ManageReportsPage() {
                             <TableRow>
                               <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Chief Complaint</TableCell>
                               <TableCell>
-                                {isPatientEditMode ? (
+                                {isDispatchEditMode ? (
                                   <Textarea 
                                     value={dispatchData.chiefComplaint} 
                                     onChange={e => setDispatchData(d => ({ ...d, chiefComplaint: e.target.value }))} 
-                                    placeholder="Enter chief complaint (short description)"
+                                    placeholder="Enter chief complaint (Short Description)"
                                     className="min-h-[80px]"
                                   />
                                 ) : (
@@ -2993,11 +3520,11 @@ export function ManageReportsPage() {
                             <TableRow>
                               <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Diagnosis</TableCell>
                               <TableCell>
-                                {isPatientEditMode ? (
+                                {isDispatchEditMode ? (
                                   <Textarea 
                                     value={dispatchData.diagnosis} 
                                     onChange={e => setDispatchData(d => ({ ...d, diagnosis: e.target.value }))} 
-                                    placeholder="Enter diagnosis (short description)"
+                                      placeholder="Enter diagnosis (Short Description)"
                                     className="min-h-[80px]"
                                   />
                                 ) : (
@@ -3009,7 +3536,7 @@ export function ManageReportsPage() {
                             <TableRow>
                               <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Nature of Illness</TableCell>
                               <TableCell>
-                                {isPatientEditMode ? (
+                                {isDispatchEditMode ? (
                                   <div className="space-y-3">
                                     <RadioGroup 
                                       value={dispatchData.natureOfIllness} 
@@ -3044,7 +3571,7 @@ export function ManageReportsPage() {
                                   <div>
                                     {dispatchData.natureOfIllness ? (
                                       <div className="flex items-center gap-2">
-                                        <Badge className="bg-blue-100 text-blue-800">
+                                        <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-50">
                                           {dispatchData.natureOfIllness}
                                         </Badge>
                                         {dispatchData.natureOfIllness === "Others" && dispatchData.natureOfIllnessOthers && (
@@ -3068,7 +3595,7 @@ export function ManageReportsPage() {
                           <TableRow>
                             <TableCell className="font-medium text-gray-700 align-top w-1/3 min-w-[150px]">Actions Taken</TableCell>
                             <TableCell>
-                              {isPatientEditMode ? (
+                              {isDispatchEditMode ? (
                                 <div className="space-y-3">
                                   <div className="space-y-2">
                                     {actionsTakenOptions.map((action) => (
@@ -3242,7 +3769,7 @@ export function ManageReportsPage() {
                                     <div className="space-y-2">
                                       <div className="flex flex-wrap gap-1">
                                         {dispatchData.actionsTaken.map((action, index) => (
-                                          <Badge key={index} className="bg-blue-100 text-blue-800 text-xs">
+                                          <Badge key={index} className="bg-blue-100 text-blue-800 hover:bg-blue-50 text-xs">
                                             {action}
                                           </Badge>
                                         ))}
@@ -3308,19 +3835,33 @@ export function ManageReportsPage() {
                   <div className="text-lg font-semibold text-gray-800">Patient Information</div>
                   <div className="flex gap-2 flex-wrap">
                     {isPatientEditMode ? (
-                      <Button size="sm" className="bg-brand-red hover:bg-brand-red-700 text-white" onClick={async () => {
-                        console.log('Saving patient information:', patients);
-                        await savePatientDataToDatabase(selectedReport.id, patients);
-                        setIsPatientEditMode(false);
-                      }}>
-                        Save
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button size="sm" className="bg-brand-red hover:bg-brand-red-700 text-white" onClick={async () => {
+                            console.log('Saving patient information:', patients);
+                            await savePatientDataToDatabase(selectedReport.firestoreId, patients);
+                            setIsPatientEditMode(false);
+                          }}>
+                            Save
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Save patient information</p>
+                        </TooltipContent>
+                      </Tooltip>
                     ) : (
-                      <Button size="sm" variant="outline" className="border-gray-300 text-gray-800 hover:bg-gray-50" onClick={() => {
-                        setIsPatientEditMode(true);
-                      }}>
-                        <Edit className="h-4 w-4" />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button size="sm" variant="outline" className="border-gray-300 text-gray-800 hover:bg-gray-50" onClick={() => {
+                            setIsPatientEditMode(true);
+                          }}>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Edit patient information</p>
+                        </TooltipContent>
+                      </Tooltip>
                     )}
                   </div>
                 </div>
@@ -3331,10 +3872,17 @@ export function ManageReportsPage() {
                     <div className="bg-gray-100 p-4 rounded-lg border border-gray-200">
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-lg font-semibold text-gray-800">Patient Management</h3>
-                        <Button onClick={addNewPatient} className="bg-brand-red hover:bg-brand-red-700 text-white">
-                          <Plus className="h-4 w-4 mr-2" />
-                          Add New Patient
-                        </Button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button onClick={addNewPatient} className="bg-brand-red hover:bg-brand-red-700 text-white">
+                              <Plus className="h-4 w-4 mr-2" />
+                              Add New Patient
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Add another patient to this report</p>
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
                       
                       {patients.length > 1 && (
@@ -3357,7 +3905,7 @@ export function ManageReportsPage() {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => removePatient(index)}
-                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 p-1 h-6 w-6"
+                                    className="text-brand-red hover:text-brand-red-700 hover:bg-red-50 p-1 h-6 w-6"
                                   >
                                     <X className="h-3 w-3" />
                                   </Button>
@@ -3442,7 +3990,7 @@ export function ManageReportsPage() {
                               </Select>
                             ) : (
                               currentPatient.religion ? (
-                                <Badge className="bg-gray-100 text-gray-800">
+                                <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-50">
                                   {currentPatient.religion}
                                 </Badge>
                               ) : (
@@ -3486,7 +4034,7 @@ export function ManageReportsPage() {
                               </Select>
                             ) : (
                               currentPatient.bloodType ? (
-                                <Badge className="bg-red-100 text-red-800">
+                                <Badge className="bg-red-100 text-red-800 hover:bg-red-50">
                                   {currentPatient.bloodType}
                                 </Badge>
                               ) : (
@@ -3511,7 +4059,7 @@ export function ManageReportsPage() {
                               </Select>
                             ) : (
                               currentPatient.civilStatus ? (
-                                <Badge className="bg-gray-100 text-gray-800">
+                                <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-50">
                                   {currentPatient.civilStatus}
                                 </Badge>
                               ) : (
@@ -3551,7 +4099,7 @@ export function ManageReportsPage() {
                               </Select>
                             ) : (
                               currentPatient.pwd ? (
-                                <Badge className={currentPatient.pwd === "Yes" ? "bg-yellow-100 text-yellow-800" : "bg-green-100 text-green-800"}>
+                                <Badge className={currentPatient.pwd === "Yes" ? "bg-yellow-100 text-yellow-800 hover:bg-yellow-50" : "bg-green-100 text-green-800 hover:bg-green-50"}>
                                   {currentPatient.pwd}
                                 </Badge>
                               ) : (
@@ -3576,7 +4124,7 @@ export function ManageReportsPage() {
                               </Select>
                             ) : (
                               currentPatient.ageGroup ? (
-                                <Badge className="bg-gray-100 text-gray-800">
+                                <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-50">
                                   {currentPatient.ageGroup}
                                 </Badge>
                               ) : (
@@ -3600,7 +4148,7 @@ export function ManageReportsPage() {
                               </Select>
                             ) : (
                               currentPatient.gender ? (
-                                <Badge className="bg-gray-100 text-gray-800">
+                                <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-50">
                                   {currentPatient.gender}
                                 </Badge>
                               ) : (
@@ -3612,7 +4160,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Name of Companion/Relative</TableCell>
                           <TableCell>
-                            {isDispatchEditMode ? (
+                            {isPatientEditMode ? (
                               <Input 
                                 value={currentPatient.companionName} 
                                 onChange={e => updateCurrentPatient(d => ({ ...d, companionName: e.target.value }))} 
@@ -3626,7 +4174,7 @@ export function ManageReportsPage() {
                         <TableRow>
                           <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Companion Contact Number</TableCell>
                           <TableCell>
-                            {isDispatchEditMode ? (
+                            {isPatientEditMode ? (
                               <Input 
                                 value={currentPatient.companionContact} 
                                 onChange={e => updateCurrentPatient(d => ({ ...d, companionContact: e.target.value }))} 
@@ -3648,7 +4196,7 @@ export function ManageReportsPage() {
                         <div>
                           <h4 className="text-sm font-medium text-gray-800 mb-3">Eyes Response</h4>
                           <div className="space-y-2">
-                            {isDispatchEditMode ? (
+                            {isPatientEditMode ? (
                               <RadioGroup value={currentPatient.gcs.eyes} onValueChange={v => updateCurrentPatient({ gcs: { ...currentPatient.gcs, eyes: v } })}>
                                 {[
                                   { value: "4", label: "4 - Spontaneous" },
@@ -3667,7 +4215,7 @@ export function ManageReportsPage() {
                             ) : (
                               <div className="space-y-1">
                                 {currentPatient.gcs.eyes ? (
-                                  <Badge className="bg-blue-100 text-blue-800">
+                                  <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-50">
                                     {[
                                       { value: "4", label: "4 - Spontaneous" },
                                       { value: "3", label: "3 - To sound" },
@@ -3687,7 +4235,7 @@ export function ManageReportsPage() {
                         <div>
                           <h4 className="text-sm font-medium text-gray-800 mb-3">Verbal Response</h4>
                           <div className="space-y-2">
-                            {isDispatchEditMode ? (
+                            {isPatientEditMode ? (
                               <RadioGroup value={currentPatient.gcs.verbal} onValueChange={v => updateCurrentPatient({ gcs: { ...currentPatient.gcs, verbal: v } })}>
                                 {[
                                   { value: "5", label: "5 - Oriented" },
@@ -3707,7 +4255,7 @@ export function ManageReportsPage() {
                             ) : (
                               <div className="space-y-1">
                                 {currentPatient.gcs.verbal ? (
-                                  <Badge className="bg-green-100 text-green-800">
+                                  <Badge className="bg-green-100 text-green-800 hover:bg-green-50">
                                     {[
                                       { value: "5", label: "5 - Oriented" },
                                       { value: "4", label: "4 - Confused" },
@@ -3728,7 +4276,7 @@ export function ManageReportsPage() {
                         <div>
                           <h4 className="text-sm font-medium text-gray-800 mb-3">Motor Response</h4>
                           <div className="space-y-2">
-                            {isDispatchEditMode ? (
+                            {isPatientEditMode ? (
                               <RadioGroup value={currentPatient.gcs.motor} onValueChange={v => updateCurrentPatient({ gcs: { ...currentPatient.gcs, motor: v } })}>
                                 {[
                                   { value: "6", label: "6 - Obey Commands" },
@@ -3749,7 +4297,7 @@ export function ManageReportsPage() {
                             ) : (
                               <div className="space-y-1">
                                 {currentPatient.gcs.motor ? (
-                                  <Badge className="bg-purple-100 text-purple-800">
+                                  <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-50">
                                     {[
                                       { value: "6", label: "6 - Obey Commands" },
                                       { value: "5", label: "5 - Localizing" },
@@ -3772,7 +4320,7 @@ export function ManageReportsPage() {
                       <div className="mt-4 p-3 bg-white rounded border">
                         <div className="flex items-center justify-between">
                           <span className="text-sm font-medium text-gray-800">GCS Total Score:</span>
-                          <span className="text-2xl font-bold text-blue-600">
+                          <span className="text-2xl font-bold text-brand-orange">
                             {(() => {
                               const eyesScore = currentPatient.gcs.eyes ? parseInt(currentPatient.gcs.eyes) : 0;
                               const verbalScore = currentPatient.gcs.verbal ? parseInt(currentPatient.gcs.verbal) : 0;
@@ -3803,8 +4351,8 @@ export function ManageReportsPage() {
                     <div className="mt-6 p-4 bg-gray-50 rounded-lg">
                       <h3 className="text-lg font-semibold text-gray-800 mb-4">Pupil Assessment</h3>
                       <div className="max-w-md">
-                        {isPreviewEditMode ? (
-                          <RadioGroup value={currentPatient.pupil} onValueChange={v => updateCurrentPatient(d => ({ ...d, pupil: v }))}>
+                        {isPatientEditMode ? (
+                          <RadioGroup value={currentPatient.pupil} onValueChange={v => updateCurrentPatient({ pupil: v })}>
                             {[
                               { value: "PERRLA", label: "PERRLA" },
                               { value: "Constricted", label: "Constricted" },
@@ -3821,7 +4369,7 @@ export function ManageReportsPage() {
                         ) : (
                           <div>
                             {currentPatient.pupil ? (
-                              <Badge className="bg-yellow-100 text-yellow-800">
+                              <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-50">
                                 {currentPatient.pupil}
                               </Badge>
                             ) : (
@@ -3836,8 +4384,8 @@ export function ManageReportsPage() {
                     <div className="mt-6 p-4 bg-gray-50 rounded-lg">
                       <h3 className="text-lg font-semibold text-gray-800 mb-4">Lung Sounds</h3>
                       <div className="max-w-md">
-                        {isPreviewEditMode ? (
-                          <RadioGroup value={currentPatient.lungSounds} onValueChange={v => updateCurrentPatient(d => ({ ...d, lungSounds: v }))}>
+                        {isPatientEditMode ? (
+                          <RadioGroup value={currentPatient.lungSounds} onValueChange={v => updateCurrentPatient({ lungSounds: v })}>
                             {[
                               { value: "Clear", label: "Clear" },
                               { value: "Absent", label: "Absent" },
@@ -3857,7 +4405,7 @@ export function ManageReportsPage() {
                         ) : (
                           <div>
                             {currentPatient.lungSounds ? (
-                              <Badge className="bg-cyan-100 text-cyan-800">
+                              <Badge className="bg-cyan-100 text-cyan-800 hover:bg-cyan-50">
                                 {currentPatient.lungSounds}
                               </Badge>
                             ) : (
@@ -3876,7 +4424,7 @@ export function ManageReportsPage() {
                         <div>
                           <h4 className="text-sm font-medium text-gray-800 mb-3">Skin</h4>
                           <div className="space-y-2">
-                            {isDispatchEditMode ? (
+                            {isPatientEditMode ? (
                               <RadioGroup value={currentPatient.perfusion.skin} onValueChange={v => updateCurrentPatient({ perfusion: { ...currentPatient.perfusion, skin: v } })}>
                                 {[
                                   { value: "Normal", label: "Normal" },
@@ -3900,7 +4448,7 @@ export function ManageReportsPage() {
                             ) : (
                               <div>
                                 {currentPatient.perfusion.skin ? (
-                                  <Badge className="bg-pink-100 text-pink-800">
+                                  <Badge className="bg-pink-100 text-pink-800 hover:bg-pink-50">
                                     {currentPatient.perfusion.skin}
                                   </Badge>
                                 ) : (
@@ -3915,7 +4463,7 @@ export function ManageReportsPage() {
                         <div>
                           <h4 className="text-sm font-medium text-gray-800 mb-3">Pulse</h4>
                           <div className="space-y-2">
-                            {isDispatchEditMode ? (
+                            {isPatientEditMode ? (
                               <RadioGroup value={currentPatient.perfusion.pulse} onValueChange={v => updateCurrentPatient({ perfusion: { ...currentPatient.perfusion, pulse: v } })}>
                                 {[
                                   { value: "Regular", label: "Regular" },
@@ -3935,7 +4483,7 @@ export function ManageReportsPage() {
                             ) : (
                               <div>
                                 {currentPatient.perfusion.pulse ? (
-                                  <Badge className="bg-red-100 text-red-800">
+                                  <Badge className="bg-red-100 text-red-800 hover:bg-red-50">
                                     {currentPatient.perfusion.pulse}
                                   </Badge>
                                 ) : (
@@ -3955,7 +4503,7 @@ export function ManageReportsPage() {
                         {/* Time Taken */}
                         <div>
                           <Label className="text-sm font-medium text-gray-800">Time Taken</Label>
-                          {isPreviewEditMode ? (
+                          {isPatientEditMode ? (
                             <Input 
                               type="time" 
                               value={currentPatient.vitalSigns.timeTaken} 
@@ -3965,7 +4513,7 @@ export function ManageReportsPage() {
                           ) : (
                             <div className="mt-1">
                               {currentPatient.vitalSigns.timeTaken ? (
-                                <Badge className="bg-gray-100 text-gray-800">
+                                <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-50">
                                   {currentPatient.vitalSigns.timeTaken}
                                 </Badge>
                               ) : (
@@ -3978,7 +4526,7 @@ export function ManageReportsPage() {
                         {/* Temperature */}
                         <div>
                           <Label className="text-sm font-medium text-gray-800">Temperature (°C)</Label>
-                          {isPreviewEditMode ? (
+                          {isPatientEditMode ? (
                             <Input 
                               type="number" 
                               step="0.1"
@@ -3990,7 +4538,7 @@ export function ManageReportsPage() {
                           ) : (
                             <div className="mt-1">
                               {currentPatient.vitalSigns.temperature ? (
-                                <Badge className="bg-red-100 text-red-800">
+                                <Badge className="bg-red-100 text-red-800 hover:bg-red-50">
                                   {currentPatient.vitalSigns.temperature}°C
                                 </Badge>
                               ) : (
@@ -4003,7 +4551,7 @@ export function ManageReportsPage() {
                         {/* Pulse Rate */}
                         <div>
                           <Label className="text-sm font-medium text-gray-800">Pulse Rate (bpm)</Label>
-                          {isPreviewEditMode ? (
+                          {isPatientEditMode ? (
                             <Input 
                               type="number" 
                               value={currentPatient.vitalSigns.pulseRate} 
@@ -4014,7 +4562,7 @@ export function ManageReportsPage() {
                           ) : (
                             <div className="mt-1">
                               {currentPatient.vitalSigns.pulseRate ? (
-                                <Badge className="bg-blue-100 text-blue-800">
+                                <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-50">
                                   {currentPatient.vitalSigns.pulseRate} bpm
                                 </Badge>
                               ) : (
@@ -4027,7 +4575,7 @@ export function ManageReportsPage() {
                         {/* Respiratory Rate */}
                         <div>
                           <Label className="text-sm font-medium text-gray-800">Respiratory Rate (breaths/min)</Label>
-                          {isPreviewEditMode ? (
+                          {isPatientEditMode ? (
                             <Input 
                               type="number" 
                               value={currentPatient.vitalSigns.respiratoryRate} 
@@ -4038,7 +4586,7 @@ export function ManageReportsPage() {
                           ) : (
                             <div className="mt-1">
                               {currentPatient.vitalSigns.respiratoryRate ? (
-                                <Badge className="bg-green-100 text-green-800">
+                                <Badge className="bg-green-100 text-green-800 hover:bg-green-50">
                                   {currentPatient.vitalSigns.respiratoryRate} breaths/min
                                 </Badge>
                               ) : (
@@ -4051,7 +4599,7 @@ export function ManageReportsPage() {
                         {/* Blood Pressure */}
                         <div>
                           <Label className="text-sm font-medium text-gray-800">Blood Pressure (mmHg)</Label>
-                          {isPreviewEditMode ? (
+                          {isPatientEditMode ? (
                             <Input 
                               value={currentPatient.vitalSigns.bloodPressure} 
                               onChange={e => updateCurrentPatient({ vitalSigns: { ...currentPatient.vitalSigns, bloodPressure: e.target.value } })} 
@@ -4061,7 +4609,7 @@ export function ManageReportsPage() {
                           ) : (
                             <div className="mt-1">
                               {currentPatient.vitalSigns.bloodPressure ? (
-                                <Badge className="bg-purple-100 text-purple-800">
+                                <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-50">
                                   {currentPatient.vitalSigns.bloodPressure} mmHg
                                 </Badge>
                               ) : (
@@ -4074,7 +4622,7 @@ export function ManageReportsPage() {
                         {/* SPO2 */}
                         <div>
                           <Label className="text-sm font-medium text-gray-800">SPO2 (%)</Label>
-                          {isPreviewEditMode ? (
+                          {isPatientEditMode ? (
                             <div className="mt-1 space-y-2">
                               <Input 
                                 type="number" 
@@ -4098,11 +4646,11 @@ export function ManageReportsPage() {
                             <div className="mt-1">
                               {currentPatient.vitalSigns.spo2 ? (
                                 <div className="flex items-center gap-2">
-                                  <Badge className="bg-cyan-100 text-cyan-800">
+                                  <Badge className="bg-cyan-100 text-cyan-800 hover:bg-cyan-50">
                                     {currentPatient.vitalSigns.spo2}%
                                   </Badge>
                                   {currentPatient.vitalSigns.spo2WithO2Support && (
-                                    <Badge className="bg-orange-100 text-orange-800 text-xs">
+                                    <Badge className="bg-orange-100 text-orange-800 hover:bg-orange-50 text-xs">
                                       O2 Support
                                     </Badge>
                                   )}
@@ -4117,7 +4665,7 @@ export function ManageReportsPage() {
                         {/* Random Blood Sugar */}
                         <div>
                           <Label className="text-sm font-medium text-gray-800">Random Blood Sugar (mg/dL)</Label>
-                          {isPreviewEditMode ? (
+                          {isPatientEditMode ? (
                             <Input 
                               type="number" 
                               value={currentPatient.vitalSigns.randomBloodSugar} 
@@ -4128,7 +4676,7 @@ export function ManageReportsPage() {
                           ) : (
                             <div className="mt-1">
                               {currentPatient.vitalSigns.randomBloodSugar ? (
-                                <Badge className="bg-yellow-100 text-yellow-800">
+                                <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-50">
                                   {currentPatient.vitalSigns.randomBloodSugar} mg/dL
                                 </Badge>
                               ) : (
@@ -4141,7 +4689,7 @@ export function ManageReportsPage() {
                         {/* Pain Scale */}
                         <div>
                           <Label className="text-sm font-medium text-gray-800">Pain Scale (0-10)</Label>
-                          {isPreviewEditMode ? (
+                          {isPatientEditMode ? (
                             <Select value={currentPatient.vitalSigns.painScale} onValueChange={v => updateCurrentPatient({ vitalSigns: { ...currentPatient.vitalSigns, painScale: v } })}>
                               <SelectTrigger className="mt-1">
                                 <SelectValue placeholder="Select pain level" />
@@ -4158,10 +4706,10 @@ export function ManageReportsPage() {
                             <div className="mt-1">
                               {currentPatient.vitalSigns.painScale ? (
                                 <Badge className={
-                                  parseInt(currentPatient.vitalSigns.painScale) <= 3 ? "bg-green-100 text-green-800" :
-                                  parseInt(currentPatient.vitalSigns.painScale) <= 6 ? "bg-yellow-100 text-yellow-800" :
-                                  parseInt(currentPatient.vitalSigns.painScale) <= 8 ? "bg-orange-100 text-orange-800" :
-                                  "bg-red-100 text-red-800"
+                                  parseInt(currentPatient.vitalSigns.painScale) <= 3 ? "bg-green-100 text-green-800 hover:bg-green-50" :
+                                  parseInt(currentPatient.vitalSigns.painScale) <= 6 ? "bg-yellow-100 text-yellow-800 hover:bg-yellow-50" :
+                                  parseInt(currentPatient.vitalSigns.painScale) <= 8 ? "bg-orange-100 text-orange-800 hover:bg-orange-50" :
+                                  "bg-red-100 text-red-800 hover:bg-red-50"
                                 }>
                                   {currentPatient.vitalSigns.painScale} - {
                                     parseInt(currentPatient.vitalSigns.painScale) === 0 ? "No pain" :
@@ -4205,14 +4753,14 @@ export function ManageReportsPage() {
           <DialogContent className="sm:max-w-[800px] max-h-[90vh] bg-white flex flex-col overflow-hidden">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Image className="h-5 w-5 text-blue-600" />
+                <Image className="h-5 w-5 text-brand-orange" />
                 Image Preview
                 {(() => {
                   const isAdminMedia = (isPreviewEditMode ? previewEditData?.adminMedia : selectedReport?.adminMedia)?.includes(previewImageUrl);
                   const isMobileMedia = (isPreviewEditMode ? previewEditData?.mobileMedia : selectedReport?.mobileMedia)?.includes(previewImageUrl);
                   
                   if (isAdminMedia) {
-                    return <Badge variant="outline" className="border-gray-500 text-gray-700 text-xs">Admin Added</Badge>;
+                    return <Badge variant="outline" className="border-gray-500 text-gray-800 text-xs">Admin Added</Badge>;
                   } else if (isMobileMedia) {
                     return <Badge variant="secondary" className="text-xs">Mobile User</Badge>;
                   }
@@ -4286,7 +4834,7 @@ export function ManageReportsPage() {
           <DialogContent className="sm:max-w-[800px] max-h-[90vh] bg-white flex flex-col overflow-hidden">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <MapPin className="h-5 w-5 text-orange-600" />
+                <MapPin className="h-5 w-5 text-brand-orange" />
                 Select New Location
               </DialogTitle>
               <DialogDescription>
@@ -4302,42 +4850,22 @@ export function ManageReportsPage() {
                   clickedLocation={newLocation}
                   showGeocoder={true}
                   onGeocoderResult={handleMapClick}
-                  singleMarker={selectedReport?.coordinates ? 
-                    (() => {
-                      try {
-                        const coords = selectedReport.coordinates.split(',').map(coord => parseFloat(coord.trim()));
-                        if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
-                          return {
-                            id: selectedReport.id || 'report-marker',
-                            type: selectedReport.type || 'Emergency',
-                            title: selectedReport.location || 'Report Location',
-                            description: selectedReport.description || 'Emergency report location',
-                            reportId: selectedReport.id,
-                            coordinates: [coords[1], coords[0]] as [number, number],
-                            status: selectedReport.status,
-                            locationName: selectedReport.location,
-                            latitude: coords[0],
-                            longitude: coords[1]
-                          };
-                        }
-                      } catch (error) {
-                        console.error('Error parsing coordinates:', error);
-                      }
-                      return undefined;
-                    })() : 
+                  singleMarker={selectedReport?.latitude && selectedReport?.longitude ? 
+                    {
+                      id: selectedReport.id || 'report-marker',
+                      type: selectedReport.type || 'Emergency',
+                      title: selectedReport.location || 'Report Location',
+                      description: selectedReport.description || 'Emergency report location',
+                      reportId: selectedReport.id,
+                      coordinates: [selectedReport.longitude, selectedReport.latitude] as [number, number],
+                      status: selectedReport.status,
+                      locationName: selectedReport.location,
+                      latitude: selectedReport.latitude,
+                      longitude: selectedReport.longitude
+                    } : 
                     undefined}
-                  center={selectedReport?.coordinates ? 
-                    (() => {
-                      try {
-                        const coords = selectedReport.coordinates.split(',').map(coord => parseFloat(coord.trim()));
-                        if (coords.length === 2 && !isNaN(coords[0]) && !isNaN(coords[1])) {
-                          return [coords[1], coords[0]] as [number, number];
-                        }
-                      } catch (error) {
-                        console.error('Error parsing coordinates:', error);
-                      }
-                      return [121.5556, 14.1139] as [number, number]; // Center on Lucban, Quezon
-                    })() : 
+                  center={selectedReport?.latitude && selectedReport?.longitude ? 
+                    [selectedReport.longitude, selectedReport.latitude] as [number, number] : 
                     [121.5556, 14.1139] as [number, number]} // Center on Lucban, Quezon
                   zoom={14}
                 />
@@ -4354,7 +4882,7 @@ export function ManageReportsPage() {
               <Button 
                 onClick={handleSaveLocation}
                 disabled={!newLocation}
-                className="bg-[#FF4F0B] text-white hover:bg-[#FF4F0B]/90"
+                className="bg-brand-orange hover:bg-brand-orange-400 text-white"
               >
                 Save Location
               </Button>
@@ -4426,7 +4954,7 @@ export function ManageReportsPage() {
                               size="sm"
                               variant="ghost"
                               onClick={() => removeTeamMember("Team Alpha", member)}
-                              className="text-red-600 hover:text-red-700"
+                              className="text-brand-red hover:text-brand-red-700"
                             >
                               Remove
                             </Button>
@@ -4446,7 +4974,7 @@ export function ManageReportsPage() {
                               size="sm"
                               variant="ghost"
                               onClick={() => removeTeamMember("Team Sulu", member)}
-                              className="text-red-600 hover:text-red-700"
+                              className="text-brand-red hover:text-brand-red-700"
                             >
                               Remove
                             </Button>
@@ -4470,10 +4998,10 @@ export function ManageReportsPage() {
 
         {/* New Report Alert Modal */}
         <Dialog open={showNewReportAlert} onOpenChange={setShowNewReportAlert}>
-          <DialogContent className="max-w-md border-red-500 bg-red-50">
+          <DialogContent className="max-w-md border-brand-red bg-red-50">
             <DialogHeader>
-              <DialogTitle className="text-xl font-bold text-red-800 flex items-center gap-2">
-                <div className="w-3 h-3 bg-red-600 rounded-full animate-pulse"></div>
+              <DialogTitle className="text-xl font-bold text-brand-red flex items-center gap-2">
+                <div className="w-3 h-3 bg-brand-red rounded-full animate-pulse"></div>
                 🚨 NEW EMERGENCY REPORT
               </DialogTitle>
             </DialogHeader>
@@ -4518,14 +5046,14 @@ export function ManageReportsPage() {
                       setShowNewReportAlert(false);
                       // You can add navigation to the specific report here
                     }}
-                    className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                    className="flex-1 bg-brand-red hover:bg-brand-red-700 text-white"
                   >
                     View Report
                   </Button>
                   <Button 
                     variant="outline" 
                     onClick={() => setShowNewReportAlert(false)}
-                    className="flex-1 border-red-300 text-red-700 hover:bg-red-100"
+                    className="flex-1 border-red-300 text-brand-red hover:bg-red-100"
                   >
                     Dismiss
                   </Button>
@@ -4534,7 +5062,47 @@ export function ManageReportsPage() {
             )}
           </DialogContent>
         </Dialog>
-      </div>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Report</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete this report? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="outline">Cancel</Button>
+              </DialogClose>
+              <Button variant="destructive" onClick={confirmDeleteReport}>
+                Delete Report
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Batch Delete Confirmation Dialog */}
+        <Dialog open={showBatchDeleteDialog} onOpenChange={setShowBatchDeleteDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Selected Reports</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete {selectedReports.length} selected report(s)? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="outline">Cancel</Button>
+              </DialogClose>
+              <Button variant="destructive" onClick={confirmBatchDelete}>
+                Delete {selectedReports.length} Report(s)
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </TooltipProvider>
     </Layout>
   );
 }

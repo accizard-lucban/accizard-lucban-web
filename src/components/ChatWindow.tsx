@@ -85,9 +85,11 @@ export function ChatWindow({ session, isOpen, onClose, onUpdateSession }: ChatWi
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             {session.profilePicture ? (
-              <img src={session.profilePicture} alt="Profile" className="h-8 w-8 rounded-full object-cover" />
+              <img src={session.profilePicture} alt="Profile" className="h-10 w-10 rounded-full object-cover" />
             ) : (
-              <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-400">?</div>
+              <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
+                <User className="h-5 w-5 text-gray-400" />
+              </div>
             )}
             <div>
               <h3 className="font-semibold text-gray-900">{session.customerName}</h3>
@@ -123,13 +125,13 @@ export function ChatWindow({ session, isOpen, onClose, onUpdateSession }: ChatWi
                 className={`max-w-[80%] rounded-lg px-3 py-2 ${
                   message.isUser
                     ? "bg-gray-100 text-gray-900"
-                    : "bg-red-600 text-white"
+                    : "bg-brand-red text-white"
                 }`}
               >
                 <p className="text-sm">{message.text}</p>
                 <p
                   className={`text-xs mt-1 ${
-                    message.isUser ? "text-gray-500" : "text-red-100"
+                    message.isUser ? "text-gray-500" : "text-white opacity-80"
                   }`}
                 >
                   {formatTime(message.timestamp)}
@@ -151,7 +153,7 @@ export function ChatWindow({ session, isOpen, onClose, onUpdateSession }: ChatWi
             className="flex-1"
             disabled={isNewChat}
           />
-          <Button type="submit" size="sm" className="bg-red-600 hover:bg-red-700" disabled={isNewChat}>
+          <Button type="submit" size="sm" className="bg-brand-red hover:bg-brand-red-700 text-white" disabled={isNewChat}>
             <Send className="h-4 w-4" />
           </Button>
         </form>

@@ -20,6 +20,7 @@ interface ChatSession {
   unreadCount: number;
   status: "active" | "waiting" | "resolved";
   messages: Message[];
+  profilePicture?: string;
 }
 
 interface ChatInterfaceProps {
@@ -175,8 +176,8 @@ export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
       {/* Sessions List Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
         <div className="flex items-center space-x-2">
-          <MessageSquare className="h-5 w-5 text-red-600" />
-          <h2 className="text-lg font-semibold">Chat Sessions</h2>
+          <MessageSquare className="h-5 w-5 text-brand-orange" />
+          <h2 className="text-lg font-semibold text-gray-800">Chat Sessions</h2>
         </div>
         <Button variant="ghost" size="sm" onClick={onClose}>
           <X className="h-4 w-4" />
@@ -193,13 +194,19 @@ export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
                 onClick={() => setSelectedSession(session)}
                 className={`p-3 rounded-lg cursor-pointer mb-2 transition-colors ${
                   selectedSession?.id === session.id
-                    ? "bg-red-50 border border-red-200"
+                    ? "bg-orange-50 border border-orange-200"
                     : "hover:bg-gray-50"
                 }`}
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-center space-x-2">
-                    <User className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                    {session.profilePicture ? (
+                      <img src={session.profilePicture} alt="Profile" className="h-8 w-8 rounded-full object-cover flex-shrink-0" />
+                    ) : (
+                      <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
+                        <User className="h-4 w-4 text-gray-400" />
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">
                         {session.customerName}
@@ -212,7 +219,7 @@ export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
                   <div className="flex flex-col items-end space-y-1">
                     <div className={`w-2 h-2 rounded-full ${getStatusColor(session.status)}`} />
                     {session.unreadCount > 0 && (
-                      <span className="bg-red-600 text-white text-xs rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
+                      <span className="bg-brand-red text-white text-xs rounded-full px-1.5 py-0.5 min-w-[18px] text-center">
                         {session.unreadCount}
                       </span>
                     )}
@@ -237,7 +244,13 @@ export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
       {selectedSession && (
         <div className="p-3 border-t border-gray-200 bg-gray-50">
           <div className="flex items-center space-x-2">
-            <User className="h-4 w-4 text-gray-400" />
+            {selectedSession.profilePicture ? (
+              <img src={selectedSession.profilePicture} alt="Profile" className="h-8 w-8 rounded-full object-cover" />
+            ) : (
+              <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center">
+                <User className="h-4 w-4 text-gray-400" />
+              </div>
+            )}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-gray-900 truncate">
                 {selectedSession.customerName}

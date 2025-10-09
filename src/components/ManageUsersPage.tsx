@@ -12,7 +12,7 @@ import { Search, Plus, Edit, Trash2, Shield, ShieldOff, ShieldCheck, ShieldX, Ey
 import { Layout } from "./Layout";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { db } from "@/lib/firebase";
+import { db, deleteResidentUserFunction } from "@/lib/firebase";
 import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, onSnapshot, query, orderBy } from "firebase/firestore";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/components/ui/use-toast";
@@ -129,8 +129,21 @@ export function ManageUsersPage() {
     setActivitySortDirection(activitySortDirection === 'asc' ? 'desc' : 'asc');
   };
 
+  // Filter activity logs based on search and filters
+  const filteredActivityLogs = activityLogs.filter(log => {
+    const search = searchTerm.toLowerCase();
+    const matchesSearch = 
+      log.action?.toLowerCase().includes(search) ||
+      log.admin?.toLowerCase().includes(search) ||
+      log.actor?.toLowerCase().includes(search) ||
+      log.actionType?.toLowerCase().includes(search);
+    const matchesUser = userFilter === "all" || log.admin === userFilter || log.actor === userFilter;
+    const matchesActionType = actionTypeFilter === "all" || log.actionType === actionTypeFilter;
+    return matchesSearch && matchesUser && matchesActionType;
+  });
+  
   // Add sortedActivityLogs before pagedActivityLogs:
-  const sortedActivityLogs = [...activityLogs].sort((a, b) => {
+  const sortedActivityLogs = [...filteredActivityLogs].sort((a, b) => {
     const aTime = typeof a.timestamp === 'number' ? a.timestamp : Date.parse(a.timestamp);
     const bTime = typeof b.timestamp === 'number' ? b.timestamp : Date.parse(b.timestamp);
     if (activitySortDirection === 'asc') {
@@ -467,8 +480,12 @@ export function ManageUsersPage() {
 
   const handleDeleteAdmin = async (adminId: string) => {
     try {
+      // Admins are stored in Firestore only (no Firebase Auth)
+      const adminToDelete = adminUsers.find(a => a.id === adminId);
+      
       await deleteDoc(doc(db, "admins", adminId));
       setAdminUsers(adminUsers.filter(a => a.id !== adminId));
+      
       // Helper to log activity
       const logActivity = async ({ adminId, actor, role, actionType, action }) => {
         await addDoc(collection(db, "activityLogs"), {
@@ -487,10 +504,20 @@ export function ManageUsersPage() {
         actor: currentAdmin.name,
         role: currentAdmin.position || currentAdmin.role,
         actionType: 'delete',
-        action: `Deleted admin: ${adminId}`,
+        action: `Deleted admin: ${adminToDelete?.name || adminId}`,
+      });
+      
+      toast({
+        title: 'Success',
+        description: 'Admin account deleted successfully!'
       });
     } catch (error) {
       console.error("Error deleting admin:", error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete admin account',
+        variant: 'destructive'
+      });
     }
   };
 
@@ -549,8 +576,29 @@ export function ManageUsersPage() {
 
   const handleDeleteResident = async (residentId: string) => {
     try {
-      await deleteDoc(doc(db, "users", residentId));
+      // Get resident data to retrieve email
+      const residentToDelete = residents.find(r => r.id === residentId);
+      const email = residentToDelete?.email || '';
+      
+      if (email) {
+        // Use Cloud Function to delete from both Auth and Firestore
+        try {
+          await deleteResidentUserFunction({ 
+            email, 
+            docId: residentId 
+          });
+        } catch (funcError) {
+          console.error("Cloud function error, falling back to Firestore-only deletion:", funcError);
+          // Fallback to direct Firestore deletion if Cloud Function fails
+          await deleteDoc(doc(db, "users", residentId));
+        }
+      } else {
+        // No email, just delete from Firestore
+        await deleteDoc(doc(db, "users", residentId));
+      }
+      
       setResidents(residents.filter(r => r.id !== residentId));
+      
       // Helper to log activity
       const logActivity = async ({ adminId, actor, role, actionType, action }) => {
         await addDoc(collection(db, "activityLogs"), {
@@ -569,10 +617,20 @@ export function ManageUsersPage() {
         actor: currentAdmin.name,
         role: currentAdmin.position || currentAdmin.role,
         actionType: 'delete',
-        action: `Deleted resident: ${residentId}`,
+        action: `Deleted resident: ${residentToDelete?.fullName || residentId}`,
+      });
+      
+      toast({
+        title: 'Success',
+        description: 'Resident account deleted successfully!'
       });
     } catch (error) {
       console.error("Error deleting resident:", error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete resident account',
+        variant: 'destructive'
+      });
     }
   };
 
@@ -678,16 +736,31 @@ export function ManageUsersPage() {
       switch (type) {
         case 'delete':
           if (items === selectedAdmins) {
-            // Delete admins
+            // Delete admins (Firestore only)
             for (const adminId of items) {
               await deleteDoc(doc(db, "admins", adminId));
             }
             setAdminUsers(prev => prev.filter(admin => !items.includes(admin.id)));
             setSelectedAdmins([]);
           } else {
-            // Delete residents
+            // Delete residents (both Auth and Firestore)
             for (const residentId of items) {
-              await deleteDoc(doc(db, "users", residentId));
+              const residentToDelete = residents.find(r => r.id === residentId);
+              const email = residentToDelete?.email || '';
+              
+              if (email) {
+                try {
+                  await deleteResidentUserFunction({ 
+                    email, 
+                    docId: residentId 
+                  });
+                } catch (funcError) {
+                  console.error("Cloud function error, falling back to Firestore-only deletion:", funcError);
+                  await deleteDoc(doc(db, "users", residentId));
+                }
+              } else {
+                await deleteDoc(doc(db, "users", residentId));
+              }
             }
             setResidents(prev => prev.filter(resident => !items.includes(resident.id)));
             setSelectedResidents([]);
@@ -744,8 +817,18 @@ export function ManageUsersPage() {
         actionType: type,
         action: `${value ? 'Granted' : 'Revoked'} ${type === 'delete' ? 'admin' : type === 'permission' ? 'permissions' : 'verification'} for ${items.length} ${items === selectedAdmins ? 'admin' : 'resident'} accounts`,
       });
+      
+      toast({
+        title: 'Success',
+        description: `Successfully ${type === 'delete' ? 'deleted' : type === 'permission' ? 'updated permissions for' : 'updated verification for'} ${items.length} account(s)!`
+      });
     } catch (error) {
       console.error("Error executing batch action:", error);
+      toast({
+        title: 'Error',
+        description: 'Failed to complete batch action',
+        variant: 'destructive'
+      });
     }
 
     setConfirmBatchAction(null);
@@ -925,7 +1008,7 @@ export function ManageUsersPage() {
   const pagedResidents = filteredResidents.slice((residentPage - 1) * residentRowsPerPage, residentPage * residentRowsPerPage);
   const residentTotalPages = Math.ceil(filteredResidents.length / residentRowsPerPage);
   // Activity logs pagination
-  const activityTotalPages = Math.ceil(activityLogs.length / activityRowsPerPage);
+  const activityTotalPages = Math.ceil(filteredActivityLogs.length / activityRowsPerPage);
 
   // In useEffect, add real-time listener for activity logs
   useEffect(() => {
@@ -990,13 +1073,13 @@ export function ManageUsersPage() {
             <TabsTrigger value="residents" onClick={handleResidentsTabClick}>
               Residents
               {newResidentsCount > 0 && (
-                <Badge className="ml-2 text-[#FF4F0B] text-xs border-0 bg-slate-50">{newResidentsCount}</Badge>
+                <Badge className="ml-2 text-brand-orange text-xs border-0 bg-slate-50">{newResidentsCount}</Badge>
               )}
             </TabsTrigger>
             <TabsTrigger value="activity" onClick={handleActivityTabClick}>
               System Activity Logs
               {newLogsCount > 0 && (
-                <Badge className="ml-2 text-[#FF4F0B] text-xs border-0 bg-slate-50">{newLogsCount}</Badge>
+                <Badge className="ml-2 text-brand-orange text-xs border-0 bg-slate-50">{newLogsCount}</Badge>
               )}
             </TabsTrigger>
           </TabsList>
@@ -1107,7 +1190,7 @@ export function ManageUsersPage() {
             <div className="mb-6">
               <Dialog open={isAddAdminOpen} onOpenChange={setIsAddAdminOpen}>
                 <DialogTrigger asChild>
-                  <Button className="w bg-[#FF4F0B] hover:bg-[#FF4F0B]/90 text-white">
+                  <Button className="w bg-brand-orange hover:bg-brand-orange-400 text-white">
                     <Plus className="h-4 w-4 mr-2" />
                     Add New Admin
                   </Button>
@@ -1151,7 +1234,7 @@ export function ManageUsersPage() {
                               placeholder="Add new position"
                               className="flex-1"
                             />
-                            <Button type="button" onClick={handleAddPosition} disabled={!newPosition.trim()} className="bg-[#FF4F0B] hover:bg-[#FF4F0B]/90 text-white">
+                            <Button type="button" onClick={handleAddPosition} disabled={!newPosition.trim()} className="bg-brand-orange hover:bg-brand-orange-400 text-white">
                               Add
                             </Button>
                           </div>
@@ -1216,7 +1299,7 @@ export function ManageUsersPage() {
                   <DialogFooter>
                     <Button 
                       onClick={handleAddAdmin} 
-                      className={`bg-[#FF4F0B] hover:bg-[#FF4F0B]/90 text-white`}
+                      className="bg-brand-orange hover:bg-brand-orange-400 text-white"
                     >
                       Add New Admin
                     </Button>
@@ -1523,9 +1606,11 @@ export function ManageUsersPage() {
                 </div>
 
                 {/* Pagination */}
-                <div className="border-t border-gray-200 px-6 py-3 flex items-center justify-between">
+                <div className="border-t border-gray-200 px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-4">
                   <div className="flex items-center gap-4">
-                    <span className="text-sm text-gray-700">Page {adminTotalPages === 0 ? 0 : adminPage} of {adminTotalPages}</span>
+                    <div className="text-sm text-gray-700">
+                      Showing {filteredAdmins.length > 0 ? ((adminPage - 1) * adminRowsPerPage + 1) : 0} to {Math.min(adminPage * adminRowsPerPage, filteredAdmins.length)} of {filteredAdmins.length} results
+                    </div>
                     <label className="text-sm text-gray-700 flex items-center gap-1">
                       Rows per page:
                       <select
@@ -1537,10 +1622,51 @@ export function ManageUsersPage() {
                       </select>
                     </label>
                   </div>
-                  <div className="flex space-x-2">
+                  <div className="flex items-center gap-2">
                     <Button variant="outline" size="sm" onClick={() => setAdminPage(p => Math.max(1, p - 1))} disabled={adminPage === 1}>
                       Previous
                     </Button>
+                    
+                    {/* Page Numbers */}
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: Math.min(5, adminTotalPages) }, (_, i) => {
+                        let pageNum;
+                        if (adminTotalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (adminPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (adminPage >= adminTotalPages - 2) {
+                          pageNum = adminTotalPages - 4 + i;
+                        } else {
+                          pageNum = adminPage - 2 + i;
+                        }
+                        
+                        return (
+                          <Button
+                            key={pageNum}
+                            variant={adminPage === pageNum ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setAdminPage(pageNum)}
+                            className={adminPage === pageNum ? "bg-brand-orange hover:bg-brand-orange-400 text-white" : ""}
+                          >
+                            {pageNum}
+                          </Button>
+                        );
+                      })}
+                      {adminTotalPages > 5 && adminPage < adminTotalPages - 2 && (
+                        <>
+                          <span className="px-2 text-gray-500">...</span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setAdminPage(adminTotalPages)}
+                          >
+                            {adminTotalPages}
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                    
                     <Button variant="outline" size="sm" onClick={() => setAdminPage(p => Math.min(adminTotalPages, p + 1))} disabled={adminPage === adminTotalPages || adminTotalPages === 0}>
                       Next
                     </Button>
@@ -1983,9 +2109,11 @@ export function ManageUsersPage() {
                 </div>
 
                 {/* Pagination */}
-                <div className="border-t border-gray-200 px-6 py-3 flex items-center justify-between">
+                <div className="border-t border-gray-200 px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-4">
                   <div className="flex items-center gap-4">
-                    <span className="text-sm text-gray-700">Page {residentTotalPages === 0 ? 0 : residentPage} of {residentTotalPages}</span>
+                    <div className="text-sm text-gray-700">
+                      Showing {filteredResidents.length > 0 ? ((residentPage - 1) * residentRowsPerPage + 1) : 0} to {Math.min(residentPage * residentRowsPerPage, filteredResidents.length)} of {filteredResidents.length} results
+                    </div>
                     <label className="text-sm text-gray-700 flex items-center gap-1">
                       Rows per page:
                       <select
@@ -1997,10 +2125,51 @@ export function ManageUsersPage() {
                       </select>
                     </label>
                   </div>
-                  <div className="flex space-x-2">
+                  <div className="flex items-center gap-2">
                     <Button variant="outline" size="sm" onClick={() => setResidentPage(p => Math.max(1, p - 1))} disabled={residentPage === 1}>
                       Previous
                     </Button>
+                    
+                    {/* Page Numbers */}
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: Math.min(5, residentTotalPages) }, (_, i) => {
+                        let pageNum;
+                        if (residentTotalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (residentPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (residentPage >= residentTotalPages - 2) {
+                          pageNum = residentTotalPages - 4 + i;
+                        } else {
+                          pageNum = residentPage - 2 + i;
+                        }
+                        
+                        return (
+                          <Button
+                            key={pageNum}
+                            variant={residentPage === pageNum ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setResidentPage(pageNum)}
+                            className={residentPage === pageNum ? "bg-brand-orange hover:bg-brand-orange-400 text-white" : ""}
+                          >
+                            {pageNum}
+                          </Button>
+                        );
+                      })}
+                      {residentTotalPages > 5 && residentPage < residentTotalPages - 2 && (
+                        <>
+                          <span className="px-2 text-gray-500">...</span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setResidentPage(residentTotalPages)}
+                          >
+                            {residentTotalPages}
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                    
                     <Button variant="outline" size="sm" onClick={() => setResidentPage(p => Math.min(residentTotalPages, p + 1))} disabled={residentPage === residentTotalPages || residentTotalPages === 0}>
                       Next
                     </Button>
@@ -2107,9 +2276,11 @@ export function ManageUsersPage() {
                 </Table>
 
                 {/* Pagination */}
-                <div className="border-t border-gray-200 px-6 py-3 flex items-center justify-between">
+                <div className="border-t border-gray-200 px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-4">
                   <div className="flex items-center gap-4">
-                    <span className="text-sm text-gray-700">Page {activityTotalPages === 0 ? 0 : activityPage} of {activityTotalPages}</span>
+                    <div className="text-sm text-gray-700">
+                      Showing {filteredActivityLogs.length > 0 ? ((activityPage - 1) * activityRowsPerPage + 1) : 0} to {Math.min(activityPage * activityRowsPerPage, filteredActivityLogs.length)} of {filteredActivityLogs.length} results
+                    </div>
                     <label className="text-sm text-gray-700 flex items-center gap-1">
                       Rows per page:
                       <select
@@ -2121,10 +2292,51 @@ export function ManageUsersPage() {
                       </select>
                     </label>
                   </div>
-                  <div className="flex space-x-2">
+                  <div className="flex items-center gap-2">
                     <Button variant="outline" size="sm" onClick={() => setActivityPage(p => Math.max(1, p - 1))} disabled={activityPage === 1}>
                       Previous
                     </Button>
+                    
+                    {/* Page Numbers */}
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: Math.min(5, activityTotalPages) }, (_, i) => {
+                        let pageNum;
+                        if (activityTotalPages <= 5) {
+                          pageNum = i + 1;
+                        } else if (activityPage <= 3) {
+                          pageNum = i + 1;
+                        } else if (activityPage >= activityTotalPages - 2) {
+                          pageNum = activityTotalPages - 4 + i;
+                        } else {
+                          pageNum = activityPage - 2 + i;
+                        }
+                        
+                        return (
+                          <Button
+                            key={pageNum}
+                            variant={activityPage === pageNum ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setActivityPage(pageNum)}
+                            className={activityPage === pageNum ? "bg-brand-orange hover:bg-brand-orange-400 text-white" : ""}
+                          >
+                            {pageNum}
+                          </Button>
+                        );
+                      })}
+                      {activityTotalPages > 5 && activityPage < activityTotalPages - 2 && (
+                        <>
+                          <span className="px-2 text-gray-500">...</span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setActivityPage(activityTotalPages)}
+                          >
+                            {activityTotalPages}
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                    
                     <Button variant="outline" size="sm" onClick={() => setActivityPage(p => Math.min(activityTotalPages, p + 1))} disabled={activityPage === activityTotalPages || activityTotalPages === 0}>
                       Next
                     </Button>

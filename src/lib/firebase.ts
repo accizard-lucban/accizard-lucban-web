@@ -4,6 +4,7 @@ import { getAuth } from 'firebase/auth';
 import { getAnalytics } from "firebase/analytics";
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 // Firebase configuration using environment variables
 const firebaseConfig = {
@@ -21,7 +22,11 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
+const functions = getFunctions(app);
+
+// Cloud Functions
+export const deleteResidentUserFunction = httpsCallable(functions, 'deleteResidentUser');
 
 export default app;
-export { auth, db, storage };
+export { auth, db, storage, functions };
 const analytics = getAnalytics(app); 

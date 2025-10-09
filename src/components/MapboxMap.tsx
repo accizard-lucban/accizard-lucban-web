@@ -351,13 +351,13 @@ const sampleMarkers: Marker[] = [
 
 // Helper function to parse coordinates
 const parseCoordinates = (coordinateString: string): [number, number] => {
-  if (!coordinateString) return [120.9842, 14.5995]; // Default to Manila
+  if (!coordinateString) return [121.5556, 14.1139]; // Default to Lucban, Quezon
   
   const coords = coordinateString.split(',').map(coord => parseFloat(coord.trim()));
   
   if (coords.length !== 2 || isNaN(coords[0]) || isNaN(coords[1])) {
     console.warn('Invalid coordinates:', coordinateString);
-    return [120.9842, 14.5995]; // Default to Manila
+    return [121.5556, 14.1139]; // Default to Lucban, Quezon
   }
   
   // Ensure coordinates are in [longitude, latitude] format
@@ -373,8 +373,8 @@ const parseCoordinates = (coordinateString: string): [number, number] => {
 export function MapboxMap({ 
   onMapClick, 
   showHeatmap = false,
-  center = [-122.4194, 37.7749],
-  zoom = 12,
+  center = [121.5556, 14.1139], // Lucban, Quezon
+  zoom = 14,
   activeFilters,
   singleMarker,
   showOnlyCurrentLocation = false,

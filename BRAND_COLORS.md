@@ -1,10 +1,10 @@
 # AcciZard Brand Color System
 
 ## Primary Brand Colors
-- **Primary Red**: `red-800` (#991b1b) - Main brand color
-- **Primary Red Hover**: `red-700` (#b91c1c) - Interactive states
-- **Brand Orange**: `orange-500` (#f97316) - Accent color
-- **Brand Orange Light**: `orange-400` (#fb923c) - Hover states
+- **Primary Orange**: `orange-500` (#f97316) - Main brand color
+- **Primary Orange Hover**: `orange-400` (#fb923c) - Interactive states
+- **Secondary Red**: `red-800` (#991b1b) - Secondary/accent color
+- **Secondary Red Hover**: `red-700` (#b91c1c) - Secondary hover states
 
 ## Neutral Colors
 - **Text Primary**: `gray-800` (#1f2937) - Main text
@@ -23,20 +23,14 @@
 ## Usage Guidelines
 
 ### Buttons
-- Primary: `bg-red-800 hover:bg-red-700 text-white`
-- Secondary: `bg-gray-100 hover:bg-gray-200 text-gray-800`
+- Primary: `bg-orange-500 hover:bg-orange-400 text-white`
+- Secondary: `bg-red-800 hover:bg-red-700 text-white`
+- Tertiary: `bg-gray-100 hover:bg-gray-200 text-gray-800`
 - Destructive: `bg-red-500 hover:bg-red-600 text-white`
 
-### Status Badges
-- Fire/Emergency: `bg-red-100 text-red-800`
-- Flooding/Water: `bg-blue-100 text-blue-800`
-- General/Info: `bg-gray-100 text-gray-800`
-- Success: `bg-green-100 text-green-800`
-- Warning: `bg-yellow-100 text-yellow-800`
-
 ### Focus States
-- Input focus: `focus:ring-red-800 focus:border-red-800`
-- Button focus: `focus:ring-red-800`
+- Input focus: `focus:ring-orange-500 focus:border-orange-500`
+- Button focus: `focus:ring-orange-500`
 
 ### Sidebar
 - Background: `bg-gradient-to-b from-orange-500 to-red-600`

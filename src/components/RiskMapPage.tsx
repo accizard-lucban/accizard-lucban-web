@@ -510,8 +510,8 @@ export function RiskMapPage() {
                 }));
               }}
               showHeatmap={showHeatmap}
-              center={[120.9842, 14.5995]} // Manila coordinates
-              zoom={11}
+              center={[121.5556, 14.1139]} // Lucban, Quezon coordinates
+              zoom={13}
               activeFilters={getActiveFilters()}
             />
             {(newPin.latitude && newPin.longitude) && (

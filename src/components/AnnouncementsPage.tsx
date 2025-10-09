@@ -426,7 +426,7 @@ export function AnnouncementsPage() {
         <div className="mb-6 flex gap-4">
           <Dialog open={isNewAnnouncementOpen} onOpenChange={setIsNewAnnouncementOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-[#FF4F0B] hover:bg-[#FF4F0B]/90 text-white">
+              <Button className="bg-brand-orange hover:bg-brand-orange-400 text-white">
                 <Plus className="h-4 w-4 mr-2" />
                 New Announcement
               </Button>
@@ -503,7 +503,7 @@ export function AnnouncementsPage() {
                             }
                           }
                           setNewTypeInput("");
-                        }} disabled={!newTypeInput.trim()} className="bg-[#FF4F0B] hover:bg-[#FF4F0B]/90 text-white">
+                        }} disabled={!newTypeInput.trim()} className="bg-brand-orange hover:bg-brand-orange-400 text-white">
                           Add
                         </Button>
                       </div>
@@ -537,7 +537,7 @@ export function AnnouncementsPage() {
                 </div>
               </div>
               <DialogFooter>
-                <Button onClick={handleAddAnnouncement} className="bg-[#FF4F0B] hover:bg-[#FF4F0B]/90 text-white">Create Announcement</Button>
+                <Button onClick={handleAddAnnouncement} className="bg-brand-orange hover:bg-brand-orange-400 text-white">Create Announcement</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -754,9 +754,11 @@ export function AnnouncementsPage() {
             </div>
             
             {/* Pagination */}
-            <div className="border-t border-gray-200 px-6 py-3 flex items-center justify-between">
+            <div className="border-t border-gray-200 px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-4">
-                <span className="text-sm text-gray-700">Page {announcementTotalPages === 0 ? 0 : announcementPage} of {announcementTotalPages}</span>
+                <div className="text-sm text-gray-700">
+                  Showing {filteredAnnouncements.length > 0 ? ((announcementPage - 1) * announcementRowsPerPage + 1) : 0} to {Math.min(announcementPage * announcementRowsPerPage, filteredAnnouncements.length)} of {filteredAnnouncements.length} results
+                </div>
                 <label className="text-sm text-gray-700 flex items-center gap-1">
                   Rows per page:
                   <select
@@ -768,10 +770,51 @@ export function AnnouncementsPage() {
                   </select>
                 </label>
               </div>
-              <div className="flex space-x-2">
+              <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={() => setAnnouncementPage(p => Math.max(1, p - 1))} disabled={announcementPage === 1}>
                   Previous
                 </Button>
+                
+                {/* Page Numbers */}
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, announcementTotalPages) }, (_, i) => {
+                    let pageNum;
+                    if (announcementTotalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (announcementPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (announcementPage >= announcementTotalPages - 2) {
+                      pageNum = announcementTotalPages - 4 + i;
+                    } else {
+                      pageNum = announcementPage - 2 + i;
+                    }
+                    
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={announcementPage === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setAnnouncementPage(pageNum)}
+                        className={announcementPage === pageNum ? "bg-brand-orange hover:bg-brand-orange-400 text-white" : ""}
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
+                  {announcementTotalPages > 5 && announcementPage < announcementTotalPages - 2 && (
+                    <>
+                      <span className="px-2 text-gray-500">...</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setAnnouncementPage(announcementTotalPages)}
+                      >
+                        {announcementTotalPages}
+                      </Button>
+                    </>
+                  )}
+                </div>
+                
                 <Button variant="outline" size="sm" onClick={() => setAnnouncementPage(p => Math.min(announcementTotalPages, p + 1))} disabled={announcementPage === announcementTotalPages || announcementTotalPages === 0}>
                   Next
                 </Button>
