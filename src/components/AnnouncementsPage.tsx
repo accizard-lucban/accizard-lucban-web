@@ -80,10 +80,18 @@ export function AnnouncementsPage() {
     async function fetchTypes() {
       try {
         const querySnapshot = await getDocs(collection(db, "announcementTypes"));
-        const types = querySnapshot.docs.map(doc => doc.data().name);
+        const types = querySnapshot.docs
+          .map(doc => doc.data().name)
+          .filter(name => name); // Filter out undefined/null values
+        
         setAnnouncementTypes(types);
       } catch (error) {
         console.error("Error fetching announcement types:", error);
+        toast({
+          title: "Error Loading Types",
+          description: "Failed to load announcement types from database.",
+          variant: "destructive",
+        });
       }
     }
     fetchTypes();
@@ -446,31 +454,13 @@ export function AnnouncementsPage() {
                       <SelectValue placeholder="Select announcement type" />
                     </SelectTrigger>
                     <SelectContent>
-                      {announcementTypes.map(type => (
-                        <div key={type} className="flex items-center justify-between pr-2">
-                          <SelectItem value={type}>{type}</SelectItem>
-                          {announcementTypes.length > 1 && (
-                            <Button type="button" size="icon" variant="ghost" onClick={async () => {
-                              // Remove type from Firestore
-                              try {
-                                const querySnapshot = await getDocs(collection(db, "announcementTypes"));
-                                const docToDelete = querySnapshot.docs.find(doc => doc.data().name === type);
-                                if (docToDelete) {
-                                  await deleteDoc(doc(db, "announcementTypes", docToDelete.id));
-                              setAnnouncementTypes(types => types.filter(t => t !== type));
-                              if (newAnnouncement.type === type) {
-                                setNewAnnouncement({ ...newAnnouncement, type: "" });
-                                  }
-                                }
-                              } catch (error) {
-                                console.error("Error deleting type:", error);
-                              }
-                            }} className="ml-2 text-red-500">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                      ))}
+                      {announcementTypes.length === 0 ? (
+                        <div className="px-2 py-3 text-sm text-gray-500">No types available. Add one below.</div>
+                      ) : (
+                        announcementTypes.map(type => (
+                          <SelectItem key={type} value={type}>{type}</SelectItem>
+                        ))
+                      )}
                       <div className="flex gap-2 p-2 border-t border-gray-100 mt-2">
                         <Input
                           value={newTypeInput}
@@ -648,102 +638,104 @@ export function AnnouncementsPage() {
                               </TooltipTrigger>
                               <TooltipContent>Preview</TooltipContent>
                             </Tooltip>
+                            
                             {/* Edit Icon with Tooltip */}
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Dialog open={editDialogOpenId === announcement.id} onOpenChange={open => {
-                                  if (!open) {
-                                    setEditDialogOpenId(null);
-                                    setEditingAnnouncement(null);
-                                  }
-                                }}>
-                            <DialogTrigger asChild>
-                              <Button size="sm" variant="outline" onClick={() => handleEditAnnouncement(announcement)}>
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Edit Announcement</DialogTitle>
-                              </DialogHeader>
-                                    {editingAnnouncement && editingAnnouncement.id === announcement.id && (
-                                      <div className="space-y-4">
-                                  <div>
-                                    <Label>Type</Label>
-                                    <Select value={editingAnnouncement.type} onValueChange={value => setEditingAnnouncement({
-                                ...editingAnnouncement,
-                                type: value
-                              })}>
-                                      <SelectTrigger>
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                              {announcementTypes.map(type => (
-                                                <SelectItem key={type} value={type}>{type}</SelectItem>
-                                              ))}
-                                      </SelectContent>
-                                    </Select>
+                            <Dialog open={editDialogOpenId === announcement.id} onOpenChange={open => {
+                              if (!open) {
+                                setEditDialogOpenId(null);
+                                setEditingAnnouncement(null);
+                              }
+                            }}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <DialogTrigger asChild>
+                                    <Button size="sm" variant="outline" onClick={() => handleEditAnnouncement(announcement)}>
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                  </DialogTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent>Edit</TooltipContent>
+                              </Tooltip>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Edit Announcement</DialogTitle>
+                                </DialogHeader>
+                                {editingAnnouncement && editingAnnouncement.id === announcement.id && (
+                                  <div className="space-y-4">
+                                    <div>
+                                      <Label>Type</Label>
+                                      <Select value={editingAnnouncement.type} onValueChange={value => setEditingAnnouncement({
+                                        ...editingAnnouncement,
+                                        type: value
+                                      })}>
+                                        <SelectTrigger>
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {announcementTypes.map(type => (
+                                            <SelectItem key={type} value={type}>{type}</SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div>
+                                      <Label>Priority</Label>
+                                      <Select value={editingAnnouncement.priority} onValueChange={value => setEditingAnnouncement({
+                                        ...editingAnnouncement,
+                                        priority: value
+                                      })}>
+                                        <SelectTrigger>
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="high">High</SelectItem>
+                                          <SelectItem value="medium">Medium</SelectItem>
+                                          <SelectItem value="low">Low</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div>
+                                      <Label>Description</Label>
+                                      <Textarea value={editingAnnouncement.description} onChange={e => setEditingAnnouncement({
+                                        ...editingAnnouncement,
+                                        description: e.target.value
+                                      })} />
+                                    </div>
                                   </div>
-                                  <div>
-                                    <Label>Priority</Label>
-                                    <Select value={editingAnnouncement.priority} onValueChange={value => setEditingAnnouncement({
-                                ...editingAnnouncement,
-                                priority: value
-                              })}>
-                                      <SelectTrigger>
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="high">High</SelectItem>
-                                        <SelectItem value="medium">Medium</SelectItem>
-                                        <SelectItem value="low">Low</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  <div>
-                                    <Label>Description</Label>
-                                    <Textarea value={editingAnnouncement.description} onChange={e => setEditingAnnouncement({
-                                ...editingAnnouncement,
-                                description: e.target.value
-                              })} />
-                                  </div>
-                                      </div>
-                                    )}
-                              <DialogFooter>
-                                <Button onClick={handleSaveEdit}>Save Changes</Button>
-                              </DialogFooter>
-                            </DialogContent>
-                          </Dialog>
-                              </TooltipTrigger>
-                              <TooltipContent>Edit</TooltipContent>
-                            </Tooltip>
+                                )}
+                                <DialogFooter>
+                                  <Button onClick={handleSaveEdit}>Save Changes</Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+                            
                             {/* Delete Icon with Tooltip */}
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button size="sm" variant="outline" className="text-red-600">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete Announcement</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  Are you sure you want to delete this announcement? This action cannot be undone.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => handleDeleteAnnouncement(announcement.id)} className="bg-red-600 hover:bg-red-700">
-                                  Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                              </TooltipTrigger>
-                              <TooltipContent>Delete</TooltipContent>
-                            </Tooltip>
+                            <AlertDialog>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <AlertDialogTrigger asChild>
+                                    <Button size="sm" variant="outline" className="text-red-600">
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                </TooltipTrigger>
+                                <TooltipContent>Delete</TooltipContent>
+                              </Tooltip>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete Announcement</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Are you sure you want to delete this announcement? This action cannot be undone.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => handleDeleteAnnouncement(announcement.id)} className="bg-red-600 hover:bg-red-700">
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                           </div>
                         </TableCell>
                       </TableRow>

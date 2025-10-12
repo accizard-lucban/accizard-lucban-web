@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sidebar } from "./Sidebar";
 import { PageHeader } from "./PageHeader";
 import { useLocation } from "react-router-dom";
 import { Home, ClipboardList, BarChart3, MessageSquare, Bell, Users, User, LucideIcon, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { db } from "@/lib/firebase";
+import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -62,11 +64,67 @@ const pageConfig: Record<string, PageConfig> = {
 export function Layout({ children }: LayoutProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [unseenReportsCount, setUnseenReportsCount] = useState(0);
   const location = useLocation();
   const currentPage = pageConfig[location.pathname] || {
     title: "404",
     subtitle: "Page not found"
   };
+
+  // Fetch and count unseen reports
+  useEffect(() => {
+    try {
+      const reportsQuery = query(collection(db, "reports"), orderBy("timestamp", "desc"));
+      const unsubscribe = onSnapshot(reportsQuery, (snapshot) => {
+        // Get viewed reports from localStorage
+        const viewedReportsData = localStorage.getItem("viewedReports");
+        const viewedReports = viewedReportsData ? new Set(JSON.parse(viewedReportsData)) : new Set();
+        
+        const now = new Date();
+        const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        
+        const unseenCount = snapshot.docs.filter(doc => {
+          const data = doc.data();
+          const reportId = data.reportId || doc.id;
+          
+          // Check if report has been viewed
+          if (viewedReports.has(reportId)) {
+            return false;
+          }
+          
+          // Check if report is within last 24 hours
+          try {
+            const timestamp = data.timestamp;
+            let reportDate;
+            
+            if (timestamp && typeof timestamp.toDate === "function") {
+              reportDate = timestamp.toDate();
+            } else if (timestamp instanceof Date) {
+              reportDate = timestamp;
+            } else if (typeof timestamp === "number") {
+              reportDate = new Date(timestamp);
+            } else if (typeof timestamp === "string") {
+              reportDate = new Date(timestamp);
+            }
+            
+            if (reportDate && !isNaN(reportDate.getTime())) {
+              return reportDate >= oneDayAgo && reportDate <= now;
+            }
+          } catch (error) {
+            console.error("Error parsing timestamp:", error);
+          }
+          
+          return false;
+        }).length;
+        
+        setUnseenReportsCount(unseenCount);
+      });
+      
+      return () => unsubscribe();
+    } catch (error) {
+      console.error("Error fetching unseen reports:", error);
+    }
+  }, []);
 
   return (
     <div className="min-h-screen flex w-full bg-gray-50">
@@ -75,6 +133,7 @@ export function Layout({ children }: LayoutProps) {
         onCollapse={setIsCollapsed}
         isMobileOpen={isMobileOpen}
         onMobileClose={() => setIsMobileOpen(false)}
+        manageReportsBadge={unseenReportsCount}
       />
       
       {/* Mobile hamburger button */}

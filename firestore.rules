@@ -1,0 +1,161 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ========================================
+    // HELPER FUNCTIONS
+    // ========================================
+    
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Check if user is Super Admin (using exists for reliability)
+    function isSuperAdmin() {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/superAdmin/$(request.auth.uid));
+    }
+    
+    // Check if user is LDRRMO Admin
+    function isLDRRMOAdmin() {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+    
+    // Check if user is any type of admin (Super Admin OR LDRRMO Admin)
+    function isAdmin() {
+      return isSuperAdmin() || isLDRRMOAdmin();
+    }
+    
+    // Check if user owns the document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // ========================================
+    // COLLECTIONS
+    // ========================================
+    
+    // Super Admin collection (REQUIRED FOR LOGIN)
+    match /superAdmin/{superAdminId} {
+      // Anyone authenticated can read (needed for login verification and isAdmin checks)
+      allow read: if isAuthenticated();
+      
+      // Only super admins can modify super admin list
+      allow write: if isSuperAdmin();
+    }
+    
+    // Admin collection (list of LDRRMO admin users)
+    match /admins/{adminId} {
+      // Anyone authenticated can read (needed for isAdmin checks)
+      allow read: if isAuthenticated();
+      
+      // Only admins can modify admin list
+      allow write: if isAdmin();
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      // Anyone authenticated can read user profiles
+      allow read: if isAuthenticated();
+      
+      // Users can create/update their own profile, admins can modify any
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.firebaseUid;
+      allow update: if isOwner(resource.data.firebaseUid) || isAdmin();
+      
+      // Users can delete their own account, admins can delete any
+      allow delete: if isOwner(resource.data.firebaseUid) || isAdmin();
+    }
+    
+    // Reports collection
+    match /reports/{reportId} {
+      // Anyone authenticated can read reports
+      allow read: if isAuthenticated();
+      
+      // Authenticated users can create reports with their own userId
+      allow create: if isAuthenticated() && 
+                       request.resource.data.userId == request.auth.uid;
+      
+      // Users can update their own reports, admins can update any
+      allow update: if isAuthenticated() && 
+                       (resource.data.userId == request.auth.uid || isAdmin());
+      
+      // Users can delete their own reports, admins can delete any
+      allow delete: if isAdmin() || 
+                       (isAuthenticated() && resource.data.userId == request.auth.uid);
+    }
+    
+    // Announcements collection
+    match /announcements/{announcementId} {
+      // Anyone authenticated can read announcements
+      allow read: if isAuthenticated();
+      
+      // Only admins (including super admins) can create, update, or delete announcements
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // Announcement Types collection
+    match /announcementTypes/{typeId} {
+      // Anyone authenticated can read announcement types (needed for dropdowns/filters)
+      allow read: if isAuthenticated();
+      
+      // Only admins (including super admins) can create, update, or delete announcement types
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // ========================================
+    // CHAT MESSAGES COLLECTION (FLAT STRUCTURE)
+    // ========================================
+    match /chat_messages/{messageId} {
+      // Admins can read/write all messages
+      allow read, write: if isAdmin();
+      
+      // Regular users can read ONLY their own messages
+      allow read: if isAuthenticated() && 
+                    resource.data.userId == request.auth.uid;
+      
+      // Regular users can create messages with their own userId and senderId
+      allow create: if isAuthenticated() && 
+                      request.resource.data.userId == request.auth.uid &&
+                      request.resource.data.senderId == request.auth.uid;
+      
+      // Regular users can update their own messages
+      allow update: if isAuthenticated() && 
+                      resource.data.userId == request.auth.uid &&
+                      resource.data.senderId == request.auth.uid;
+      
+      // Regular users can delete their own messages
+      allow delete: if isAuthenticated() && 
+                      resource.data.userId == request.auth.uid;
+    }
+    
+    // ========================================
+    // CHAT ROOM METADATA (Optional - for tracking)
+    // ========================================
+    match /chats/{chatRoomId} {
+      // Admins can read/write all chat rooms
+      allow read, write: if isAdmin();
+      
+      // Users can read/write their own chat room metadata
+      allow read, write: if isAuthenticated() && chatRoomId == request.auth.uid;
+    }
+    
+    // Report counter (for auto-incrementing report IDs)
+    match /counters/{counterId} {
+      // Anyone authenticated can read counters
+      allow read: if isAuthenticated();
+      
+      // Anyone authenticated can update counters (needed for report creation)
+      allow write: if isAuthenticated();
+    }
+    
+    // ========================================
+    // DEFAULT: DENY ALL OTHER ACCESS
+    // ========================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -40,7 +40,11 @@ export function ManageReportsPage() {
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [selectedReports, setSelectedReports] = useState<string[]>([]);
   const [reports, setReports] = useState<any[]>([]);
-  const [viewedReports, setViewedReports] = useState<Set<string>>(new Set());
+  const [viewedReports, setViewedReports] = useState<Set<string>>(() => {
+    // Initialize from localStorage
+    const stored = localStorage.getItem("viewedReports");
+    return stored ? new Set(JSON.parse(stored)) : new Set();
+  });
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [reportToDelete, setReportToDelete] = useState<string | null>(null);
   const [showBatchDeleteDialog, setShowBatchDeleteDialog] = useState(false);
@@ -48,6 +52,11 @@ export function ManageReportsPage() {
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  
+  // Sync viewed reports to localStorage
+  useEffect(() => {
+    localStorage.setItem("viewedReports", JSON.stringify(Array.from(viewedReports)));
+  }, [viewedReports]);
   
   // Fetch current user information
   useEffect(() => {

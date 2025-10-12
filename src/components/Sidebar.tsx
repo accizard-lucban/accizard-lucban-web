@@ -10,6 +10,7 @@ interface SidebarProps {
   isCollapsed: boolean;
   onCollapse: (collapsed: boolean) => void;
   manageUsersBadge?: number;
+  manageReportsBadge?: number;
   isMobileOpen?: boolean;
   onMobileClose?: () => void;
 }
@@ -21,8 +22,7 @@ const menuItems = [{
 }, {
   title: "Manage Reports",
   icon: ClipboardList,
-  path: "/manage-reports",
-  badge: "3"
+  path: "/manage-reports"
 }, {
   title: "Risk and Utility Map",
   icon: BarChart3,
@@ -47,7 +47,7 @@ const otherItems = [{
   path: "/profile"
 }];
 
-export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, isMobileOpen = false, onMobileClose }: SidebarProps) {
+export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageReportsBadge, isMobileOpen = false, onMobileClose }: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [showSignOut, setShowSignOut] = useState(false);
@@ -137,14 +137,14 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, isMobileOpe
                   <item.icon className={cn("h-5 w-5 flex-shrink-0", (!isCollapsed || isMobileOpen) && "mr-3")} />
                   {(!isCollapsed || isMobileOpen) && <span>{item.title}</span>}
                 </div>
-                {(!isCollapsed || isMobileOpen) && item.title === "Manage Users" && manageUsersBadge > 0 && (
-                  <Badge className="text-[#FF4F0B] text-xs border-0 bg-slate-50">
-                    {manageUsersBadge}
+                {(!isCollapsed || isMobileOpen) && item.title === "Manage Reports" && (manageReportsBadge ?? 0) > 0 && (
+                  <Badge className="bg-orange-500 hover:bg-orange-400 text-white text-xs border-0 font-semibold animate-pulse">
+                    {manageReportsBadge}
                   </Badge>
                 )}
-                {(!isCollapsed || isMobileOpen) && item.title !== "Manage Users" && item.badge && (
-                  <Badge className="text-[#FF4F0B] text-xs border-0 bg-slate-50">
-                    {item.badge}
+                {(!isCollapsed || isMobileOpen) && item.title === "Manage Users" && (manageUsersBadge ?? 0) > 0 && (
+                  <Badge className="bg-orange-500 hover:bg-orange-400 text-white text-xs border-0 font-semibold">
+                    {manageUsersBadge}
                   </Badge>
                 )}
               </button>)}

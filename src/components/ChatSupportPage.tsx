@@ -3,13 +3,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Search, Trash2, MessageSquare, Clock, User, Paperclip, Image, FileText, Send } from "lucide-react";
+import { Search, Trash2, MessageSquare, Clock, User, Paperclip, Image, FileText, Send, Check, CheckCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Layout } from "./Layout";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { db } from "@/lib/firebase";
-import { collection, getDocs } from "firebase/firestore";
+import { db, auth } from "@/lib/firebase";
+import { collection, getDocs, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, setDoc, writeBatch } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
+import { toast } from "@/components/ui/sonner";
+
+interface ChatMessage {
+  id: string;
+  message: string;
+  senderId: string;
+  senderName: string;
+  timestamp: any;
+  userId: string;
+  isRead?: boolean;
+}
 
 interface ChatSession {
   id: string;
@@ -26,11 +37,16 @@ export function ChatSupportPage() {
   const [selectedSession, setSelectedSession] = useState<any>(null);
   const [message, setMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const [users, setUsers] = useState<any[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
-  const [chatSessions, setChatSessions] = useState<any[]>([]); // users with started chats
+  const [chatSessions, setChatSessions] = useState<any[]>([]); // users with active chats
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const navigate = useNavigate();
 
+  // Fetch all users for search
   useEffect(() => {
     async function fetchUsers() {
       setLoadingUsers(true);
@@ -47,6 +63,175 @@ export function ChatSupportPage() {
     }
     fetchUsers();
   }, []);
+
+  // Real-time listener for chat sessions (from chats collection)
+  useEffect(() => {
+    try {
+      const chatsRef = collection(db, "chats");
+      const unsubscribe = onSnapshot(chatsRef, async (snapshot) => {
+        const sessionsData = await Promise.all(snapshot.docs.map(async doc => {
+          const data = doc.data();
+          
+          // Try to fetch user profile picture from users collection if not in chat data
+          let profilePicture = data.profilePicture;
+          if (!profilePicture && data.userId) {
+            try {
+              const userQuery = query(
+                collection(db, "users"),
+                where("firebaseUid", "==", data.userId)
+              );
+              const userSnapshot = await getDocs(userQuery);
+              if (!userSnapshot.empty) {
+                const userData = userSnapshot.docs[0].data();
+                profilePicture = userData.profilePicture;
+              }
+            } catch (error) {
+              console.error("Error fetching user profile picture:", error);
+            }
+          }
+          
+          return {
+            id: doc.id,
+            userId: data.userId || doc.id,
+            userName: data.userName || "Unknown User",
+            userEmail: data.userEmail || "",
+            fullName: data.userName || "Unknown User",
+            lastMessage: data.lastMessage || "",
+            lastMessageTime: data.lastMessageTime,
+            lastAccessTime: data.lastAccessTime,
+            createdAt: data.createdAt,
+            profilePicture: profilePicture,
+            ...data
+          };
+        }));
+        
+        // Sort by most recent activity
+        sessionsData.sort((a, b) => {
+          const timeA = a.lastMessageTime?.toDate?.() || a.lastAccessTime?.toDate?.() || new Date(0);
+          const timeB = b.lastMessageTime?.toDate?.() || b.lastAccessTime?.toDate?.() || new Date(0);
+          return timeB.getTime() - timeA.getTime();
+        });
+        
+        setChatSessions(sessionsData);
+      }, (error) => {
+        console.error("Error loading chat sessions:", error);
+      });
+
+      return () => unsubscribe();
+    } catch (error) {
+      console.error("Error setting up chat sessions listener:", error);
+    }
+  }, []);
+
+  // Real-time listener for unread message counts
+  useEffect(() => {
+    try {
+      const messagesRef = collection(db, "chat_messages");
+      const q = query(messagesRef, where("isRead", "==", false));
+      
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const counts: Record<string, number> = {};
+        
+        snapshot.docs.forEach(doc => {
+          const data = doc.data();
+          const userId = data.userId;
+          // Only count messages from users (not admin messages)
+          if (userId && data.senderId === userId) {
+            counts[userId] = (counts[userId] || 0) + 1;
+          }
+        });
+        
+        setUnreadCounts(counts);
+      });
+
+      return () => unsubscribe();
+    } catch (error) {
+      console.error("Error setting up unread counts listener:", error);
+    }
+  }, []);
+
+  // Mark messages as read
+  const markMessagesAsRead = async (messagesToMark: ChatMessage[]) => {
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) return;
+
+      // Filter messages that are from the user (not admin) and not already read
+      const unreadMessages = messagesToMark.filter(
+        msg => msg.senderId === selectedSession?.userId && !msg.isRead
+      );
+
+      if (unreadMessages.length === 0) return;
+
+      // Use batch write for better performance
+      const batch = writeBatch(db);
+      
+      unreadMessages.forEach(msg => {
+        const msgRef = doc(db, "chat_messages", msg.id);
+        batch.update(msgRef, { isRead: true });
+      });
+
+      await batch.commit();
+      console.log(`✅ Marked ${unreadMessages.length} messages as read`);
+    } catch (error) {
+      console.error("Error marking messages as read:", error);
+    }
+  };
+
+  // Real-time listener for messages when a session is selected
+  useEffect(() => {
+    if (!selectedSession?.userId) {
+      setMessages([]);
+      return;
+    }
+
+    setLoadingMessages(true);
+    
+    try {
+      const messagesRef = collection(db, "chat_messages");
+      
+      // Query with userId and orderBy timestamp (Firestore index enabled)
+      const q = query(
+        messagesRef,
+        where("userId", "==", selectedSession.userId),
+        orderBy("timestamp", "asc")
+      );
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        console.log("📨 Raw snapshot data:", snapshot.docs.map(doc => ({ id: doc.id, data: doc.data() })));
+        
+        const messagesData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as ChatMessage[];
+        
+        console.log("💬 Processed messages:", messagesData);
+        setMessages(messagesData);
+        setLoadingMessages(false);
+        
+        // Mark messages as read after loading
+        markMessagesAsRead(messagesData);
+        
+        // Scroll to bottom after messages load
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }, 100);
+      }, (error) => {
+        console.error("Error loading messages:", error);
+        setLoadingMessages(false);
+      });
+
+      return () => unsubscribe();
+    } catch (error) {
+      console.error("❌ Error setting up messages listener:", error);
+      setLoadingMessages(false);
+    }
+  }, [selectedSession?.userId]);
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   // Filter users for search results (exclude those already in chatSessions)
   const filteredUsers = users.filter(user => {
@@ -66,16 +251,41 @@ export function ChatSupportPage() {
     );
   });
 
-  // Handler to start a chat with a user
-  const handleStartChat = (user: any) => {
-    const sessionWithMessages = { ...user, messages: user.messages || [] };
-    setChatSessions(prev => [...prev, sessionWithMessages]);
-    setSelectedSession(sessionWithMessages);
+  // Handler to start a chat with a user (creates a new chat session)
+  const handleStartChat = async (user: any) => {
+    try {
+      // Check if chat already exists
+      const existingChat = chatSessions.find(cs => cs.userId === user.firebaseUid || cs.id === user.id);
+      if (existingChat) {
+        setSelectedSession(existingChat);
+        return;
+      }
+
+      // Create new chat session in chats collection
+      const chatRef = doc(db, "chats", user.firebaseUid || user.id);
+      await setDoc(chatRef, {
+        userId: user.firebaseUid || user.id,
+        userName: user.fullName || user.name || "Unknown User",
+        userEmail: user.email || "",
+        createdAt: serverTimestamp(),
+        lastAccessTime: serverTimestamp()
+      }, { merge: true });
+
+      setSelectedSession({
+        id: user.firebaseUid || user.id,
+        userId: user.firebaseUid || user.id,
+        fullName: user.fullName || user.name || "Unknown User",
+        ...user
+      });
+    } catch (error) {
+      console.error("Error starting chat:", error);
+      toast.error("Failed to start chat session");
+    }
   };
 
   // Handler to select a chat session
-  const handleSelectSession = (user: any) => {
-    setSelectedSession(user);
+  const handleSelectSession = (session: any) => {
+    setSelectedSession(session);
   };
 
   const activeSessions = users.filter(user => user.status === "active");
@@ -93,11 +303,43 @@ export function ChatSupportPage() {
     }
   };
 
-  const handleSendMessage = () => {
-    if (message.trim()) {
-      // Handle send message logic here
-      console.log("Sending message:", message);
+  const handleSendMessage = async () => {
+    if (!message.trim() || !selectedSession) {
+      return;
+    }
+
+    try {
+      const currentUser = auth.currentUser;
+      const adminName = currentUser?.displayName || currentUser?.email?.split('@')[0] || "Admin";
+      const adminId = currentUser?.uid || "admin";
+
+      // Add message to chat_messages collection
+      await addDoc(collection(db, "chat_messages"), {
+        userId: selectedSession.userId,
+        senderId: adminId,
+        senderName: adminName,
+        message: message.trim(),
+        timestamp: serverTimestamp(),
+        isRead: false
+      });
+
+      // Update or create chat metadata in chats collection
+      const chatRef = doc(db, "chats", selectedSession.userId);
+      await setDoc(chatRef, {
+        userId: selectedSession.userId,
+        userName: selectedSession.fullName || selectedSession.userName || "Unknown User",
+        userEmail: selectedSession.userEmail || selectedSession.email || "",
+        lastMessage: message.trim(),
+        lastMessageTime: serverTimestamp(),
+        lastMessageSenderName: adminName,
+        lastAccessTime: serverTimestamp()
+      }, { merge: true });
+
       setMessage("");
+      toast.success("Message sent");
+    } catch (error) {
+      console.error("Error sending message:", error);
+      toast.error("Failed to send message");
     }
   };
 
@@ -150,7 +392,7 @@ export function ChatSupportPage() {
                       <div
                         key={user.id}
                         className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition-colors ${selectedSession?.id === user.id ? 'bg-orange-50 border-orange-200' : ''}`}
-                        onClick={e => { if (e.target === e.currentTarget) handleSelectSession(user); }}
+                        onClick={() => handleSelectSession(user)}
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex items-center min-w-0 gap-2">
@@ -168,14 +410,30 @@ export function ChatSupportPage() {
                                 </div>
                               )}
                             </button>
-                            <div>
+                            <div className="flex-1 min-w-0">
                               <div className="flex items-center space-x-2">
-                                <span className="font-medium text-sm">{user.fullName || user.name || user.userId}</span>
+                                <span className="font-medium text-sm truncate">{user.fullName || user.userName || user.name || user.userId}</span>
+                                {/* Unread count badge */}
+                                {unreadCounts[user.userId] > 0 && (
+                                  <Badge className="bg-blue-500 hover:bg-blue-600 text-white text-xs px-2 py-0 h-5">
+                                    {unreadCounts[user.userId]}
+                                  </Badge>
+                                )}
                               </div>
-                              <p className="text-xs text-gray-500 mt-1">{user.userId}</p>
-                              <p className="text-xs text-gray-500 mt-1">{user.mobileNumber}</p>
-                              <p className="text-xs text-gray-500 mt-1">{user.barangay}, {user.cityTown}{user.province ? `, ${user.province}` : ''}</p>
-                              <p className="text-xs text-gray-500 mt-1">{user.email}</p>
+                              {user.lastMessage && (
+                                <p className="text-xs text-gray-600 mt-1 truncate font-medium">
+                                  {user.lastMessageSenderName ? `${user.lastMessageSenderName}: ` : ''}{user.lastMessage}
+                                </p>
+                              )}
+                              <p className="text-xs text-gray-400 mt-1 truncate">{user.userEmail || user.email}</p>
+                              {user.lastMessageTime && (
+                                <p className="text-xs text-gray-400 mt-1">
+                                  {formatTime(
+                                    user.lastMessageTime?.toDate?.() || 
+                                    (user.lastMessageTime instanceof Date ? user.lastMessageTime : new Date(user.lastMessageTime))
+                                  )}
+                                </p>
+                              )}
                             </div>
                           </div>
                           <Button size="icon" variant="ghost" className="text-brand-red hover:text-brand-red-700" onClick={e => { e.stopPropagation(); setChatSessions(prev => prev.filter(cs => cs.id !== user.id)); if (selectedSession?.id === user.id) setSelectedSession(null); }} title="Delete Chat Session">
@@ -257,20 +515,107 @@ export function ChatSupportPage() {
                       </div>
                     </div>
                   </CardHeader>
-                  <CardContent className="flex-1 overflow-auto p-4">
+                  <CardContent className="flex-1 overflow-auto p-4 bg-gray-50">
                     {/* Introduction section at the top of every chat session */}
                     <div className="flex flex-col items-center justify-center gap-6 w-full mb-6">
-                      <img src="/lovable-uploads/accizard-logo-svg.svg" alt="Accizard Logo" className="w-32 h-32 mx-auto" />
-                      <img src="/lovable-uploads/accizard-logotype-svg.svg" alt="Accizard Logotype" className="w-64 h-auto mx-auto" />
+                      <img src="/accizard-uploads/accizard-logo-svg.svg" alt="Accizard Logo" className="w-32 h-32 mx-auto" />
+                      <img src="/accizard-uploads/accizard-logotype-svg.svg" alt="Accizard Logotype" className="w-64 h-auto mx-auto" />
                       <div className="text-center mt-2">
                         <div className="text-gray-500 text-sm font-medium mb-2">Support Hours</div>
                         <div className="text-gray-500 text-sm">Office: 8:00 AM - 5:00 PM &bull; Emergency: 24/7</div>
                       </div>
                     </div>
+                    
+                    {/* Messages */}
                     <div className="space-y-4">
-                      {/* The currentChat state is removed, so this loop will not render any messages.
-                          If you want to display messages from the selectedSession, you would need
-                          to manage a state for messages or fetch them from the database. */}
+                      {loadingMessages ? (
+                        <div className="text-center text-gray-500 py-4">Loading messages...</div>
+                      ) : messages.length === 0 ? (
+                        <div className="text-center text-gray-500 py-4">No messages yet. Start the conversation!</div>
+                      ) : (
+                        messages.map((msg) => {
+                          console.log("🔍 Rendering message:", msg);
+                          console.log("Message content field:", msg.message);
+                          
+                          const isAdmin = msg.senderId !== selectedSession?.userId;
+                          
+                          // Handle different timestamp formats
+                          let messageTime: Date;
+                          if (msg.timestamp?.toDate && typeof msg.timestamp.toDate === 'function') {
+                            // Firestore Timestamp
+                            messageTime = msg.timestamp.toDate();
+                          } else if (msg.timestamp instanceof Date) {
+                            // Already a Date object
+                            messageTime = msg.timestamp;
+                          } else if (typeof msg.timestamp === 'number') {
+                            // Unix timestamp (milliseconds)
+                            messageTime = new Date(msg.timestamp);
+                          } else if (typeof msg.timestamp === 'string') {
+                            // ISO string
+                            messageTime = new Date(msg.timestamp);
+                          } else {
+                            // Fallback: use a very old date to indicate missing timestamp
+                            messageTime = new Date(0);
+                          }
+                          
+                          return (
+                            <div
+                              key={msg.id}
+                              className={`flex gap-2 ${isAdmin ? 'justify-end' : 'justify-start'}`}
+                            >
+                              {/* User profile picture (only for non-admin messages) */}
+                              {!isAdmin && (
+                                <div className="flex-shrink-0">
+                                  {selectedSession.profilePicture ? (
+                                    <img 
+                                      src={selectedSession.profilePicture} 
+                                      alt={msg.senderName || 'User'} 
+                                      className="h-8 w-8 rounded-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center">
+                                      <User className="h-4 w-4 text-gray-400" />
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              
+                              <div
+                                className={`max-w-[70%] rounded-lg px-4 py-2 ${
+                                  isAdmin
+                                    ? 'bg-orange-500 text-white rounded-br-none'
+                                    : 'bg-white text-gray-800 rounded-bl-none shadow-sm'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className={`text-xs font-semibold ${isAdmin ? 'text-orange-100' : 'text-gray-600'}`}>
+                                    {msg.senderName || (msg as any).sender || (msg as any).from || 'Unknown'}
+                                  </span>
+                                </div>
+                                <p className="text-sm whitespace-pre-wrap break-words">
+                                  {msg.message || (msg as any).text || (msg as any).content || (msg as any).body || '[No message content]'}
+                                </p>
+                                <div className={`flex items-center gap-1 mt-1 ${isAdmin ? 'justify-end' : 'justify-start'}`}>
+                                  <span className={`text-xs ${isAdmin ? 'text-orange-100' : 'text-gray-500'}`}>
+                                    {messageTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                  {/* Read receipt indicator (only for user messages) */}
+                                  {!isAdmin && (
+                                    <span className="text-xs" title={msg.isRead ? 'Read' : 'Delivered'}>
+                                      {msg.isRead ? (
+                                        <CheckCheck className="h-3 w-3 text-blue-500" />
+                                      ) : (
+                                        <Check className="h-3 w-3 text-gray-400" />
+                                      )}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                      <div ref={messagesEndRef} />
                     </div>
                   </CardContent>
                   <div className="border-t p-4 bg-white rounded-b-lg">
@@ -280,6 +625,12 @@ export function ChatSupportPage() {
                           placeholder="Type your message..."
                           value={message}
                           onChange={(e) => setMessage(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendMessage();
+                            }
+                          }}
                           className="flex-1 border-0 bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
                         />
                         <input
