@@ -1,38 +1,63 @@
-# AcciZard Brand Color System
+# AcciZard Brand Colors
+## Quick Color Reference
 
-## Primary Brand Colors
-- **Primary Orange**: `orange-500` (#f97316) - Main brand color
-- **Primary Orange Hover**: `orange-400` (#fb923c) - Interactive states
-- **Secondary Red**: `red-800` (#991b1b) - Secondary/accent color
-- **Secondary Red Hover**: `red-700` (#b91c1c) - Secondary hover states
+> **📖 For comprehensive design guidelines, see [UI_DESIGN_GUIDE.md](./UI_DESIGN_GUIDE.md)**
 
-## Neutral Colors
-- **Text Primary**: `gray-800` (#1f2937) - Main text
-- **Text Secondary**: `gray-600` (#4b5563) - Secondary text
-- **Text Muted**: `gray-400` (#9ca3af) - Muted text
-- **Background**: `gray-50` (#f9fafb) - Page backgrounds
-- **Surface**: `gray-100` (#f3f4f6) - Card backgrounds
-- **Border**: `gray-300` (#d1d5db) - Borders, inputs
+## Core Brand Colors
 
-## Semantic Colors
-- **Success**: `green-600` (#059669) - Success states
-- **Warning**: `yellow-100` (#fef3c7) / `yellow-800` (#92400e) - Warning states
-- **Error**: `red-500` (#ef4444) - Error states
-- **Info**: `blue-100` (#dbeafe) / `blue-800` (#1e40af) - Info states
+### Primary Colors
+```css
+--brand-orange: #f97316 (orange-500)     /* Main brand color */
+--brand-orange-hover: #fb923c (orange-400)  /* Interactive states */
+--brand-red: #991b1b (red-800)          /* Secondary/accent color */
+--brand-red-hover: #b91c1c (red-700)    /* Secondary hover states */
+```
 
-## Usage Guidelines
+### Neutral Foundation
+```css
+--text-primary: #1f2937 (gray-800)      /* Main text */
+--text-secondary: #4b5563 (gray-600)    /* Secondary text */
+--text-muted: #9ca3af (gray-400)        /* Muted text */
+--bg-page: #f9fafb (gray-50)            /* Page backgrounds */
+--bg-surface: #ffffff (white)           /* Card backgrounds */
+--bg-card: #f3f4f6 (gray-100)           /* Surface backgrounds */
+--border-default: #d1d5db (gray-300)   /* Borders, inputs */
+```
 
-### Buttons
-- Primary: `bg-orange-500 hover:bg-orange-400 text-white`
-- Secondary: `bg-red-800 hover:bg-red-700 text-white`
-- Tertiary: `bg-gray-100 hover:bg-gray-200 text-gray-800`
-- Destructive: `bg-red-500 hover:bg-red-600 text-white`
+### Semantic Colors
+```css
+--success: #059669 (green-600)         /* Success states */
+--warning-bg: #fef3c7 (yellow-100)     /* Warning backgrounds */
+--warning-text: #92400e (yellow-800)   /* Warning text */
+--error: #ef4444 (red-500)             /* Error states */
+--info-bg: #dbeafe (blue-100)          /* Info backgrounds */
+--info-text: #1e40af (blue-800)        /* Info text */
+```
+
+## Tailwind Classes
+
+### Primary Actions
+- `bg-brand-orange` / `hover:bg-brand-orange-400`
+- `text-white`
+
+### Secondary Actions
+- `bg-brand-red` / `hover:bg-brand-red-700`
+- `text-white`
+
+### Text Colors
+- `text-gray-800` (primary)
+- `text-gray-600` (secondary)
+- `text-gray-400` (muted)
+
+### Backgrounds
+- `bg-gray-50` (page)
+- `bg-white` (cards)
+- `bg-gray-100` (surfaces)
 
 ### Focus States
-- Input focus: `focus:ring-orange-500 focus:border-orange-500`
-- Button focus: `focus:ring-orange-500`
+- `focus:ring-brand-orange`
+- `focus:border-brand-orange`
 
-### Sidebar
-- Background: `bg-gradient-to-b from-orange-500 to-red-600`
-- Hover: `hover:bg-orange-400/20`
-- Border: `border-orange-400/30`
+---
+
+**For detailed component examples, accessibility guidelines, and modern UI patterns, refer to the complete [UI Design Guide](./UI_DESIGN_GUIDE.md).**

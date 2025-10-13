@@ -1,4 +1,9 @@
-When creating or modifying components, use these exact color classes:
+# AcciZard Brand Guidelines
+## Quick Reference for Developers
+
+> **📖 For comprehensive design guidelines, see [UI_DESIGN_GUIDE.md](./UI_DESIGN_GUIDE.md)**
+
+## Quick Color Reference
 
 ### Primary Actions
 - **Main buttons**: `bg-brand-orange hover:bg-brand-orange-400 text-white`
@@ -17,15 +22,6 @@ When creating or modifying components, use these exact color classes:
 - **Brand text**: `text-brand-orange`
 - **Secondary brand text**: `text-brand-red`
 
-### Text Sizes
-- **Page titles**: `text-2xl font-bold`
-- **Section headers**: `text-lg font-semibold`
-- **Card titles**: `text-base font-semibold`
-- **Form labels**: `text-sm font-medium`
-- **Body text**: `text-sm`
-- **Small text**: `text-xs`
-- **Large numbers/stats**: `text-xl font-bold`
-
 ### Backgrounds
 - **Page background**: `bg-gray-50`
 - **Card background**: `bg-white`
@@ -36,6 +32,7 @@ When creating or modifying components, use these exact color classes:
 - **Hover**: `hover:bg-brand-orange-400/20`
 - **Border**: `border-brand-orange-400/30`
 
+## Common Components
 
 ### Form Inputs
 ```tsx
@@ -62,7 +59,7 @@ When creating or modifying components, use these exact color classes:
 <Card className="bg-white border-gray-200">
 ```
 
-### Text Sizes
+## Typography Scale
 ```tsx
 <h1 className="text-2xl font-bold text-gray-800">Page Title</h1>
 <h2 className="text-lg font-semibold text-gray-800">Section Header</h2>
@@ -71,3 +68,7 @@ When creating or modifying components, use these exact color classes:
 <p className="text-sm text-gray-600">Body text</p>
 <span className="text-xs text-gray-400">Small text</span>
 ```
+
+---
+
+**For detailed design principles, accessibility guidelines, and modern UI patterns, refer to the complete [UI Design Guide](./UI_DESIGN_GUIDE.md).**

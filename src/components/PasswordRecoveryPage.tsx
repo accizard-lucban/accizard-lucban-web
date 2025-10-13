@@ -4,11 +4,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import { auth } from "@/lib/firebase";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { toast } from "@/components/ui/sonner";
 import { SUPER_ADMIN_EMAIL } from "@/lib/utils";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export function PasswordRecoveryPage() {
   const [email, setEmail] = useState("");
@@ -62,20 +63,28 @@ export function PasswordRecoveryPage() {
             {!isSubmitted ? <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="space-y-2">
                   <Label htmlFor="email" className="text-gray-800 font-medium">Email Address</Label>
-                  <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Enter your email" required className="h-12 border-gray-300 focus:border-red-800 focus:ring-red-800" />
+                  <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Enter your email" required className="h-12 border-gray-300" />
                 </div>
-                <Button type="submit" className="w-full h-12 bg-red-800 hover:bg-red-700 text-white font-medium rounded-lg">
+                <Button type="submit" className="w-full h-12 bg-brand-orange hover:bg-brand-orange-400 text-white font-medium rounded-lg">
                   Send Recovery Link
                 </Button>
-              </form> : <div className="text-center space-y-4">
-                <div className="text-green-600 font-medium">Recovery link sent successfully! Please check your email for further instructions.</div>
-              </div>}
+              </form> : <Alert className="bg-green-50 border-green-200">
+                <CheckCircle2 className="h-5 w-5 text-green-600" />
+                <AlertDescription className="text-green-700 font-medium">
+                  Recovery link sent successfully! Please check your email for further instructions.
+                </AlertDescription>
+              </Alert>}
             
             <div className="text-center mt-6">
-              <button type="button" onClick={handleBackToLogin} className="flex items-center justify-center mx-auto text-red-600 hover:text-red-800 text-sm font-medium">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={handleBackToLogin}
+                className="flex items-center justify-center mx-auto text-brand-orange hover:text-brand-orange-400 hover:bg-transparent text-sm font-medium"
+              >
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back to Login
-              </button>
+              </Button>
             </div>
           </CardContent>
         </Card>
