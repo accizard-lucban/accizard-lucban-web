@@ -9,7 +9,7 @@ import { signInWithEmailAndPassword } from "firebase/auth";
 import { toast } from "@/components/ui/sonner";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query, where } from "firebase/firestore";
-import { Eye, EyeOff, HelpCircle } from "lucide-react";
+import { Eye, EyeOff, HelpCircle, Shield, User } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -100,19 +100,40 @@ export function LoginForm() {
     navigate("/password-recovery");
   };
 
-  return <div className="min-h-screen flex flex-col lg:flex-row bg-black relative">
-      {/* Left Side - Logo and Branding */}
-      <div className="flex-1 bg-[url('/accizard-uploads/login-signup-cover.png')] bg-cover bg-center min-h-[200px] lg:min-h-screen">
-        <div className="text-center">
-          
-        </div>
-      </div>
+  return <div className="min-h-screen bg-white flex items-center justify-center p-4 sm:p-8">
+      {/* Floating Container */}
+      <div className="w-full max-w-6xl bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
+        <div className="flex flex-col lg:flex-row min-h-[600px]">
+          {/* Left Side - Logo and Branding */}
+          <div className="flex-1 bg-[url('/accizard-uploads/login-signup-cover.png')] bg-cover bg-center min-h-[300px] lg:min-h-auto">
+            <div className="text-center">
+              
+            </div>
+          </div>
 
-      {/* Right Side - Login Form */}
-      <div className="flex-1 bg-white flex items-center justify-center p-4 sm:p-8 lg:p-12">
-        <Card className="w-full max-w-md border-0 shadow-none">
+          {/* Right Side - Login Form */}
+          <div className="flex-1 bg-white flex items-center justify-center p-4 sm:p-8 lg:p-12">
+            <Card className="w-full max-w-md border-0 shadow-none">
           <CardHeader className="text-center pb-4 sm:pb-8">
-            <CardTitle className="text-2xl sm:text-3xl font-bold text-gray-800 mb-0">Account Login</CardTitle>
+            <div className="flex flex-col items-center justify-center mb-4">
+              {userType === "super-admin" ? (
+                <div className="flex flex-col items-center space-y-2">
+                  <Shield className="h-8 w-8 text-brand-orange" />
+                  <div className="text-center">
+                    <CardTitle className="text-2xl sm:text-3xl font-bold text-gray-800 mb-0">Account Login</CardTitle>
+                    <p className="text-sm text-gray-600 mt-1">Welcome back, Super Admin!</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center space-y-2">
+                  <User className="h-8 w-8 text-brand-orange" />
+                  <div className="text-center">
+                    <CardTitle className="text-2xl sm:text-3xl font-bold text-gray-800 mb-0">Account Login</CardTitle>
+                    <p className="text-sm text-gray-600 mt-1">Welcome back, Admin!</p>
+                  </div>
+                </div>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="super-admin" value={userType} onValueChange={setUserType} className="w-full">
@@ -120,13 +141,13 @@ export function LoginForm() {
               <TabsList className="grid w-full grid-cols-2 mb-4 sm:mb-6 bg-gray-100 h-auto p-1">
                 <TabsTrigger 
                   value="super-admin" 
-                  className="py-2 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm font-medium data-[state=active]:bg-brand-orange data-[state=active]:text-white text-gray-600 hover:text-brand-orange"
+                  className="py-2 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm font-medium data-[state=active]:bg-brand-orange data-[state=active]:text-white text-gray-600 hover:bg-orange-100 hover:text-brand-orange transition-colors"
                 >
                   Super Admin
                 </TabsTrigger>
                 <TabsTrigger 
                   value="admin"
-                  className="py-2 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm font-medium data-[state=active]:bg-brand-orange data-[state=active]:text-white text-gray-600 hover:text-brand-orange"
+                  className="py-2 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm font-medium data-[state=active]:bg-brand-orange data-[state=active]:text-white text-gray-600 hover:bg-orange-100 hover:text-brand-orange transition-colors"
                 >
                   Admin
                 </TabsTrigger>
@@ -136,12 +157,12 @@ export function LoginForm() {
                 <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
                   <div className="space-y-2">
                     <Label htmlFor="email" className="text-gray-800 font-medium text-sm sm:text-base">Email</Label>
-                    <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" required className="h-10 sm:h-12 border-gray-300 text-sm sm:text-base" />
+                    <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" required className="h-10 sm:h-12 border-gray-300 focus:border-gray-300 focus:ring-[#1f2937] text-sm sm:text-base" />
                   </div>
                   <div className="space-y-2 relative">
                     <Label htmlFor="password" className="text-gray-800 font-medium text-sm sm:text-base">Password</Label>
                     <div className="relative">
-                      <Input id="password" type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required className="h-10 sm:h-12 border-gray-300 pr-10 text-sm sm:text-base" />
+                      <Input id="password" type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required className="h-10 sm:h-12 border-gray-300 focus:border-gray-300 focus:ring-[#1f2937] pr-10 text-sm sm:text-base" />
                       <Button
                         type="button"
                         variant="ghost"
@@ -175,12 +196,12 @@ export function LoginForm() {
                 <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
                   <div className="space-y-2">
                     <Label htmlFor="username" className="text-gray-800 font-medium text-sm sm:text-base">Username</Label>
-                    <Input id="username" type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" required className="h-10 sm:h-12 border-gray-300 text-sm sm:text-base" />
+                    <Input id="username" type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" required className="h-10 sm:h-12 border-gray-300 focus:border-gray-300 focus:ring-[#1f2937] text-sm sm:text-base" />
                   </div>
                   <div className="space-y-2 relative">
                     <Label htmlFor="password-admin" className="text-gray-800 font-medium text-sm sm:text-base">Password</Label>
                     <div className="relative">
-                      <Input id="password-admin" type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required className="h-10 sm:h-12 border-gray-300 pr-10 text-sm sm:text-base" />
+                      <Input id="password-admin" type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required className="h-10 sm:h-12 border-gray-300 focus:border-gray-300 focus:ring-[#1f2937] pr-10 text-sm sm:text-base" />
                       <Button
                         type="button"
                         variant="ghost"
@@ -197,6 +218,9 @@ export function LoginForm() {
                   <Button type="submit" className="w-full h-10 sm:h-12 bg-brand-orange hover:bg-brand-orange-400 text-white font-medium rounded-lg text-sm sm:text-base">
                     Login
                   </Button>
+                  <div className="text-center">
+                    <div className="h-6"></div>
+                  </div>
                 </form>
               </TabsContent>
             </Tabs>
@@ -246,5 +270,7 @@ export function LoginForm() {
           </div>
         </DialogContent>
       </Dialog>
+        </div>
+      </div>
     </div>;
 }

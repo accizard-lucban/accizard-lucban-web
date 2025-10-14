@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 import { AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { getAuth, signOut } from "firebase/auth";
+import { preloadRoute } from "@/utils/routePreloader";
 
 interface SidebarProps {
   isCollapsed: boolean;
@@ -18,33 +19,40 @@ interface SidebarProps {
 const menuItems = [{
   title: "Dashboard",
   icon: Home,
-  path: "/dashboard"
+  path: "/dashboard",
+  preload: () => import("@/pages/Index")
 }, {
   title: "Manage Reports",
   icon: ClipboardList,
-  path: "/manage-reports"
+  path: "/manage-reports",
+  preload: () => import("@/components/ManageReportsPage")
 }, {
   title: "Risk and Utility Map",
   icon: BarChart3,
-  path: "/risk-map"
+  path: "/risk-map",
+  preload: () => import("@/components/RiskMapPage")
 }, {
   title: "Chat Support",
   icon: MessageSquare,
-  path: "/chat-support"
+  path: "/chat-support",
+  preload: () => import("@/components/ChatSupportPage")
 }, {
   title: "Announcements",
   icon: Bell,
-  path: "/announcements"
+  path: "/announcements",
+  preload: () => import("@/components/AnnouncementsPage")
 }, {
   title: "Manage Users",
   icon: Users,
-  path: "/manage-users"
+  path: "/manage-users",
+  preload: () => import("@/components/ManageUsersPage")
 }];
 
 const otherItems = [{
   title: "My Profile",
   icon: User,
-  path: "/profile"
+  path: "/profile",
+  preload: () => import("@/components/ProfilePage")
 }];
 
 export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageReportsBadge, isMobileOpen = false, onMobileClose }: SidebarProps) {
@@ -132,7 +140,13 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
               MENU
             </div>}
           <nav className="space-y-2">
-            {menuItems.map(item => <button key={item.title} onClick={() => handleMenuClick(item)} className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "justify-between px-4 py-3", isActive(item.path) ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white")}>
+            {menuItems.map(item => <button 
+                key={item.title} 
+                onClick={() => handleMenuClick(item)}
+                onMouseEnter={() => preloadRoute(item.preload, item.title)}
+                onFocus={() => preloadRoute(item.preload, item.title)}
+                onTouchStart={() => preloadRoute(item.preload, item.title)}
+                className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "justify-between px-4 py-3", isActive(item.path) ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white")}>
                 <div className={cn("flex items-center", (isCollapsed && !isMobileOpen) && "justify-center")}>
                   <item.icon className={cn("h-5 w-5 flex-shrink-0", (!isCollapsed || isMobileOpen) && "mr-3")} />
                   {(!isCollapsed || isMobileOpen) && <span>{item.title}</span>}
@@ -156,10 +170,16 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
               OTHERS
             </div>}
           <nav className="space-y-2">
-            {otherItems.map(item => <button key={item.title} onClick={() => {
-              navigate(item.path);
-              if (onMobileClose) onMobileClose();
-            }} className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "px-4 py-3", isActive(item.path) ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white")}>
+            {otherItems.map(item => <button 
+                key={item.title} 
+                onClick={() => {
+                  navigate(item.path);
+                  if (onMobileClose) onMobileClose();
+                }}
+                onMouseEnter={() => preloadRoute(item.preload, item.title)}
+                onFocus={() => preloadRoute(item.preload, item.title)}
+                onTouchStart={() => preloadRoute(item.preload, item.title)}
+                className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "px-4 py-3", isActive(item.path) ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white")}>
                 <item.icon className={cn("h-5 w-5 flex-shrink-0", (!isCollapsed || isMobileOpen) && "mr-3")} />
                 {(!isCollapsed || isMobileOpen) && <span>{item.title}</span>}
               </button>)}

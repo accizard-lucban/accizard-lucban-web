@@ -44,17 +44,20 @@ export function PasswordRecoveryPage() {
     navigate("/login");
   };
 
-  return <div className="min-h-screen flex bg-black">
-      {/* Left Side - Logo and Branding */}
-      <div className="flex-1 bg-[url('/accizard-uploads/login-signup-cover.png')] bg-cover">
-        <div className="text-center">
-          
-        </div>
-      </div>
+  return <div className="min-h-screen bg-white flex items-center justify-center p-4 sm:p-8">
+      {/* Floating Container */}
+      <div className="w-full max-w-6xl bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
+        <div className="flex flex-col lg:flex-row min-h-[600px]">
+          {/* Left Side - Logo and Branding */}
+          <div className="flex-1 bg-[url('/accizard-uploads/login-signup-cover.png')] bg-cover bg-center min-h-[300px] lg:min-h-auto">
+            <div className="text-center">
+              
+            </div>
+          </div>
 
-      {/* Right Side - Recovery Form */}
-      <div className="flex-1 bg-white flex items-center justify-center p-12">
-        <Card className="w-full max-w-md border-0 shadow-none">
+          {/* Right Side - Recovery Form */}
+          <div className="flex-1 bg-white flex items-center justify-center p-4 sm:p-8 lg:p-12">
+            <Card className="w-full max-w-md border-0 shadow-none">
           <CardHeader className="text-center">
             <CardTitle className="text-3xl font-bold text-gray-800 mb-2">Password Recovery</CardTitle>
             
@@ -63,7 +66,7 @@ export function PasswordRecoveryPage() {
             {!isSubmitted ? <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="space-y-2">
                   <Label htmlFor="email" className="text-gray-800 font-medium">Email Address</Label>
-                  <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Enter your email" required className="h-12 border-gray-300" />
+                  <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Enter your email" required className="h-12 border-gray-300 focus:border-gray-300 focus:ring-[#1f2937]" />
                 </div>
                 <Button type="submit" className="w-full h-12 bg-brand-orange hover:bg-brand-orange-400 text-white font-medium rounded-lg">
                   Send Recovery Link
@@ -88,6 +91,8 @@ export function PasswordRecoveryPage() {
             </div>
           </CardContent>
         </Card>
+          </div>
+        </div>
       </div>
     </div>;
 }
