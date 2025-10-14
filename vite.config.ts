@@ -20,41 +20,32 @@ export default defineConfig(({ mode }) => ({
     },
   },
   build: {
-    // Optimize chunk splitting for better caching and performance
+    // Optimize chunk splitting for better caching and loading
     rollupOptions: {
       output: {
         manualChunks: {
-          // Vendor chunks
+          // Vendor chunks for better caching
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/storage'],
-          'ui-components': [
-            '@radix-ui/react-dialog',
-            '@radix-ui/react-dropdown-menu',
-            '@radix-ui/react-select',
-            '@radix-ui/react-tabs',
-            '@radix-ui/react-toast',
-            '@radix-ui/react-tooltip',
-          ],
-          // Heavy libraries
-          'charts': ['recharts'],
-          'mapbox': ['mapbox-gl', '@mapbox/mapbox-gl-geocoder'],
+          'firebase-vendor': ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/storage'],
+          'ui-vendor': ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', '@radix-ui/react-select', '@radix-ui/react-tabs'],
+          'chart-vendor': ['recharts'],
+          'query-vendor': ['@tanstack/react-query'],
         },
+        // Generate readable chunk names
+        chunkFileNames: (chunkInfo) => {
+          const facadeModuleId = chunkInfo.facadeModuleId ? chunkInfo.facadeModuleId.split('/').pop() : 'chunk';
+          return `assets/js/[name]-[hash].js`;
+        },
+        entryFileNames: 'assets/js/[name]-[hash].js',
+        assetFileNames: 'assets/[ext]/[name]-[hash].[ext]',
       },
     },
-    // Increase chunk size warning limit
+    // Increase chunk size warning limit for production
     chunkSizeWarningLimit: 1000,
-    // Enable source maps for production debugging (optional)
+    // Enable source maps for debugging in production (optional)
     sourcemap: mode === 'production' ? false : true,
-    // Minification options
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: mode === 'production', // Remove console logs in production
-        drop_debugger: true,
-      },
-    },
   },
-  // Optimize dependencies
+  // Optimize dependency pre-bundling
   optimizeDeps: {
     include: [
       'react',
@@ -63,7 +54,7 @@ export default defineConfig(({ mode }) => ({
       'firebase/app',
       'firebase/auth',
       'firebase/firestore',
-      'mapbox-gl',
+      'firebase/storage',
     ],
   },
 }));

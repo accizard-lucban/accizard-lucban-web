@@ -156,7 +156,7 @@ export function PageHeader({
             <DropdownMenuTrigger className="flex items-center space-x-3 hover:bg-gray-50 rounded-lg px-3 py-2 transition-colors">
               <div className="text-sm text-right">
                 <div className="font-medium text-gray-900">{user.name}</div>
-                <div className="text-gray-500">{user.role}</div>
+                <div className="text-sm text-gray-500">{user.role}</div>
               </div>
               <Avatar className="h-8 w-8">
                 <img src={user.avatarUrl} alt={user.name} onError={(e) => {

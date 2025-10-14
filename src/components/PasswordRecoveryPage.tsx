@@ -59,21 +59,21 @@ export function PasswordRecoveryPage() {
           <div className="flex-1 bg-white flex items-center justify-center p-4 sm:p-8 lg:p-12">
             <Card className="w-full max-w-md border-0 shadow-none">
           <CardHeader className="text-center">
-            <CardTitle className="text-3xl font-bold text-gray-800 mb-2">Password Recovery</CardTitle>
+            <CardTitle className="text-2xl sm:text-3xl font-bold text-gray-800 mb-2">Password Recovery</CardTitle>
             
           </CardHeader>
           <CardContent>
             {!isSubmitted ? <form onSubmit={handleSubmit} className="space-y-6">
                 <div className="space-y-2">
-                  <Label htmlFor="email" className="text-gray-800 font-medium">Email Address</Label>
-                  <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Enter your email" required className="h-12 border-gray-300 focus:border-gray-300 focus:ring-[#1f2937]" />
+                  <Label htmlFor="email" className="text-gray-800 font-medium text-sm sm:text-base">Email Address</Label>
+                  <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Enter your email" required className="h-10 sm:h-12 border-gray-300 focus:border-gray-300 focus:ring-[#1f2937] text-sm sm:text-base" />
                 </div>
-                <Button type="submit" className="w-full h-12 bg-brand-orange hover:bg-brand-orange-400 text-white font-medium rounded-lg">
+                <Button type="submit" className="w-full h-10 sm:h-12 bg-brand-orange hover:bg-brand-orange-400 text-white font-medium rounded-lg text-sm sm:text-base">
                   Send Recovery Link
                 </Button>
               </form> : <Alert className="bg-green-50 border-green-200">
                 <CheckCircle2 className="h-5 w-5 text-green-600" />
-                <AlertDescription className="text-green-700 font-medium">
+                <AlertDescription className="text-sm text-green-700 font-medium">
                   Recovery link sent successfully! Please check your email for further instructions.
                 </AlertDescription>
               </Alert>}

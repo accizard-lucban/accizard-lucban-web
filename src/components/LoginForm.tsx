@@ -184,7 +184,7 @@ export function LoginForm() {
                       type="button"
                       variant="link"
                       onClick={handleForgotPassword}
-                      className="text-sm font-medium underline text-brand-orange hover:text-brand-orange-400 p-0 h-auto"
+                      className="text-sm font-medium text-brand-orange hover:text-brand-orange-400 p-0 h-auto"
                     >
                       Forgot password?
                     </Button>
@@ -249,20 +249,20 @@ export function LoginForm() {
             <div className="space-y-3">
               <div className="flex items-start space-x-3">
                 <div className="flex-shrink-0 w-6 h-6 bg-brand-red rounded-full flex items-center justify-center">
-                  <span className="text-white text-sm font-semibold">1</span>
+                  <span className="text-white text-xs font-semibold">1</span>
                 </div>
                 <div>
-                  <h4 className="font-medium text-gray-800">Super Admins</h4>
+                  <h4 className="text-sm font-semibold text-gray-800">Super Admins</h4>
                   <p className="text-sm text-gray-600 mt-1">Can reset their password through email using the "Forgot password?" link below the login form.</p>
                 </div>
               </div>
               
               <div className="flex items-start space-x-3">
                 <div className="flex-shrink-0 w-6 h-6 bg-brand-red rounded-full flex items-center justify-center">
-                  <span className="text-white text-sm font-semibold">2</span>
+                  <span className="text-white text-xs font-semibold">2</span>
                 </div>
                 <div>
-                  <h4 className="font-medium text-gray-800">Admins</h4>
+                  <h4 className="text-sm font-semibold text-gray-800">Admins</h4>
                   <p className="text-sm text-gray-600 mt-1">If you forget your password, please contact your Super Admin to reset it for you.</p>
                 </div>
               </div>
