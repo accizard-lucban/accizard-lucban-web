@@ -23,60 +23,78 @@ export default {
 				'poppins': ['Poppins', 'sans-serif'],
 			},
 			colors: {
-				border: 'hsl(var(--border))',
-				input: 'hsl(var(--input))',
-				ring: 'hsl(var(--ring))',
-				background: 'hsl(var(--background))',
-				foreground: 'hsl(var(--foreground))',
+				// UI Foundation Colors (using direct hex values)
+				border: '#e5e7eb',       // gray-200
+				input: '#e5e7eb',        // gray-200
+				ring: '#1f2937',         // gray-800
+				background: '#ffffff',   // white
+				foreground: '#1f2937',   // gray-800
+				
+				// Primary = AcciZard Brand Orange
 				primary: {
-					DEFAULT: 'hsl(var(--primary))',
-					foreground: 'hsl(var(--primary-foreground))'
+					DEFAULT: '#f97316',  // brand-orange
+					foreground: '#ffffff' // white text on orange
 				},
+				
+				// Secondary = AcciZard Brand Red
 				secondary: {
-					DEFAULT: 'hsl(var(--secondary))',
-					foreground: 'hsl(var(--secondary-foreground))'
+					DEFAULT: '#991b1b',  // brand-red
+					foreground: '#ffffff' // white text on red
 				},
+				
+				// Destructive = Error/Delete actions
 				destructive: {
-					DEFAULT: 'hsl(var(--destructive))',
-					foreground: 'hsl(var(--destructive-foreground))'
+					DEFAULT: '#ef4444',  // red-500
+					foreground: '#ffffff' // white text on red
 				},
+				
+				// Muted = Subtle backgrounds and secondary text
 				muted: {
-					DEFAULT: 'hsl(var(--muted))',
-					foreground: 'hsl(var(--muted-foreground))'
+					DEFAULT: '#f3f4f6',  // gray-100
+					foreground: '#6b7280' // gray-500
 				},
+				
+				// Accent = Highlights (using brand orange)
 				accent: {
-					DEFAULT: 'hsl(var(--accent))',
-					foreground: 'hsl(var(--accent-foreground))'
+					DEFAULT: '#f97316',  // brand-orange
+					foreground: '#ffffff' // white text on orange
 				},
+				
+				// Popover = Dropdown/tooltip backgrounds
 				popover: {
-					DEFAULT: 'hsl(var(--popover))',
-					foreground: 'hsl(var(--popover-foreground))'
+					DEFAULT: '#ffffff',  // white
+					foreground: '#1f2937' // gray-800
 				},
+				
+				// Card = Card backgrounds
 				card: {
-					DEFAULT: 'hsl(var(--card))',
-					foreground: 'hsl(var(--card-foreground))'
+					DEFAULT: '#ffffff',  // white
+					foreground: '#1f2937' // gray-800
 				},
+				
+				// Sidebar = Navigation sidebar (uses brand gradient in practice)
 				sidebar: {
-					DEFAULT: 'hsl(var(--sidebar-background))',
-					foreground: 'hsl(var(--sidebar-foreground))',
-					primary: 'hsl(var(--sidebar-primary))',
-					'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
-					accent: 'hsl(var(--sidebar-accent))',
-					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
-					border: 'hsl(var(--sidebar-border))',
-					ring: 'hsl(var(--sidebar-ring))'
+					DEFAULT: '#f97316',  // brand-orange
+					foreground: '#ffffff', // white
+					primary: '#991b1b',  // brand-red
+					'primary-foreground': '#ffffff', // white
+					accent: '#fb923c',   // lighter orange
+					'accent-foreground': '#ffffff', // white
+					border: '#fb923c',   // lighter orange
+					ring: '#ffffff'      // white
 				},
-				// AcciZard Brand Colors
-				'brand-red': {
-					DEFAULT: '#991b1b', // red-800
-					700: '#b91c1c', // red-700
-					500: '#ef4444'  // red-500
-				},
-				'brand-orange': {
-					DEFAULT: '#f97316', // orange-500
-					400: '#fb923c'      // orange-400
-				}
+				
+			// AcciZard Brand Colors (your primary brand palette)
+			'brand-red': {
+				DEFAULT: '#991b1b', // red-800 - Main brand red
+				700: '#b91c1c',     // red-700 - Lighter for hovers
+				500: '#ef4444'      // red-500 - Bright red accent
 			},
+			'brand-orange': {
+				DEFAULT: '#f97316', // orange-500 - Main brand orange
+				400: '#fb923c'      // orange-400 - Lighter for hovers/active
+			}
+		},
 			borderRadius: {
 				lg: 'var(--radius)',
 				md: 'calc(var(--radius) - 2px)',

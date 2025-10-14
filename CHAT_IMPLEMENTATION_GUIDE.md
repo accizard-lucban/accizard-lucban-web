@@ -62,11 +62,18 @@ Fields:
 - Creates chat session metadata in `chats` collection
 
 ### ✅ User Experience
-- Loading states for messages
+- **Loading states throughout the UI:**
+  - Chat sessions list loading with spinner
+  - Messages loading with spinner
+  - Send button loading state with spinner
+  - Start chat button loading state
+  - Search results loading with spinner
 - Empty state when no messages exist
 - Keyboard support (Enter to send)
 - Auto-scroll to bottom on new messages
 - Responsive design
+- Disabled send button when message is empty or sending
+- Visual feedback for all async operations
 
 ## Security Rules (Already Configured)
 
@@ -124,6 +131,29 @@ To test the implementation:
    - Verify chat metadata updated in `chats` collection
 4. **Check real-time**: Have the mobile app open, messages should appear instantly
 5. **Restart app**: Close and reopen - all messages should still be visible
+
+## Loading States Implementation
+
+The chat interface now includes comprehensive loading states for better user experience:
+
+### State Variables
+- `loadingChatSessions`: Tracks loading of chat sessions list
+- `loadingMessages`: Tracks loading of messages for selected conversation
+- `loadingUsers`: Tracks loading of user search results
+- `sendingMessage`: Tracks message send operation
+- `startingChat`: Tracks which user chat is being initiated (stores user ID)
+
+### Visual Indicators
+- **Loader2 Icon**: Spinning orange loader from lucide-react
+- **Disabled States**: Buttons are disabled during operations to prevent duplicate actions
+- **Loading Text**: Descriptive text accompanies each spinner
+- **Centered Layout**: All loading indicators are centered with proper spacing
+
+### User Benefits
+- Clear feedback that operations are in progress
+- Prevention of duplicate submissions
+- Professional, polished user experience
+- Consistent loading patterns across the interface
 
 ## Known Limitations
 

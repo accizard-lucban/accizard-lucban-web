@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Search, Trash2, MessageSquare, Clock, User, Paperclip, Image, FileText, Send, Check, CheckCheck } from "lucide-react";
+import { Search, Trash2, MessageSquare, Clock, User, Paperclip, Image, FileText, Send, Check, CheckCheck, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Layout } from "./Layout";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -14,12 +14,17 @@ import { toast } from "@/components/ui/sonner";
 
 interface ChatMessage {
   id: string;
-  message: string;
+  message?: string;  // Web app field
+  content?: string;  // Mobile app field
   senderId: string;
   senderName: string;
   timestamp: any;
-  userId: string;
+  userId?: string;   // Web app field (camelCase)
+  userID?: string;   // Mobile app field (PascalCase)
+  userName?: string;
   isRead?: boolean;
+  imageUrl?: string; // For image attachments
+  profilePictureUrl?: string; // For user profile pictures
 }
 
 interface ChatSession {
@@ -41,8 +46,11 @@ export function ChatSupportPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [chatSessions, setChatSessions] = useState<any[]>([]); // users with active chats
+  const [loadingChatSessions, setLoadingChatSessions] = useState(true);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [startingChat, setStartingChat] = useState<string | null>(null);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const navigate = useNavigate();
 
@@ -66,6 +74,7 @@ export function ChatSupportPage() {
 
   // Real-time listener for chat sessions (from chats collection)
   useEffect(() => {
+    setLoadingChatSessions(true);
     try {
       const chatsRef = collection(db, "chats");
       const unsubscribe = onSnapshot(chatsRef, async (snapshot) => {
@@ -113,13 +122,16 @@ export function ChatSupportPage() {
         });
         
         setChatSessions(sessionsData);
+        setLoadingChatSessions(false);
       }, (error) => {
         console.error("Error loading chat sessions:", error);
+        setLoadingChatSessions(false);
       });
 
       return () => unsubscribe();
     } catch (error) {
       console.error("Error setting up chat sessions listener:", error);
+      setLoadingChatSessions(false);
     }
   }, []);
 
@@ -253,11 +265,13 @@ export function ChatSupportPage() {
 
   // Handler to start a chat with a user (creates a new chat session)
   const handleStartChat = async (user: any) => {
+    setStartingChat(user.id);
     try {
       // Check if chat already exists
       const existingChat = chatSessions.find(cs => cs.userId === user.firebaseUid || cs.id === user.id);
       if (existingChat) {
         setSelectedSession(existingChat);
+        setStartingChat(null);
         return;
       }
 
@@ -277,9 +291,12 @@ export function ChatSupportPage() {
         fullName: user.fullName || user.name || "Unknown User",
         ...user
       });
+      toast.success("Chat session started");
     } catch (error) {
       console.error("Error starting chat:", error);
       toast.error("Failed to start chat session");
+    } finally {
+      setStartingChat(null);
     }
   };
 
@@ -304,10 +321,11 @@ export function ChatSupportPage() {
   };
 
   const handleSendMessage = async () => {
-    if (!message.trim() || !selectedSession) {
+    if (!message.trim() || !selectedSession || sendingMessage) {
       return;
     }
 
+    setSendingMessage(true);
     try {
       const currentUser = auth.currentUser;
       const adminName = currentUser?.displayName || currentUser?.email?.split('@')[0] || "Admin";
@@ -340,6 +358,8 @@ export function ChatSupportPage() {
     } catch (error) {
       console.error("Error sending message:", error);
       toast.error("Failed to send message");
+    } finally {
+      setSendingMessage(false);
     }
   };
 
@@ -383,73 +403,16 @@ export function ChatSupportPage() {
                 </div>
               </CardHeader>
               <CardContent className="p-0">
-                {/* Chat Sessions */}
-                <div className="space-y-2 border-b pb-2">
-                  {chatSessions.length === 0 ? (
-                    <div className="p-4 text-center text-gray-500">No active chat sessions.</div>
-                  ) : (
-                    chatSessions.map(user => (
-                      <div
-                        key={user.id}
-                        className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition-colors ${selectedSession?.id === user.id ? 'bg-orange-50 border-orange-200' : ''}`}
-                        onClick={() => handleSelectSession(user)}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center min-w-0 gap-2">
-                            <button
-                              type="button"
-                              onClick={e => { e.stopPropagation(); goToResidentProfile(user); }}
-                              className="focus:outline-none"
-                              title="View Resident Profile"
-                            >
-                              {user.profilePicture ? (
-                                <img src={user.profilePicture} alt="Profile" className="h-8 w-8 rounded-full object-cover" />
-                              ) : (
-                                <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center">
-                                  <User className="h-4 w-4 text-gray-400" />
-                                </div>
-                              )}
-                            </button>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center space-x-2">
-                                <span className="font-medium text-sm truncate">{user.fullName || user.userName || user.name || user.userId}</span>
-                                {/* Unread count badge */}
-                                {unreadCounts[user.userId] > 0 && (
-                                  <Badge className="bg-blue-500 hover:bg-blue-600 text-white text-xs px-2 py-0 h-5">
-                                    {unreadCounts[user.userId]}
-                                  </Badge>
-                                )}
-                              </div>
-                              {user.lastMessage && (
-                                <p className="text-xs text-gray-600 mt-1 truncate font-medium">
-                                  {user.lastMessageSenderName ? `${user.lastMessageSenderName}: ` : ''}{user.lastMessage}
-                                </p>
-                              )}
-                              <p className="text-xs text-gray-400 mt-1 truncate">{user.userEmail || user.email}</p>
-                              {user.lastMessageTime && (
-                                <p className="text-xs text-gray-400 mt-1">
-                                  {formatTime(
-                                    user.lastMessageTime?.toDate?.() || 
-                                    (user.lastMessageTime instanceof Date ? user.lastMessageTime : new Date(user.lastMessageTime))
-                                  )}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          <Button size="icon" variant="ghost" className="text-brand-red hover:text-brand-red-700" onClick={e => { e.stopPropagation(); setChatSessions(prev => prev.filter(cs => cs.id !== user.id)); if (selectedSession?.id === user.id) setSelectedSession(null); }} title="Delete Chat Session">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-                {/* Search Results */}
-                {searchTerm && (
-                  <div className="space-y-2 pt-2">
-                    <div className="px-4 pb-2 text-xs text-gray-500 font-semibold">Search Results</div>
+                {/* Conditional rendering: Show search results OR chat sessions, not both */}
+                {searchTerm ? (
+                  // Search Results (shown when searching)
+                  <div className="space-y-2">
+                    <div className="px-4 pt-4 pb-2 text-xs text-gray-500 font-semibold">Search Results</div>
                     {loadingUsers ? (
-                      <div className="p-4 text-center text-gray-500">Loading users...</div>
+                      <div className="p-8 flex flex-col items-center justify-center gap-3">
+                        <Loader2 className="h-8 w-8 animate-spin text-brand-orange" />
+                        <p className="text-sm text-gray-500">Loading users...</p>
+                      </div>
                     ) : filteredUsers.length === 0 ? (
                       <div className="p-4 text-center text-gray-500">No users found.</div>
                     ) : (
@@ -476,9 +439,88 @@ export function ChatSupportPage() {
                               <p className="text-xs text-gray-500 mt-1">{user.email}</p>
                             </div>
                           </div>
-                          <Button size="sm" className="bg-brand-orange hover:bg-brand-orange-400 text-white" onClick={() => handleStartChat(user)}>
-                            Start Chat
+                          <Button 
+                            size="sm" 
+                            className="bg-brand-orange hover:bg-brand-orange-400 text-white disabled:opacity-50" 
+                            onClick={() => handleStartChat(user)}
+                            disabled={startingChat === user.id}
+                          >
+                            {startingChat === user.id ? (
+                              <>
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                Starting...
+                              </>
+                            ) : (
+                              'Start Chat'
+                            )}
                           </Button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                ) : (
+                  // Chat Sessions (shown when not searching)
+                  <div className="space-y-2">
+                    {loadingChatSessions ? (
+                      <div className="p-8 flex flex-col items-center justify-center gap-3">
+                        <Loader2 className="h-8 w-8 animate-spin text-brand-orange" />
+                        <p className="text-sm text-gray-500">Loading chat sessions...</p>
+                      </div>
+                    ) : chatSessions.length === 0 ? (
+                      <div className="p-4 text-center text-gray-500">No active chat sessions.</div>
+                    ) : (
+                      chatSessions.map(user => (
+                        <div
+                          key={user.id}
+                          className={`p-4 border-b cursor-pointer hover:bg-gray-50 transition-colors ${selectedSession?.id === user.id ? 'bg-orange-50 border-l-4 border-l-brand-orange' : ''}`}
+                          onClick={() => handleSelectSession(user)}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div className="flex items-center min-w-0 gap-2">
+                              <button
+                                type="button"
+                                onClick={e => { e.stopPropagation(); goToResidentProfile(user); }}
+                                className="focus:outline-none"
+                                title="View Resident Profile"
+                              >
+                                {user.profilePicture ? (
+                                  <img src={user.profilePicture} alt="Profile" className="h-8 w-8 rounded-full object-cover" />
+                                ) : (
+                                  <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center">
+                                    <User className="h-4 w-4 text-gray-400" />
+                                  </div>
+                                )}
+                              </button>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center space-x-2">
+                                  <span className="font-medium text-sm truncate">{user.fullName || user.userName || user.name || user.userId}</span>
+                                  {/* Unread count badge */}
+                                  {unreadCounts[user.userId] > 0 && (
+                                    <Badge className="bg-brand-orange hover:bg-brand-orange-400 text-white text-xs px-2 py-0 h-5">
+                                      {unreadCounts[user.userId]}
+                                    </Badge>
+                                  )}
+                                </div>
+                                {user.lastMessage && (
+                                  <p className="text-xs text-gray-600 mt-1 truncate font-medium">
+                                    {user.lastMessageSenderName ? `${user.lastMessageSenderName}: ` : ''}{user.lastMessage}
+                                  </p>
+                                )}
+                                <p className="text-xs text-gray-400 mt-1 truncate">{user.userEmail || user.email}</p>
+                                {user.lastMessageTime && (
+                                  <p className="text-xs text-gray-400 mt-1">
+                                    {formatTime(
+                                      user.lastMessageTime?.toDate?.() || 
+                                      (user.lastMessageTime instanceof Date ? user.lastMessageTime : new Date(user.lastMessageTime))
+                                    )}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <Button size="icon" variant="ghost" className="text-brand-red hover:text-brand-red-700" onClick={e => { e.stopPropagation(); setChatSessions(prev => prev.filter(cs => cs.id !== user.id)); if (selectedSession?.id === user.id) setSelectedSession(null); }} title="Delete Chat Session">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
                       ))
                     )}
@@ -502,7 +544,11 @@ export function ChatSupportPage() {
                         title="View Resident Profile"
                       >
                         {selectedSession.profilePicture ? (
-                          <img src={selectedSession.profilePicture} alt="Profile" className="h-10 w-10 rounded-full object-cover" />
+                          <img 
+                            src={selectedSession.profilePicture} 
+                            alt={selectedSession.fullName || selectedSession.name || selectedSession.userId} 
+                            className="h-10 w-10 rounded-full object-cover"
+                          />
                         ) : (
                           <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
                             <User className="h-5 w-5 text-gray-400" />
@@ -529,7 +575,10 @@ export function ChatSupportPage() {
                     {/* Messages */}
                     <div className="space-y-4">
                       {loadingMessages ? (
-                        <div className="text-center text-gray-500 py-4">Loading messages...</div>
+                        <div className="py-8 flex flex-col items-center justify-center gap-3">
+                          <Loader2 className="h-8 w-8 animate-spin text-brand-orange" />
+                          <p className="text-sm text-gray-500">Loading messages...</p>
+                        </div>
                       ) : messages.length === 0 ? (
                         <div className="text-center text-gray-500 py-4">No messages yet. Start the conversation!</div>
                       ) : (
@@ -583,7 +632,7 @@ export function ChatSupportPage() {
                               <div
                                 className={`max-w-[70%] rounded-lg px-4 py-2 ${
                                   isAdmin
-                                    ? 'bg-orange-500 text-white rounded-br-none'
+                                    ? 'bg-brand-orange text-white rounded-br-none'
                                     : 'bg-white text-gray-800 rounded-bl-none shadow-sm'
                                 }`}
                               >
@@ -603,7 +652,7 @@ export function ChatSupportPage() {
                                   {!isAdmin && (
                                     <span className="text-xs" title={msg.isRead ? 'Read' : 'Delivered'}>
                                       {msg.isRead ? (
-                                        <CheckCheck className="h-3 w-3 text-blue-500" />
+                                        <CheckCheck className="h-3 w-3 text-brand-orange" />
                                       ) : (
                                         <Check className="h-3 w-3 text-gray-400" />
                                       )}
@@ -662,9 +711,14 @@ export function ChatSupportPage() {
                       </div>
                       <Button
                         onClick={handleSendMessage}
-                        className="bg-brand-orange hover:bg-brand-orange-400 text-white"
+                        disabled={sendingMessage || !message.trim()}
+                        className="bg-brand-orange hover:bg-brand-orange-400 text-white disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <Send className="h-4 w-4" />
+                        {sendingMessage ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Send className="h-4 w-4" />
+                        )}
                       </Button>
                     </div>
                   </div>
