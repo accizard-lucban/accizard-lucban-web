@@ -14,29 +14,49 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 export function PasswordRecoveryPage() {
   const [email, setEmail] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      toast.error("Please enter a valid email address.");
-      return;
-    }
-    
-    // Check if the email is the authorized super admin email
-    if (email !== SUPER_ADMIN_EMAIL) {
-      toast.error("Access denied. Password recovery is only available for authorized super admin accounts.");
-      return;
-    }
+    setIsSubmitting(true);
     
     try {
+      // Email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        toast.error("Please enter a valid email address.");
+        return;
+      }
+      
+      // Check if the email is the authorized super admin email
+      if (email !== SUPER_ADMIN_EMAIL) {
+        toast.error("Access denied. Password recovery is only available for authorized super admin accounts.");
+        return;
+      }
+      
       await sendPasswordResetEmail(auth, email);
       setIsSubmitted(true);
       toast.success("Recovery link sent! Please check your email.");
     } catch (err: any) {
-      toast.error(err.message || "Failed to send recovery link.");
+      console.error("Password recovery error:", err);
+      
+      // Check for network connectivity
+      if (!navigator.onLine) {
+        toast.error("No internet connection. Please check your network and try again.");
+      }
+      // Check for Firebase network errors
+      else if (err.code === 'auth/network-request-failed' || 
+               err.message?.includes('network') ||
+               err.message?.includes('fetch')) {
+        toast.error("Network error. Please check your internet connection and try again.");
+      }
+      // Generic error fallback
+      else {
+        toast.error(err.message || "Failed to send recovery link.");
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -68,8 +88,22 @@ export function PasswordRecoveryPage() {
                   <Label htmlFor="email" className="text-gray-800 font-medium text-sm sm:text-base">Email Address</Label>
                   <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Enter your email" required className="h-10 sm:h-12 border-gray-300 focus:border-gray-300 focus:ring-[#1f2937] text-sm sm:text-base" />
                 </div>
-                <Button type="submit" className="w-full h-10 sm:h-12 bg-brand-orange hover:bg-brand-orange-400 text-white font-medium rounded-lg text-sm sm:text-base">
-                  Send Recovery Link
+                <Button 
+                  type="submit" 
+                  disabled={isSubmitting}
+                  className="w-full h-10 sm:h-12 bg-brand-orange hover:bg-brand-orange-400 text-white font-medium rounded-lg text-sm sm:text-base disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSubmitting ? (
+                    <div className="flex items-center justify-center">
+                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Sending...
+                    </div>
+                  ) : (
+                    "Send Recovery Link"
+                  )}
                 </Button>
               </form> : <Alert className="bg-green-50 border-green-200">
                 <CheckCircle2 className="h-5 w-5 text-green-600" />

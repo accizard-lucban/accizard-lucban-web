@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getAuth } from 'firebase/auth';
 import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { db, auth } from '@/lib/firebase';
 
 export interface UserRole {
   id: string;
@@ -50,7 +49,7 @@ export function useUserRole() {
           }
         } else {
           // Super admin user - fetch from superAdmin collection using email
-          const authUser = getAuth().currentUser;
+          const authUser = auth.currentUser;
           if (authUser && authUser.email) {
             const q = query(collection(db, "superAdmin"), where("email", "==", authUser.email));
             const querySnapshot = await getDocs(q);

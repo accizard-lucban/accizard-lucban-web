@@ -77,6 +77,11 @@ export function ManageUsersPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [passwordError, setPasswordError] = useState("");
   const [showAdminPasswords, setShowAdminPasswords] = useState<{ [id: string]: boolean }>({});
+  const [isAddingAdmin, setIsAddingAdmin] = useState(false);
+  const [isDeletingAdmin, setIsDeletingAdmin] = useState<string | null>(null);
+  const [isAddingResident, setIsAddingResident] = useState(false);
+  const [isDeletingResident, setIsDeletingResident] = useState<string | null>(null);
+  const [isUpdatingPermissions, setIsUpdatingPermissions] = useState<string | null>(null);
   const [showAllAdminPasswords, setShowAllAdminPasswords] = useState(false);
   const [showAdminFormErrors, setShowAdminFormErrors] = useState(false);
   const [showEditAdminErrors, setShowEditAdminErrors] = useState(false);
@@ -318,6 +323,7 @@ export function ManageUsersPage() {
   });
 
   const handleAddAdmin = async () => {
+    setIsAddingAdmin(true);
     try {
       // Find the highest userId in the current adminUsers
       const maxUserId = adminUsers.length > 0
@@ -395,6 +401,13 @@ export function ManageUsersPage() {
       });
     } catch (error) {
       console.error("Error adding admin:", error);
+      toast({
+        title: 'Error',
+        description: 'Failed to add admin account. Please try again.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsAddingAdmin(false);
     }
   };
 
@@ -479,6 +492,7 @@ export function ManageUsersPage() {
   };
 
   const handleDeleteAdmin = async (adminId: string) => {
+    setIsDeletingAdmin(adminId);
     try {
       // Admins are stored in Firestore only (no Firebase Auth)
       const adminToDelete = adminUsers.find(a => a.id === adminId);
@@ -518,6 +532,8 @@ export function ManageUsersPage() {
         description: 'Failed to delete admin account',
         variant: 'destructive'
       });
+    } finally {
+      setIsDeletingAdmin(null);
     }
   };
 
@@ -575,6 +591,7 @@ export function ManageUsersPage() {
   };
 
   const handleDeleteResident = async (residentId: string) => {
+    setIsDeletingResident(residentId);
     try {
       // Get resident data to retrieve email
       const residentToDelete = residents.find(r => r.id === residentId);
@@ -631,6 +648,8 @@ export function ManageUsersPage() {
         description: 'Failed to delete resident account',
         variant: 'destructive'
       });
+    } finally {
+      setIsDeletingResident(null);
     }
   };
 
@@ -836,6 +855,7 @@ export function ManageUsersPage() {
 
   // Add resident with auto-incremented userId
   const handleAddResident = async (newResident: any) => {
+    setIsAddingResident(true);
     try {
       // Fetch all userIds and find the max number
       const querySnapshot = await getDocs(collection(db, "users"));
@@ -895,6 +915,13 @@ export function ManageUsersPage() {
       });
     } catch (error) {
       console.error("Error adding resident:", error);
+      toast({
+        title: 'Error',
+        description: 'Failed to add resident account. Please try again.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsAddingResident(false);
     }
   };
 
@@ -1299,9 +1326,20 @@ export function ManageUsersPage() {
                   <DialogFooter>
                     <Button 
                       onClick={handleAddAdmin} 
-                      className="bg-brand-orange hover:bg-brand-orange-400 text-white"
+                      disabled={isAddingAdmin}
+                      className="bg-brand-orange hover:bg-brand-orange-400 text-white disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Add New Admin
+                      {isAddingAdmin ? (
+                        <div className="flex items-center">
+                          <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          Adding...
+                        </div>
+                      ) : (
+                        "Add New Admin"
+                      )}
                     </Button>
                   </DialogFooter>
                 </DialogContent>
@@ -1580,9 +1618,20 @@ export function ManageUsersPage() {
                                       <AlertDialogCancel>Cancel</AlertDialogCancel>
                                       <AlertDialogAction
                                         onClick={() => handleDeleteAdmin(admin.id)}
-                                        className="bg-red-600 hover:bg-red-700"
+                                        disabled={isDeletingAdmin === admin.id}
+                                        className="bg-red-600 hover:bg-red-700 disabled:opacity-50"
                                       >
-                                        Delete
+                                        {isDeletingAdmin === admin.id ? (
+                                          <div className="flex items-center">
+                                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            Deleting...
+                                          </div>
+                                        ) : (
+                                          "Delete"
+                                        )}
                                       </AlertDialogAction>
                                     </AlertDialogFooter>
                                   </AlertDialogContent>
@@ -2074,9 +2123,20 @@ export function ManageUsersPage() {
                                       <AlertDialogCancel>Cancel</AlertDialogCancel>
                                       <AlertDialogAction
                                         onClick={() => handleDeleteResident(resident.id)}
-                                        className="bg-red-600 hover:bg-red-700"
+                                        disabled={isDeletingResident === resident.id}
+                                        className="bg-red-600 hover:bg-red-700 disabled:opacity-50"
                                       >
-                                        Delete
+                                        {isDeletingResident === resident.id ? (
+                                          <div className="flex items-center">
+                                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            Deleting...
+                                          </div>
+                                        ) : (
+                                          "Delete"
+                                        )}
                                       </AlertDialogAction>
                                     </AlertDialogFooter>
                                   </AlertDialogContent>

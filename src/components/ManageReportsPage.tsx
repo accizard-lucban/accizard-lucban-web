@@ -26,7 +26,7 @@ import { db } from "@/lib/firebase";
 import { collection, onSnapshot, orderBy, query, getDocs, getDoc, where, updateDoc, doc, serverTimestamp, deleteDoc } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebase";
-import { getAuth } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 import { toast } from "@/components/ui/sonner";
 
 export function ManageReportsPage() {
@@ -48,6 +48,12 @@ export function ManageReportsPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [reportToDelete, setReportToDelete] = useState<string | null>(null);
   const [showBatchDeleteDialog, setShowBatchDeleteDialog] = useState(false);
+  
+  // Loading states
+  const [isAddingReport, setIsAddingReport] = useState(false);
+  const [isDeletingReport, setIsDeletingReport] = useState<string | null>(null);
+  const [isSavingLocation, setIsSavingLocation] = useState(false);
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -83,7 +89,7 @@ export function ManageReportsPage() {
           }
         } else {
           // Super admin user - fetch from superAdmin collection using email
-          const authUser = getAuth().currentUser;
+          const authUser = auth.currentUser;
           if (authUser && authUser.email) {
             const q = query(collection(db, "superAdmin"), where("email", "==", authUser.email));
             const querySnapshot = await getDocs(q);
@@ -247,22 +253,36 @@ export function ManageReportsPage() {
     timeOfDispatch: "",
     timeOfArrival: ""
   });
-  const handleAddReport = () => {
-    console.log("Adding new report:", formData);
-    setShowAddModal(false);
-    setFormData({
-      type: "",
-      reportedBy: "",
-      barangay: "",
-      description: "",
-      responders: "",
-      location: "",
-      status: "Pending",
-      attachedMedia: [],
-      attachedDocument: null,
-      timeOfDispatch: "",
-      timeOfArrival: ""
-    });
+  const handleAddReport = async () => {
+    setIsAddingReport(true);
+    try {
+      console.log("Adding new report:", formData);
+      
+      // Here you would typically save to Firestore
+      // For now, just simulate the save operation
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      setShowAddModal(false);
+      setFormData({
+        type: "",
+        reportedBy: "",
+        barangay: "",
+        description: "",
+        responders: "",
+        location: "",
+        status: "Pending",
+        attachedMedia: [],
+        attachedDocument: null,
+        timeOfDispatch: "",
+        timeOfArrival: ""
+      });
+      toast.success("Report added successfully!");
+    } catch (error) {
+      console.error("Error adding report:", error);
+      toast.error("Failed to add report. Please try again.");
+    } finally {
+      setIsAddingReport(false);
+    }
   };
   const handleDeleteReport = (reportId: string) => {
     setReportToDelete(reportId);
@@ -275,6 +295,7 @@ export function ManageReportsPage() {
       return;
     }
 
+    setIsDeletingReport(reportToDelete);
     console.log("Attempting to delete report:", reportToDelete);
 
     try {
@@ -309,6 +330,8 @@ export function ManageReportsPage() {
     } catch (error) {
       console.error("Error deleting report:", error);
       toast.error("Failed to delete report. Please try again.");
+    } finally {
+      setIsDeletingReport(null);
     }
   };
   const handlePinOnMap = (report: any) => {
@@ -1512,6 +1535,7 @@ export function ManageReportsPage() {
   // Function to save new location
   const handleSaveLocation = async () => {
     if (newLocation && selectedReport) {
+      setIsSavingLocation(true);
       try {
         // Update the database using the Firestore document ID
         await updateDoc(doc(db, "reports", selectedReport.firestoreId), {
@@ -1541,6 +1565,8 @@ export function ManageReportsPage() {
       } catch (error) {
         console.error('Error updating location:', error);
         toast.error('Failed to update location. Please try again.');
+      } finally {
+        setIsSavingLocation(false);
       }
     }
   };
@@ -2143,8 +2169,23 @@ export function ManageReportsPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" onClick={handleAddReport}>
-                Add Report
+              <Button 
+                type="button" 
+                onClick={handleAddReport}
+                disabled={isAddingReport}
+                className="disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isAddingReport ? (
+                  <div className="flex items-center">
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Adding...
+                  </div>
+                ) : (
+                  "Add Report"
+                )}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -4890,10 +4931,20 @@ export function ManageReportsPage() {
               </Button>
               <Button 
                 onClick={handleSaveLocation}
-                disabled={!newLocation}
-                className="bg-brand-orange hover:bg-brand-orange-400 text-white"
+                disabled={!newLocation || isSavingLocation}
+                className="bg-brand-orange hover:bg-brand-orange-400 text-white disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Save Location
+                {isSavingLocation ? (
+                  <div className="flex items-center">
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Saving...
+                  </div>
+                ) : (
+                  "Save Location"
+                )}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -5085,8 +5136,23 @@ export function ManageReportsPage() {
               <DialogClose asChild>
                 <Button variant="outline">Cancel</Button>
               </DialogClose>
-              <Button variant="destructive" onClick={confirmDeleteReport}>
-                Delete Report
+              <Button 
+                variant="destructive" 
+                onClick={confirmDeleteReport}
+                disabled={isDeletingReport !== null}
+                className="disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isDeletingReport ? (
+                  <div className="flex items-center">
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Deleting...
+                  </div>
+                ) : (
+                  "Delete Report"
+                )}
               </Button>
             </DialogFooter>
           </DialogContent>

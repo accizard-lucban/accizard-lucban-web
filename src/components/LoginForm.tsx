@@ -18,6 +18,7 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [userType, setUserType] = useState("super-admin");
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -25,14 +26,17 @@ export function LoginForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (userType === "admin") {
-      // Admin login: check Firestore for username/password
-      if (!username || !password) {
-        setError("Please enter your username and password.");
-        toast.error("Please enter your username and password.");
-        return;
-      }
-      try {
+    setIsSubmitting(true);
+    
+    try {
+      if (userType === "admin") {
+        // Admin login: check Firestore for username/password
+        if (!username || !password) {
+          setError("Please enter your username and password.");
+          toast.error("Please enter your username and password.");
+          return;
+        }
+        
         const q = query(collection(db, "admins"), where("username", "==", username), where("password", "==", password));
         const querySnapshot = await getDocs(q);
         if (!querySnapshot.empty) {
@@ -43,21 +47,17 @@ export function LoginForm() {
           setError("Invalid username or password.");
           toast.error("Invalid username or password.");
         }
-      } catch (err: any) {
-        setError("Login failed. Please try again.");
-        toast.error("Login failed. Please try again.");
+        return;
       }
-      return;
-    }
-    // Super Admin login: Firebase Auth
-    // Email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      setError("Please enter a valid email address.");
-      toast.error("Invalid email address.");
-      return;
-    }
-    try {
+      // Super Admin login: Firebase Auth
+      // Email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        setError("Please enter a valid email address.");
+        toast.error("Invalid email address.");
+        return;
+      }
+      
       console.log("Attempting Firebase Auth login with:", email);
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
@@ -91,8 +91,34 @@ export function LoginForm() {
       toast.success("Login successful!");
       navigate("/dashboard");
     } catch (err: any) {
-      setError(err.message || "Login failed. Please try again.");
-      toast.error("Login failed. Please check your credentials.");
+      console.error("Login error:", err);
+      
+      // Check for network connectivity
+      if (!navigator.onLine) {
+        setError("No internet connection. Please check your network and try again.");
+        toast.error("No internet connection. Please check your network.");
+      }
+      // Check for Firebase network errors
+      else if (err.code === 'auth/network-request-failed' || 
+               err.message?.includes('network') ||
+               err.message?.includes('fetch')) {
+        setError("Network error. Please check your internet connection and try again.");
+        toast.error("Network error. Please check your connection.");
+      }
+      // Check for specific Firebase auth errors
+      else if (err.code === 'auth/user-not-found' || 
+               err.code === 'auth/wrong-password' ||
+               err.code === 'auth/invalid-email') {
+        setError("Invalid email or password. Please check your credentials.");
+        toast.error("Invalid email or password.");
+      }
+      // Generic error fallback
+      else {
+        setError("Login failed. Please try again.");
+        toast.error("Login failed. Please try again.");
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -176,8 +202,22 @@ export function LoginForm() {
                       </Button>
                     </div>
                   </div>
-                  <Button type="submit" className="w-full h-10 sm:h-12 bg-brand-orange hover:bg-brand-orange-400 text-white font-medium rounded-lg text-sm sm:text-base">
-                    Login
+                  <Button 
+                    type="submit" 
+                    disabled={isSubmitting}
+                    className="w-full h-10 sm:h-12 bg-brand-orange hover:bg-brand-orange-400 text-white font-medium rounded-lg text-sm sm:text-base disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSubmitting ? (
+                      <div className="flex items-center justify-center">
+                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Logging in...
+                      </div>
+                    ) : (
+                      "Login"
+                    )}
                   </Button>
                   <div className="text-center">
                     <Button
@@ -215,8 +255,22 @@ export function LoginForm() {
                       </Button>
                     </div>
                   </div>
-                  <Button type="submit" className="w-full h-10 sm:h-12 bg-brand-orange hover:bg-brand-orange-400 text-white font-medium rounded-lg text-sm sm:text-base">
-                    Login
+                  <Button 
+                    type="submit" 
+                    disabled={isSubmitting}
+                    className="w-full h-10 sm:h-12 bg-brand-orange hover:bg-brand-orange-400 text-white font-medium rounded-lg text-sm sm:text-base disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSubmitting ? (
+                      <div className="flex items-center justify-center">
+                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Logging in...
+                      </div>
+                    ) : (
+                      "Login"
+                    )}
                   </Button>
                   <div className="text-center">
                     <div className="h-6"></div>

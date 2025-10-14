@@ -59,6 +59,11 @@ export function AnnouncementsPage() {
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>("desc");
   const [editDialogOpenId, setEditDialogOpenId] = useState<string | null>(null);
   const [selectedAnnouncements, setSelectedAnnouncements] = useState<Set<string>>(new Set());
+  
+  // Loading states
+  const [isAddingAnnouncement, setIsAddingAnnouncement] = useState(false);
+  const [isEditingAnnouncement, setIsEditingAnnouncement] = useState(false);
+  const [isDeletingAnnouncement, setIsDeletingAnnouncement] = useState<string | null>(null);
 
   const today = new Date();
   // For dual calendar date range picker
@@ -162,28 +167,40 @@ export function AnnouncementsPage() {
     }
   };
   const handleAddAnnouncement = async () => {
-    const newAnnouncementWithDate = {
-      ...newAnnouncement,
-      date: new Date().toLocaleDateString('en-US', {
-        month: '2-digit',
-        day: '2-digit',
-        year: '2-digit'
-      }),
-      createdTime: Date.now(),
-      createdBy: 'admin' // Replace with actual user if available
-    };
-    const docRef = await addDoc(collection(db, "announcements"), newAnnouncementWithDate);
-    setAnnouncements(prev => [...prev, { ...newAnnouncementWithDate, id: docRef.id }]);
-    setNewAnnouncement({
-      type: "",
-      description: "",
-      priority: ""
-    });
-    setIsNewAnnouncementOpen(false);
-    toast({
-      title: "Announcement Created",
-      description: "The new announcement has been added successfully.",
-    });
+    setIsAddingAnnouncement(true);
+    try {
+      const newAnnouncementWithDate = {
+        ...newAnnouncement,
+        date: new Date().toLocaleDateString('en-US', {
+          month: '2-digit',
+          day: '2-digit',
+          year: '2-digit'
+        }),
+        createdTime: Date.now(),
+        createdBy: 'admin' // Replace with actual user if available
+      };
+      const docRef = await addDoc(collection(db, "announcements"), newAnnouncementWithDate);
+      setAnnouncements(prev => [...prev, { ...newAnnouncementWithDate, id: docRef.id }]);
+      setNewAnnouncement({
+        type: "",
+        description: "",
+        priority: ""
+      });
+      setIsNewAnnouncementOpen(false);
+      toast({
+        title: "Announcement Created",
+        description: "The new announcement has been added successfully.",
+      });
+    } catch (error) {
+      console.error("Error adding announcement:", error);
+      toast({
+        title: "Error",
+        description: "Failed to add announcement. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsAddingAnnouncement(false);
+    }
   };
   const handleEditAnnouncement = (announcement: any) => {
     setEditingAnnouncement({ ...announcement });
@@ -191,23 +208,51 @@ export function AnnouncementsPage() {
   };
   const handleSaveEdit = async () => {
     if (!editingAnnouncement) return;
-    await updateDoc(doc(db, "announcements", editingAnnouncement.id), {
-      type: editingAnnouncement.type,
-      description: editingAnnouncement.description,
-      priority: editingAnnouncement.priority,
-      date: editingAnnouncement.date
-    });
-    setAnnouncements(announcements.map(a => a.id === editingAnnouncement.id ? editingAnnouncement : a));
-    setEditingAnnouncement(null);
-    setEditDialogOpenId(null);
-    toast({
-      title: "Announcement Updated",
-      description: "The announcement has been updated successfully.",
-    });
+    setIsEditingAnnouncement(true);
+    try {
+      await updateDoc(doc(db, "announcements", editingAnnouncement.id), {
+        type: editingAnnouncement.type,
+        description: editingAnnouncement.description,
+        priority: editingAnnouncement.priority,
+        date: editingAnnouncement.date
+      });
+      setAnnouncements(announcements.map(a => a.id === editingAnnouncement.id ? editingAnnouncement : a));
+      setEditingAnnouncement(null);
+      setEditDialogOpenId(null);
+      toast({
+        title: "Announcement Updated",
+        description: "The announcement has been updated successfully.",
+      });
+    } catch (error) {
+      console.error("Error updating announcement:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update announcement. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsEditingAnnouncement(false);
+    }
   };
   const handleDeleteAnnouncement = async (id: string) => {
-    await deleteDoc(doc(db, "announcements", id));
-    setAnnouncements(announcements.filter(a => a.id !== id));
+    setIsDeletingAnnouncement(id);
+    try {
+      await deleteDoc(doc(db, "announcements", id));
+      setAnnouncements(announcements.filter(a => a.id !== id));
+      toast({
+        title: "Announcement Deleted",
+        description: "The announcement has been deleted successfully.",
+      });
+    } catch (error) {
+      console.error("Error deleting announcement:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete announcement. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsDeletingAnnouncement(null);
+    }
   };
 
   const handleBatchDelete = async () => {
@@ -527,7 +572,23 @@ export function AnnouncementsPage() {
                 </div>
               </div>
               <DialogFooter>
-                <Button onClick={handleAddAnnouncement} className="bg-brand-orange hover:bg-brand-orange-400 text-white">Create Announcement</Button>
+                <Button 
+                  onClick={handleAddAnnouncement} 
+                  disabled={isAddingAnnouncement}
+                  className="bg-brand-orange hover:bg-brand-orange-400 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isAddingAnnouncement ? (
+                    <div className="flex items-center">
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Creating...
+                    </div>
+                  ) : (
+                    "Create Announcement"
+                  )}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -704,7 +765,23 @@ export function AnnouncementsPage() {
                                   </div>
                                 )}
                                 <DialogFooter>
-                                  <Button onClick={handleSaveEdit}>Save Changes</Button>
+                                  <Button 
+                                    onClick={handleSaveEdit}
+                                    disabled={isEditingAnnouncement}
+                                    className="disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    {isEditingAnnouncement ? (
+                                      <div className="flex items-center">
+                                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Saving...
+                                      </div>
+                                    ) : (
+                                      "Save Changes"
+                                    )}
+                                  </Button>
                                 </DialogFooter>
                               </DialogContent>
                             </Dialog>
@@ -730,8 +807,22 @@ export function AnnouncementsPage() {
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
                                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => handleDeleteAnnouncement(announcement.id)} className="bg-red-600 hover:bg-red-700">
-                                    Delete
+                                  <AlertDialogAction 
+                                    onClick={() => handleDeleteAnnouncement(announcement.id)} 
+                                    disabled={isDeletingAnnouncement === announcement.id}
+                                    className="bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                                  >
+                                    {isDeletingAnnouncement === announcement.id ? (
+                                      <div className="flex items-center">
+                                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Deleting...
+                                      </div>
+                                    ) : (
+                                      "Delete"
+                                    )}
                                   </AlertDialogAction>
                                 </AlertDialogFooter>
                               </AlertDialogContent>

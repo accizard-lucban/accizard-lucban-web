@@ -4,7 +4,8 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 import { AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
-import { getAuth, signOut } from "firebase/auth";
+import { signOut } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 import { preloadRoute } from "@/utils/routePreloader";
 
 interface SidebarProps {
@@ -71,7 +72,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
   const handleSignOut = async () => {
     try {
       localStorage.removeItem("adminLoggedIn");
-      await signOut(getAuth());
+      await signOut(auth);
       navigate("/login");
     } catch (error) {
       // Optionally handle error
