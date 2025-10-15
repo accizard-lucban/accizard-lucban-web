@@ -2,6 +2,12 @@
   "firestore": {
     "rules": "firestore.rules"
   },
+  "storage": [
+    {
+      "bucket": "accizard-lucban.appspot.com",
+      "rules": "storage.rules"
+    }
+  ],
   "hosting": {
     "public": "dist",
     "ignore": [

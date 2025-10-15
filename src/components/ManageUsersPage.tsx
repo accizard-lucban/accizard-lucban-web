@@ -187,8 +187,20 @@ export function ManageUsersPage() {
     async function fetchResidents() {
       try {
         const querySnapshot = await getDocs(collection(db, "users"));
+        console.log("📊 Fetched residents from Firestore:", querySnapshot.size, "documents");
+        
         const users = querySnapshot.docs.map(doc => {
-          let userId = doc.data().userId;
+          const data = doc.data();
+          
+          // Handle different field names for profile picture
+          const profilePicture = data.profilePicture || data.profilePictureUrl || data.profile_picture || data.avatar || "";
+          
+          console.log("👤 User document:", doc.id);
+          console.log("  - profilePicture field:", data.profilePicture);
+          console.log("  - profilePictureUrl field:", data.profilePictureUrl);
+          console.log("  - Final profilePicture value:", profilePicture);
+          
+          let userId = data.userId;
           if (typeof userId === 'number') {
             userId = `RID-${userId}`;
           } else if (typeof userId === 'string' && !userId.startsWith('RID-')) {
@@ -198,20 +210,24 @@ export function ManageUsersPage() {
           }
           return {
             id: doc.id,
-            ...doc.data(),
-            verified: doc.data().verified || false,
-            createdDate: doc.data().createdDate || new Date().toLocaleDateString(),
-            createdTime: doc.data().createdTime || null,
+            ...data,
+            verified: data.verified || false,
+            createdDate: data.createdDate || new Date().toLocaleDateString(),
+            createdTime: data.createdTime || null,
             userId: userId || `RID-${doc.id.slice(-6)}`,
-            fullName: doc.data().fullName || doc.data().name || "Unknown",
-            phoneNumber: doc.data().phoneNumber || doc.data().phone || "N/A",
-            barangay: doc.data().barangay || "Unknown",
-            cityTown: doc.data().cityTown || doc.data().city || "Unknown"
+            fullName: data.fullName || data.name || "Unknown",
+            phoneNumber: data.phoneNumber || data.phone || "N/A",
+            barangay: data.barangay || "Unknown",
+            cityTown: data.cityTown || data.city || "Unknown",
+            profilePicture: profilePicture  // Use the resolved value
           };
         });
+        
+        console.log("✅ Processed residents:", users.length);
+        console.log("🖼️ Residents with profile pictures:", users.filter(u => u.profilePicture).length);
         setResidents(users);
       } catch (error) {
-        console.error("Error fetching residents:", error);
+        console.error("❌ Error fetching residents:", error);
         // If users collection doesn't exist, set empty array
         setResidents([]);
       }
@@ -545,6 +561,11 @@ export function ManageUsersPage() {
   };
 
   const handlePreviewResident = (resident: any) => {
+    console.log("🔍 Opening resident preview:", resident);
+    console.log("🖼️ Profile picture URL:", resident?.profilePicture);
+    console.log("🆔 Valid ID URL:", resident?.validIdUrl || resident?.validIdImage);
+    console.log("📋 All resident fields:", Object.keys(resident));
+    
     setSelectedResident(resident);
     setShowResidentPreview(true);
   };
@@ -559,7 +580,7 @@ export function ManageUsersPage() {
         homeAddress: selectedResident.homeAddress,
         email: selectedResident.email,
         validId: selectedResident.validId,
-        validIdImage: selectedResident.validIdImage,
+        validIdUrl: selectedResident.validIdUrl || selectedResident.validIdImage || "",
         additionalInfo: selectedResident.additionalInfo
       });
       setResidents(residents.map(r => r.id === selectedResident.id ? selectedResident : r));
@@ -2097,7 +2118,7 @@ export function ManageUsersPage() {
                                         </div>
                                         <div>
                                           <Label>Valid ID Image URL</Label>
-                                          <Input value={selectedResident.validIdImage || ''} onChange={e => setSelectedResident({ ...selectedResident, validIdImage: e.target.value })} />
+                                          <Input value={selectedResident.validIdUrl || selectedResident.validIdImage || ''} onChange={e => setSelectedResident({ ...selectedResident, validIdUrl: e.target.value })} />
                                         </div>
                                       </div>
                                     )}
@@ -2482,21 +2503,48 @@ export function ManageUsersPage() {
             <DialogHeader>
               <DialogTitle>Resident Details</DialogTitle>
             </DialogHeader>
+            
+            {/* Profile Picture at the top - large and clickable */}
+            <div className="flex justify-center py-4">
+              {selectedResident?.profilePicture ? (
+                <button
+                  type="button"
+                  onClick={() => window.open(selectedResident.profilePicture, '_blank')}
+                  className="focus:outline-none group relative"
+                  title="Click to view full size"
+                >
+                  <img 
+                    src={selectedResident.profilePicture} 
+                    alt="Profile" 
+                    className="w-32 h-32 rounded-full object-cover border-4 border-gray-200 group-hover:border-brand-orange transition-all duration-200 shadow-lg group-hover:shadow-xl"
+                    onLoad={() => console.log("✅ Profile picture loaded successfully:", selectedResident.profilePicture)}
+                    onError={(e) => {
+                      console.error("❌ Failed to load profile picture:", selectedResident.profilePicture);
+                      console.log("📋 Selected resident data:", selectedResident);
+                      e.currentTarget.style.display = 'none';
+                      const parent = e.currentTarget.parentElement;
+                      if (parent) {
+                        const fallback = document.createElement('div');
+                        fallback.className = 'w-32 h-32 rounded-full bg-gray-200 flex items-center justify-center border-4 border-gray-200';
+                        fallback.innerHTML = '<svg class="h-16 w-16 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+                        parent.appendChild(fallback);
+                      }
+                    }}
+                  />
+                  <div className="absolute inset-0 rounded-full bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all duration-200 flex items-center justify-center">
+                    <Eye className="h-8 w-8 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                  </div>
+                </button>
+              ) : (
+                <div className="w-32 h-32 rounded-full bg-gray-200 flex items-center justify-center border-4 border-gray-200 shadow-lg">
+                  <User className="h-16 w-16 text-gray-400" />
+                </div>
+              )}
+            </div>
+            
             <div className="py-4">
               <Table>
                 <TableBody>
-                  <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Profile Picture</TableCell>
-                    <TableCell>
-                      {selectedResident?.profilePicture ? (
-                        <img src={selectedResident.profilePicture} alt="Profile" className="w-16 h-16 rounded-full object-cover" />
-                      ) : (
-                        <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center">
-                          <User className="h-8 w-8 text-gray-400" />
-                        </div>
-                      )}
-                    </TableCell>
-                  </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">User ID</TableCell>
                     <TableCell>{selectedResident?.userId || 'N/A'}</TableCell>
@@ -2528,16 +2576,16 @@ export function ManageUsersPage() {
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Valid ID Image</TableCell>
                     <TableCell>
-                      {selectedResident?.validIdImage ? (
+                      {selectedResident?.validIdUrl || selectedResident?.validIdImage ? (
                         <Button 
                           variant="link" 
                           className="p-0 h-auto text-blue-600 hover:text-blue-800" 
-                          onClick={() => setPreviewImage(selectedResident.validIdImage)}
+                          onClick={() => setPreviewImage(selectedResident.validIdUrl || selectedResident.validIdImage)}
                         >
                           View ID Image
                         </Button>
                       ) : (
-                        <span className="text-gray-500">No image uploaded</span>
+                        <span className="text-gray-500">No valid ID uploaded</span>
                       )}
                     </TableCell>
                   </TableRow>

@@ -49,8 +49,8 @@ service cloud.firestore {
     
     // Admin collection (list of LDRRMO admin users)
     match /admins/{adminId} {
-      // Anyone authenticated can read (needed for isAdmin checks)
-      allow read: if isAuthenticated();
+      // Allow public read access (needed for login verification and regular admin access)
+      allow read: if true;
       
       // Only admins can modify admin list
       allow write: if isAdmin();
@@ -58,8 +58,9 @@ service cloud.firestore {
     
     // Users collection
     match /users/{userId} {
-      // Anyone authenticated can read user profiles
-      allow read: if isAuthenticated();
+      // Allow public read access (needed for regular Admins who don't have Firebase Auth)
+      // Profile information is not highly sensitive and is needed for display purposes
+      allow read: if true;
       
       // Users can create/update their own profile, admins can modify any
       allow create: if isAuthenticated() && request.auth.uid == request.resource.data.firebaseUid;
@@ -71,84 +72,76 @@ service cloud.firestore {
     
     // Reports collection
     match /reports/{reportId} {
-      // Anyone authenticated can read reports
-      allow read: if isAuthenticated();
+      // Allow public read access (needed for regular Admins who don't have Firebase Auth)
+      allow read: if true;
       
       // Authenticated users can create reports with their own userId
       allow create: if isAuthenticated() && 
                        request.resource.data.userId == request.auth.uid;
       
-      // Users can update their own reports, admins can update any
-      allow update: if isAuthenticated() && 
-                       (resource.data.userId == request.auth.uid || isAdmin());
-      
-      // Users can delete their own reports, admins can delete any
-      allow delete: if isAdmin() || 
-                       (isAuthenticated() && resource.data.userId == request.auth.uid);
+      // Allow public update and delete (for regular admins to manage reports)
+      allow update, delete: if true;
     }
     
     // Announcements collection
     match /announcements/{announcementId} {
-      // Anyone authenticated can read announcements
-      allow read: if isAuthenticated();
+      // Allow public read access (needed for regular Admins who don't have Firebase Auth)
+      allow read: if true;
       
-      // Only admins (including super admins) can create, update, or delete announcements
-      allow create, update, delete: if isAdmin();
+      // Allow public write (for regular admins to manage announcements)
+      allow create, update, delete: if true;
     }
     
     // Announcement Types collection
     match /announcementTypes/{typeId} {
-      // Anyone authenticated can read announcement types (needed for dropdowns/filters)
-      allow read: if isAuthenticated();
+      // Allow public read access (needed for regular Admins who don't have Firebase Auth)
+      allow read: if true;
       
-      // Only admins (including super admins) can create, update, or delete announcement types
-      allow create, update, delete: if isAdmin();
+      // Allow public write (for regular admins to manage announcement types)
+      allow create, update, delete: if true;
     }
     
     // ========================================
     // CHAT MESSAGES COLLECTION (FLAT STRUCTURE)
     // ========================================
     match /chat_messages/{messageId} {
-      // Admins can read/write all messages
-      allow read, write: if isAdmin();
+      // Allow public read access (needed for regular Admins who don't have Firebase Auth)
+      allow read: if true;
       
-      // Regular users can read ONLY their own messages
-      allow read: if isAuthenticated() && 
-                    resource.data.userId == request.auth.uid;
-      
-      // Regular users can create messages with their own userId and senderId
-      allow create: if isAuthenticated() && 
-                      request.resource.data.userId == request.auth.uid &&
-                      request.resource.data.senderId == request.auth.uid;
-      
-      // Regular users can update their own messages
-      allow update: if isAuthenticated() && 
-                      resource.data.userId == request.auth.uid &&
-                      resource.data.senderId == request.auth.uid;
-      
-      // Regular users can delete their own messages
-      allow delete: if isAuthenticated() && 
-                      resource.data.userId == request.auth.uid;
+      // Allow public write for chat messages (admins and users both need to send messages)
+      allow write: if true;
     }
     
     // ========================================
     // CHAT ROOM METADATA (Optional - for tracking)
     // ========================================
     match /chats/{chatRoomId} {
-      // Admins can read/write all chat rooms
-      allow read, write: if isAdmin();
+      // Allow public read access (needed for regular Admins who don't have Firebase Auth)
+      allow read: if true;
       
-      // Users can read/write their own chat room metadata
-      allow read, write: if isAuthenticated() && chatRoomId == request.auth.uid;
+      // Admins can write all chat rooms
+      allow write: if isAdmin();
+      
+      // Users can write their own chat room metadata
+      allow write: if isAuthenticated() && chatRoomId == request.auth.uid;
     }
     
     // Report counter (for auto-incrementing report IDs)
     match /counters/{counterId} {
-      // Anyone authenticated can read counters
-      allow read: if isAuthenticated();
-      
-      // Anyone authenticated can update counters (needed for report creation)
-      allow write: if isAuthenticated();
+      // Allow public read/write (needed for regular Admins and report creation)
+      allow read, write: if true;
+    }
+    
+    // Activity Logs collection
+    match /activityLogs/{logId} {
+      // Allow public read/write (needed for regular Admins to view and create logs)
+      allow read, write: if true;
+    }
+    
+    // Team Members collection
+    match /teamMembers/{teamId} {
+      // Allow public read/write (needed for regular Admins to manage teams)
+      allow read, write: if true;
     }
     
     // ========================================

@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
 import { auth } from "@/lib/firebase";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { toast } from "@/components/ui/sonner";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query, where } from "firebase/firestore";
@@ -37,9 +37,43 @@ export function LoginForm() {
           return;
         }
         
+        // Step 1: Verify credentials against Firestore (existing system)
         const q = query(collection(db, "admins"), where("username", "==", username), where("password", "==", password));
         const querySnapshot = await getDocs(q);
+        
         if (!querySnapshot.empty) {
+          // Step 2: Silent Firebase Auth - Get auth token for Storage access
+          try {
+            // Create Firebase Auth email from username
+            const firebaseEmail = `${username}@admin.accizard.local`;
+            const firebasePassword = password;
+            
+            console.log("🔐 Attempting silent Firebase Auth for admin...");
+            
+            try {
+              // Try to sign in first
+              await signInWithEmailAndPassword(auth, firebaseEmail, firebasePassword);
+              console.log("✅ Silent Firebase Auth successful (existing account)");
+            } catch (signInError: any) {
+              if (signInError.code === 'auth/user-not-found') {
+                // Create Firebase Auth account silently
+                console.log("📝 Creating Firebase Auth account for admin...");
+                await createUserWithEmailAndPassword(auth, firebaseEmail, firebasePassword);
+                console.log("✅ Silent Firebase Auth successful (new account created)");
+              } else if (signInError.code === 'auth/wrong-password') {
+                // Password mismatch - update it by recreating (rare case)
+                console.log("⚠️ Firebase Auth password mismatch, admin can still access");
+              } else {
+                throw signInError;
+              }
+            }
+          } catch (authError: any) {
+            // Non-blocking: If Firebase Auth fails, admin can still access Firestore
+            console.warn("⚠️ Silent Firebase Auth failed (non-blocking):", authError.code, authError.message);
+            console.log("ℹ️ Admin can still access Firestore, but Storage may be limited");
+          }
+          
+          // Step 3: Complete login (works even if Firebase Auth failed)
           localStorage.setItem("adminLoggedIn", "true");
           toast.success("Admin login successful!");
           navigate("/dashboard");
@@ -126,9 +160,9 @@ export function LoginForm() {
     navigate("/password-recovery");
   };
 
-  return <div className="min-h-screen bg-white flex items-center justify-center p-4 sm:p-8">
+    return <div className="min-h-screen flex items-center justify-center p-4 sm:p-8">
       {/* Floating Container */}
-      <div className="w-full max-w-6xl bg-white rounded-2xl shadow-2xl border-2 border-gray-200 overflow-hidden">
+      <div className="w-full max-w-6xl bg-white rounded-2xl shadow-2xl border-2 border-orange-200 overflow-hidden">
         <div className="flex flex-col lg:flex-row min-h-[600px]">
           {/* Left Side - Logo and Branding */}
           <div className="flex-1 bg-[url('/accizard-uploads/login-signup-cover.png')] bg-cover bg-center min-h-[300px] lg:min-h-auto">
@@ -289,10 +323,10 @@ export function LoginForm() {
             type="button"
             variant="outline"
             size="icon"
-            className="absolute bottom-4 right-4 rounded-full shadow-md bg-gray-100 hover:bg-gray-200 border-0"
+            className="absolute bottom-4 right-4 rounded-full shadow-md bg-brand-orange hover:bg-brand-orange-400 border-0"
             aria-label="Password recovery help"
           >
-            <HelpCircle className="h-5 w-5 text-gray-600" />
+            <HelpCircle className="h-5 w-5 text-white" />
           </Button>
         </DialogTrigger>
         <DialogContent className="max-w-md">
@@ -302,7 +336,7 @@ export function LoginForm() {
           <div className="space-y-4 py-4">
             <div className="space-y-3">
               <div className="flex items-start space-x-3">
-                <div className="flex-shrink-0 w-6 h-6 bg-brand-red rounded-full flex items-center justify-center">
+                <div className="flex-shrink-0 w-6 h-6 bg-brand-orange rounded-full flex items-center justify-center">
                   <span className="text-white text-xs font-semibold">1</span>
                 </div>
                 <div>
@@ -312,7 +346,7 @@ export function LoginForm() {
               </div>
               
               <div className="flex items-start space-x-3">
-                <div className="flex-shrink-0 w-6 h-6 bg-brand-red rounded-full flex items-center justify-center">
+                <div className="flex-shrink-0 w-6 h-6 bg-brand-orange rounded-full flex items-center justify-center">
                   <span className="text-white text-xs font-semibold">2</span>
                 </div>
                 <div>

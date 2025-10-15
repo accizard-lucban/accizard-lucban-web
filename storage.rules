@@ -1,0 +1,140 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // ========================================
+    // HELPER FUNCTIONS
+    // ========================================
+    
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Check if file size is within limit (25MB)
+    function isValidSize() {
+      return request.resource.size < 25 * 1024 * 1024;
+    }
+    
+    // Check if file is an image
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+    
+    // Check if file is a document
+    function isDocument() {
+      return request.resource.contentType.matches('application/pdf') ||
+             request.resource.contentType.matches('application/msword') ||
+             request.resource.contentType.matches('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    }
+    
+    // ========================================
+    // EXISTING RULES (PRESERVED)
+    // ========================================
+    
+    // News file (read-only)
+    match /news.json {
+      allow read: if true;
+      allow write: if false;
+    }
+    
+    // Public uploads (logos, covers, etc.)
+    match /accizard-uploads/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+    
+    // Web app profile pictures (singular: profile-picture) ← CRITICAL!
+    match /profile-picture/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+    
+    // Mobile app profile pictures (plural: profile_pictures) ← CRITICAL!
+    match /profile_pictures/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+    
+    // Report images (already working)
+    match /report_images/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+    
+    // Valid ID images (underscore format for mobile compatibility)
+    match /valid_ids/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+    
+    // ========================================
+    // CHAT ATTACHMENTS (ENHANCED WITH VALIDATION)
+    // ========================================
+    
+    // Chat attachments - enhanced with file type and size validation
+    // Now works with Silent Firebase Auth for admins
+    match /chat_attachments/{allPaths=**} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && 
+                      (isImage() || isDocument()) && 
+                      isValidSize();
+      allow delete: if isAuthenticated();
+    }
+    
+    // ========================================
+    // OPTIONAL: ENHANCED RULES WITH VALIDATION
+    // These match additional paths with proper validation
+    // ========================================
+    
+    // Profile pictures with validation (camelCase for web app)
+    match /profile-pictures-web/{userId}/{fileName} {
+      allow read: if true;
+      allow write: if isAuthenticated() && 
+                      isImage() && 
+                      isValidSize();
+    }
+    
+    // Valid IDs with validation (camelCase)
+    match /validIds/{userId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && 
+                      isImage() && 
+                      isValidSize();
+    }
+    
+    // Announcements media
+    match /announcements/{announcementId}/{fileName} {
+      allow read: if true;
+      allow write: if isAuthenticated() && 
+                      (isImage() || isDocument()) && 
+                      isValidSize();
+      allow delete: if isAuthenticated();
+    }
+    
+    // Report media (alternative path if needed)
+    match /reports/{reportId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && 
+                      (isImage() || isDocument()) && 
+                      isValidSize();
+      allow delete: if isAuthenticated();
+    }
+    
+    // Documents
+    match /documents/{userId}/{documentType}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && 
+                      isDocument() && 
+                      isValidSize();
+    }
+    
+    // ========================================
+    // DEFAULT: DENY ALL OTHER ACCESS
+    // ========================================
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
