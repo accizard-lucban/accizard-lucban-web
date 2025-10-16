@@ -8,7 +8,7 @@
  */
 
 import { setGlobalOptions } from "firebase-functions/v2";
-import { onDocumentDeleted, onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onDocumentDeleted, onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
@@ -344,6 +344,143 @@ export const sendAnnouncementNotification = onDocumentCreated(
       
     } catch (error: any) {
       logger.error("Error sending announcement notifications:", error);
+    }
+  }
+);
+
+// Cloud Function: Send push notification when report status is updated
+// Notifies the user who submitted the report about status changes
+export const sendReportStatusNotification = onDocumentUpdated(
+  "reports/{reportId}",
+  async (event) => {
+    const beforeData = event.data?.before.data();
+    const afterData = event.data?.after.data();
+    
+    if (!beforeData || !afterData) {
+      logger.warn("Missing report data");
+      return;
+    }
+
+    // Check if status actually changed
+    const oldStatus = beforeData.status;
+    const newStatus = afterData.status;
+    
+    if (oldStatus === newStatus) {
+      logger.info("Status unchanged, skipping notification");
+      return;
+    }
+
+    const { userId, type, barangay, location, reportId: reportNumber } = afterData;
+
+    // Get the user who submitted this report
+    if (!userId) {
+      logger.warn("No userId found in report, cannot send notification");
+      return;
+    }
+
+    try {
+      // Get user's FCM token from Firestore
+      const userDoc = await admin.firestore().collection("users").doc(userId).get();
+      
+      if (!userDoc.exists) {
+        logger.warn(`User document not found for userId: ${userId}`);
+        return;
+      }
+
+      const userData = userDoc.data();
+      const fcmToken = userData?.fcmToken;
+
+      if (!fcmToken) {
+        logger.warn(`No FCM token found for user: ${userId}`);
+        return;
+      }
+
+      // Determine notification title and body based on status
+      let notificationTitle = "";
+      let notificationBody = "";
+      
+      switch (newStatus?.toLowerCase()) {
+        case "responding":
+        case "in progress":
+          notificationTitle = "🚨 Responders Dispatched";
+          notificationBody = `Your ${type || 'emergency'} report is being responded to`;
+          break;
+        case "resolved":
+        case "completed":
+          notificationTitle = "✅ Report Resolved";
+          notificationBody = `Your ${type || 'emergency'} report has been resolved`;
+          break;
+        case "cancelled":
+        case "rejected":
+          notificationTitle = "❌ Report Cancelled";
+          notificationBody = `Your ${type || 'emergency'} report has been cancelled`;
+          break;
+        case "pending":
+          notificationTitle = "⏳ Report Pending";
+          notificationBody = `Your ${type || 'emergency'} report is pending review`;
+          break;
+        default:
+          notificationTitle = "📋 Report Status Updated";
+          notificationBody = `Your ${type || 'emergency'} report status: ${newStatus}`;
+      }
+
+      // Add location context
+      const locationText = barangay || location;
+      if (locationText) {
+        notificationBody += ` at ${locationText}`;
+      }
+
+      // Prepare notification payload
+      const notificationPayload = {
+        token: fcmToken,
+        notification: {
+          title: notificationTitle,
+          body: notificationBody,
+        },
+        data: {
+          type: "report_update",
+          reportId: event.params.reportId,
+          reportNumber: reportNumber || "",
+          reportType: type || "emergency",
+          oldStatus: oldStatus || "",
+          newStatus: newStatus || "",
+          barangay: barangay || "",
+          location: location || "",
+        },
+        android: {
+          priority: "high" as const,
+          notification: {
+            sound: "default",
+            channelId: "report_updates",
+            priority: "high" as const,
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: "default",
+              badge: 1,
+            },
+          },
+        },
+      };
+
+      // Send notification
+      const response = await admin.messaging().send(notificationPayload);
+      logger.info(`Successfully sent report status notification to user ${userId}. Response: ${response}`);
+      logger.info(`Status changed from "${oldStatus}" to "${newStatus}" for report ${event.params.reportId}`);
+      
+    } catch (error: any) {
+      logger.error(`Error sending report status notification to user ${userId}:`, error);
+      
+      // If token is invalid, remove it from Firestore
+      if (error.code === "messaging/invalid-registration-token" || 
+          error.code === "messaging/registration-token-not-registered") {
+        logger.info(`Removing invalid FCM token for user ${userId}`);
+        await admin.firestore().collection("users").doc(userId).update({
+          fcmToken: admin.firestore.FieldValue.delete()
+        });
+      }
     }
   }
 );

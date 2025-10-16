@@ -165,7 +165,7 @@ export function LoginForm() {
       <div className="w-full max-w-6xl bg-white rounded-2xl shadow-2xl border-2 border-orange-200 overflow-hidden">
         <div className="flex flex-col lg:flex-row min-h-[600px]">
           {/* Left Side - Logo and Branding */}
-          <div className="flex-1 bg-[url('/accizard-uploads/login-signup-cover.png')] bg-cover bg-center min-h-[300px] lg:min-h-auto">
+          <div className="flex-1 bg-[url('/accizard-uploads/login-image.png')] bg-cover bg-center min-h-[300px] lg:min-h-auto">
             <div className="text-center">
               
             </div>
