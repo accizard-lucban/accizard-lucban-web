@@ -17,6 +17,9 @@ import { Layout } from "./Layout";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { DateRange } from "react-day-picker";
 import { MapboxMap } from "./MapboxMap";
+import { usePins } from "@/hooks/usePins";
+import { Pin, PinType } from "@/types/pin";
+import { toast } from "@/components/ui/sonner";
 
 // Pin type icons mapping
 const pinTypeIcons: Record<string, any> = {
@@ -54,10 +57,12 @@ const locationIcons: Record<string, any> = {
 export function RiskMapPage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { createPin, subscribeToPins, deletePin, loading: pinLoading } = usePins();
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [date, setDate] = useState<DateRange | undefined>();
   const [searchQuery, setSearchQuery] = useState("");
   const [isFromReport, setIsFromReport] = useState(false); // Track if data came from a report
+  const [pins, setPins] = useState<Pin[]>([]); // Store pins from database
   const [newPin, setNewPin] = useState({
     type: "",
     title: "",
@@ -195,10 +200,53 @@ export function RiskMapPage() {
     return () => clearTimeout(timer);
   }, [newPin.latitude, newPin.longitude, isFromReport]);
 
-  const handleAddPin = () => {
-    console.log("Adding new pin:", newPin);
-    setNewPin({ type: "", title: "", latitude: "", longitude: "", locationName: "", reportId: "" });
-    setIsFromReport(false); // Reset when adding a new pin
+  const handleAddPin = async () => {
+    try {
+      // Validation
+      if (!newPin.type) {
+        toast.error("Please select a pin type");
+        return;
+      }
+      if (!newPin.title || newPin.title.trim() === "") {
+        toast.error("Please enter a title for the pin");
+        return;
+      }
+      if (!newPin.latitude || !newPin.longitude) {
+        toast.error("Please select a location on the map");
+        return;
+      }
+
+      const lat = parseFloat(newPin.latitude);
+      const lng = parseFloat(newPin.longitude);
+
+      if (isNaN(lat) || isNaN(lng)) {
+        toast.error("Invalid coordinates");
+        return;
+      }
+
+      console.log("Creating pin in database:", newPin);
+
+      // Create pin in database
+      const pinId = await createPin({
+        type: newPin.type as PinType,
+        title: newPin.title,
+        latitude: lat,
+        longitude: lng,
+        locationName: newPin.locationName || 'Unknown Location',
+        reportId: newPin.reportId || undefined
+      });
+
+      console.log("Pin created successfully with ID:", pinId);
+      
+      toast.success(`Pin "${newPin.title}" added to map successfully!`);
+      
+      // Clear form
+      setNewPin({ type: "", title: "", latitude: "", longitude: "", locationName: "", reportId: "" });
+      setIsFromReport(false);
+    } catch (error: any) {
+      console.error("Error adding pin:", error);
+      toast.error(error.message || "Failed to add pin. Please try again.");
+    }
   };
 
   const handleClearForm = () => {
@@ -308,6 +356,69 @@ export function RiskMapPage() {
     };
   };
 
+  // Get active filter types as PinType array
+  const getActiveFilterTypes = (): PinType[] => {
+    const activeTypes: PinType[] = [];
+    
+    Object.entries(accidentFilters).forEach(([key, isActive]) => {
+      if (isActive) {
+        const type = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim() as PinType;
+        activeTypes.push(type);
+      }
+    });
+    
+    Object.entries(facilityFilters).forEach(([key, isActive]) => {
+      if (isActive) {
+        const type = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim() as PinType;
+        activeTypes.push(type);
+      }
+    });
+    
+    return activeTypes;
+  };
+
+  // Subscribe to pins from database with real-time updates
+  useEffect(() => {
+    const activeTypes = getActiveFilterTypes();
+    
+    // Build filter object
+    const filters: any = {
+      searchQuery: searchQuery
+    };
+
+    // Only filter by types if at least one filter is active
+    if (activeTypes.length > 0) {
+      filters.types = activeTypes;
+    }
+
+    // Add date range filters
+    if (date?.from) {
+      filters.dateFrom = date.from;
+    }
+    if (date?.to) {
+      filters.dateTo = date.to;
+    }
+
+    console.log('Subscribing to pins with filters:', filters);
+
+    const unsubscribe = subscribeToPins(
+      filters,
+      (fetchedPins) => {
+        console.log('Pins updated from database:', fetchedPins.length);
+        setPins(fetchedPins);
+      },
+      (error) => {
+        console.error('Error fetching pins:', error);
+        toast.error('Failed to fetch pins from database');
+      }
+    );
+
+    return () => {
+      console.log('Unsubscribing from pins');
+      unsubscribe();
+    };
+  }, [accidentFilters, facilityFilters, date, searchQuery]);
+
   return (
     <Layout>
       <TooltipProvider>
@@ -376,13 +487,37 @@ export function RiskMapPage() {
                   </div>
                   
                   <div className="space-y-2">
-                    <Label htmlFor="pin-title">Title</Label>
-                    <Input
-                      id="pin-title"
-                      placeholder="Marker Title"
-                      value={newPin.title}
-                      onChange={(e) => setNewPin({ ...newPin, title: e.target.value })}
-                    />
+                    <div className="flex items-center gap-1">
+                      <Label htmlFor="pin-title">Title</Label>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-3.5 w-3.5 text-gray-400 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="text-xs max-w-xs">
+                            For <span className="font-semibold">Emergency Facilities</span>: Enter the facility name (e.g., "St. Mary's Hospital", "Barangay Hall").<br/><br/>
+                            For <span className="font-semibold">Accidents/Hazards</span>: Enter a distinguishable title (e.g., "Highway Junction Crash", "Forest Fire Area").
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    <div className="relative">
+                      <Input
+                        id="pin-title"
+                        placeholder="Enter marker title"
+                        value={newPin.title}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value.length <= 60) {
+                            setNewPin({ ...newPin, title: value });
+                          }
+                        }}
+                        maxLength={60}
+                      />
+                      <div className="text-xs text-gray-500 mt-1 text-right">
+                        {newPin.title.length}/60 characters
+                      </div>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
@@ -455,11 +590,24 @@ export function RiskMapPage() {
                   </div>
                   
                   <div className="flex gap-2">
-                    <Button onClick={handleAddPin} className="flex-1 bg-[#FF4F0B] text-white hover:bg-[#FF4F0B]/80">
-                      <MapPin className="h-4 w-4 mr-2" />
-                      Add Pin to Map
+                    <Button 
+                      onClick={handleAddPin} 
+                      className="flex-1 bg-[#FF4F0B] text-white hover:bg-[#FF4F0B]/80 disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={pinLoading}
+                    >
+                      {pinLoading ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                          Adding Pin...
+                        </>
+                      ) : (
+                        <>
+                          <MapPin className="h-4 w-4 mr-2" />
+                          Add Pin to Map
+                        </>
+                      )}
                     </Button>
-                    {hasFormData() && (
+                    {hasFormData() && !pinLoading && (
                       <Button 
                         onClick={handleClearForm} 
                         variant="outline"
@@ -662,41 +810,93 @@ export function RiskMapPage() {
           <div className="flex-1 bg-gray-100">
             <MapboxMap 
               onMapClick={(lngLat) => {
-                console.log("Map clicked, lngLat:", lngLat);
+                console.log("=== MAP CLICK EVENT ===");
+                console.log("Clicked coordinates:", lngLat);
+                console.log("Latitude (raw):", lngLat.lat);
+                console.log("Longitude (raw):", lngLat.lng);
                 console.log("Current isFromReport value:", isFromReport);
+                
                 if (isFromReport) {
                   console.log("Blocked: Cannot change coordinates from a report");
                   return;
                 }
-                console.log("Updating coordinates to:", lngLat);
-                setNewPin(prev => ({
-                  ...prev,
-                  latitude: lngLat.lat.toFixed(6),
-                  longitude: lngLat.lng.toFixed(6)
-                }));
+                
+                const newLat = lngLat.lat.toFixed(6);
+                const newLng = lngLat.lng.toFixed(6);
+                console.log("Formatted latitude:", newLat);
+                console.log("Formatted longitude:", newLng);
+                console.log("Setting newPin state...");
+                
+                setNewPin(prev => {
+                  const updated = {
+                    ...prev,
+                    latitude: newLat,
+                    longitude: newLng
+                  };
+                  console.log("New pin state:", updated);
+                  return updated;
+                });
               }}
               showHeatmap={showHeatmap}
+              showDirections={false}
+              pins={pins}
               center={
-                newPin.latitude && newPin.longitude
-                  ? [parseFloat(newPin.longitude), parseFloat(newPin.latitude)]
-                  : [121.5556, 14.1139] // Lucban, Quezon coordinates
+                (() => {
+                  const lat = parseFloat(newPin.latitude);
+                  const lng = parseFloat(newPin.longitude);
+                  const hasValidCoords = newPin.latitude && newPin.longitude && !isNaN(lat) && !isNaN(lng);
+                  return hasValidCoords ? [lng, lat] : [121.5556, 14.1139]; // Lucban, Quezon coordinates
+                })()
               }
-              zoom={newPin.latitude && newPin.longitude ? 15 : 13}
+              zoom={
+                (() => {
+                  const lat = parseFloat(newPin.latitude);
+                  const lng = parseFloat(newPin.longitude);
+                  const hasValidCoords = newPin.latitude && newPin.longitude && !isNaN(lat) && !isNaN(lng);
+                  return hasValidCoords ? 15 : 13;
+                })()
+              }
               activeFilters={!isFromReport && !newPin.latitude && !newPin.longitude ? getActiveFilters() : undefined}
               singleMarker={
-                newPin.latitude && newPin.longitude
-                  ? {
-                      id: newPin.reportId || 'temp-marker',
-                      type: newPin.type || 'Default',
-                      title: newPin.title || newPin.locationName || 'Selected Location',
-                      description: newPin.locationName || 'Temporary marker',
-                      reportId: newPin.reportId,
-                      coordinates: [parseFloat(newPin.longitude), parseFloat(newPin.latitude)] as [number, number],
-                      locationName: newPin.locationName,
-                      latitude: parseFloat(newPin.latitude),
-                      longitude: parseFloat(newPin.longitude)
-                    }
-                  : undefined
+                (() => {
+                  console.log('=== MARKER CREATION ===');
+                  console.log('newPin.latitude (string):', newPin.latitude, typeof newPin.latitude);
+                  console.log('newPin.longitude (string):', newPin.longitude, typeof newPin.longitude);
+                  
+                  // Validate coordinates before creating marker
+                  const lat = parseFloat(newPin.latitude);
+                  const lng = parseFloat(newPin.longitude);
+                  
+                  console.log('Parsed lat:', lat, typeof lat, 'isNaN:', isNaN(lat));
+                  console.log('Parsed lng:', lng, typeof lng, 'isNaN:', isNaN(lng));
+                  
+                  // Check if coordinates are valid numbers
+                  const hasValidCoords = newPin.latitude && newPin.longitude && !isNaN(lat) && !isNaN(lng);
+                  
+                  console.log('Has valid coords:', hasValidCoords);
+                  
+                  if (!hasValidCoords) {
+                    console.log('No valid coordinates, returning undefined (no marker)');
+                    return undefined;
+                  }
+                  
+                  const marker = {
+                    id: newPin.reportId || 'temp-marker',
+                    type: newPin.type || 'Default',
+                    title: newPin.title || newPin.locationName || 'Selected Location',
+                    description: newPin.locationName || 'Temporary marker',
+                    reportId: newPin.reportId,
+                    coordinates: [lng, lat] as [number, number],
+                    locationName: newPin.locationName,
+                    latitude: lat,
+                    longitude: lng
+                  };
+                  
+                  console.log('Created marker object:', marker);
+                  console.log('Marker coordinates array [lng, lat]:', marker.coordinates);
+                  
+                  return marker;
+                })()
               }
             />
           </div>

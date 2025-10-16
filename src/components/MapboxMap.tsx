@@ -32,11 +32,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css'; // Required for proper marker positioning
 import MapboxGeocoder from '@mapbox/mapbox-gl-geocoder';
 import '@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Info } from 'lucide-react';
+import { Pin } from '@/types/pin';
 
 // Use environment variable for Mapbox access token
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
@@ -64,10 +66,12 @@ interface MapboxMapProps {
     facilityTypes?: string[];
   };
   singleMarker?: Marker;
+  pins?: Pin[]; // Array of pins from database to display
   showOnlyCurrentLocation?: boolean;
   clickedLocation?: { lat: number; lng: number; address: string } | null;
   showGeocoder?: boolean;
   onGeocoderResult?: (result: { lat: number; lng: number; address: string }) => void;
+  showDirections?: boolean; // Control whether to show routes and travel time
 }
 
 // Sample data for markers - currently empty, will be populated from database
@@ -101,10 +105,12 @@ export function MapboxMap({
   zoom = 14,
   activeFilters,
   singleMarker,
+  pins = [],
   showOnlyCurrentLocation = false,
   clickedLocation = null,
   showGeocoder = false,
-  onGeocoderResult
+  onGeocoderResult,
+  showDirections = true // Default to true for backward compatibility
 }: MapboxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -173,49 +179,97 @@ export function MapboxMap({
     return colorMap[type] || '#6B7280';
   };
 
+  // Function to get marker image URL based on type
+  const getMarkerImageUrl = (type: string): string => {
+    // Map each type to a custom marker image
+    // You can replace these with paths to your custom marker images
+    const markerImages: Record<string, string> = {
+      // Accident/Hazard Types - you'll replace these paths with your actual marker images
+      'Road Crash': '/markers/road-crash.svg',
+      'Fire': '/markers/fire.svg',
+      'Medical Emergency': '/markers/medical.svg',
+      'Flooding': '/markers/flooding.svg',
+      'Volcanic Activity': '/markers/volcano.svg',
+      'Landslide': '/markers/landslide.svg',
+      'Earthquake': '/markers/earthquake.svg',
+      'Civil Disturbance': '/markers/civil.svg',
+      'Armed Conflict': '/markers/conflict.svg',
+      'Infectious Disease': '/markers/disease.svg',
+      // Emergency Facilities
+      'Evacuation Centers': '/markers/evacuation.svg',
+      'Health Facilities': '/markers/health.svg',
+      'Police Stations': '/markers/police.svg',
+      'Fire Stations': '/markers/fire-station.svg',
+      'Government Offices': '/markers/government.svg',
+      // Default
+      'Default': '/markers/default.svg'
+    };
+    
+    return markerImages[type] || markerImages['Default'];
+  };
+
   // Function to create a marker element with icon
   const createMarkerElement = (type: string, isSingleMarker = false) => {
     const el = document.createElement('div');
-    el.className = 'marker';
+    el.className = 'custom-marker';
     
-    const size = isSingleMarker ? '36px' : '28px';
-    const iconSize = isSingleMarker ? '20px' : '16px';
+    const size = isSingleMarker ? 40 : 32;
     
-    el.style.width = size;
-    el.style.height = size;
-    el.style.backgroundColor = getMarkerColor(type);
-    el.style.borderRadius = '50%';
-    el.style.border = '3px solid white';
-    el.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
+    // CRITICAL: Set dimensions on the container
+    el.style.width = `${size}px`;
+    el.style.height = `${size}px`;
+    
+    // Create image element for the marker icon
+    const img = document.createElement('img');
+    img.src = getMarkerImageUrl(type);
+    img.alt = type;
+    img.style.width = '100%';
+    img.style.height = '100%';
+    img.style.display = 'block';
+    img.style.objectFit = 'contain';
+    
+    // Fallback: if image fails to load, use emoji with background
+    img.onerror = () => {
+      console.warn(`Failed to load marker image for ${type}, using fallback`);
+      el.innerHTML = '';
+      el.style.backgroundColor = getMarkerColor(type);
+      el.style.borderRadius = '50%';
+      el.style.border = '3px solid white';
+      el.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
+      el.style.display = 'flex';
+      el.style.alignItems = 'center';
+      el.style.justifyContent = 'center';
+      el.style.fontSize = `${size * 0.5}px`;
+      el.textContent = getMarkerIcon(type);
+    };
+    
     el.style.cursor = 'pointer';
-    el.style.zIndex = '1000';
-    el.style.position = 'relative';
-    el.style.display = 'flex';
-    el.style.alignItems = 'center';
-    el.style.justifyContent = 'center';
-    el.style.fontSize = iconSize;
-    el.style.transition = 'transform 0.2s ease';
     
-    // Add icon emoji
-    el.innerHTML = getMarkerIcon(type);
+    // Add the image to the container
+    el.appendChild(img);
     
     // Add hover effect
-    el.onmouseenter = () => {
-      el.style.transform = 'scale(1.2)';
-      el.style.zIndex = '1001';
-    };
-    el.onmouseleave = () => {
+    el.addEventListener('mouseenter', () => {
+      el.style.transform = 'scale(1.15)';
+      el.style.transition = 'transform 0.2s ease';
+    });
+    el.addEventListener('mouseleave', () => {
       el.style.transform = 'scale(1)';
-      el.style.zIndex = '1000';
-    };
+    });
     
     // Add a pulsing animation for single markers
     if (isSingleMarker) {
       el.style.animation = 'pulse 2s infinite';
-      el.style.boxShadow = `0 0 20px ${getMarkerColor(type)}CC, 0 2px 8px rgba(0,0,0,0.3)`;
+      el.style.filter = 'drop-shadow(0 0 8px rgba(255, 79, 11, 0.6))';
     }
     
-    console.log('Created marker element:', el, 'for type:', type, 'isSingleMarker:', isSingleMarker);
+    console.log('Created custom marker element:', {
+      type,
+      isSingleMarker,
+      width: el.style.width,
+      height: el.style.height,
+      imageUrl: getMarkerImageUrl(type)
+    });
     
     return el;
   };
@@ -569,8 +623,8 @@ export function MapboxMap({
               });
             }
 
-            // Display route if user location is available
-            if (userLocation && map.current) {
+            // Display route if user location is available and directions are enabled
+            if (showDirections && userLocation && map.current) {
               try {
                 const routeData = await calculateTravelTime(
                   { lat: userLocation.lat, lng: userLocation.lng },
@@ -612,28 +666,31 @@ export function MapboxMap({
 
         if (onMapClick) {
           map.current.on('click', async (e) => {
-            // Center the map on the clicked location
-            map.current.flyTo({
-              center: [e.lngLat.lng, e.lngLat.lat],
-              zoom: 12, // Zoom in closer to the clicked location
-              essential: true
-            });
+            // Only center and zoom if directions are enabled
+            if (showDirections) {
+              // Center the map on the clicked location
+              map.current.flyTo({
+                center: [e.lngLat.lng, e.lngLat.lat],
+                zoom: 12, // Zoom in closer to the clicked location
+                essential: true
+              });
 
-            // Display route if user location is available
-            if (userLocation) {
-              try {
-                const routeData = await calculateTravelTime(
-                  { lat: userLocation.lat, lng: userLocation.lng },
-                  { lat: e.lngLat.lat, lng: e.lngLat.lng }
-                );
-                
-                if (routeData && routeData.routeData) {
-                  setRouteData(routeData.routeData);
-                  setShowRoute(true);
-                  displayRoute(routeData.routeData);
+              // Display route if user location is available
+              if (userLocation) {
+                try {
+                  const routeData = await calculateTravelTime(
+                    { lat: userLocation.lat, lng: userLocation.lng },
+                    { lat: e.lngLat.lat, lng: e.lngLat.lng }
+                  );
+                  
+                  if (routeData && routeData.routeData) {
+                    setRouteData(routeData.routeData);
+                    setShowRoute(true);
+                    displayRoute(routeData.routeData);
+                  }
+                } catch (error) {
+                  console.error('Error calculating route:', error);
                 }
-              } catch (error) {
-                console.error('Error calculating route:', error);
               }
             }
             
@@ -699,17 +756,39 @@ export function MapboxMap({
 
     // Handle single marker (from database)
     if (singleMarker) {
+      console.log('=== MAPBOX MARKER RENDER ===');
+      console.log('Full singleMarker object:', singleMarker);
+      console.log('Coordinates array:', singleMarker.coordinates);
+      console.log('Individual lat/lng:', { lat: singleMarker.latitude, lng: singleMarker.longitude });
+      
+      // Validate coordinates
+      const [lng, lat] = singleMarker.coordinates;
+      console.log('Destructured from array - lng:', lng, 'lat:', lat);
+      
+      if (isNaN(lng) || isNaN(lat) || lng < -180 || lng > 180 || lat < -90 || lat > 90) {
+        console.error('❌ Invalid marker coordinates - aborting marker creation');
+        console.error('Invalid values:', { lng, lat, marker: singleMarker });
+        return;
+      }
+      
+      console.log('✅ Coordinates valid, creating custom marker...');
+      
+      // Create custom marker element
       const el = createMarkerElement(singleMarker.type, true);
+      
+      // Create Mapbox marker with custom element
       const markerInstance = new mapboxgl.Marker({
         element: el,
-        anchor: 'center'
+        anchor: 'center' // Anchor point is center of the element
       })
       .setLngLat(singleMarker.coordinates)
       .addTo(map.current);
-
+      
       markersRef.current.push(markerInstance);
-
-      // Add click event to marker
+      
+      console.log('✅ Custom marker added at:', singleMarker.coordinates);
+      
+      // Add click event to show popup
       el.addEventListener('click', async () => {
         if (popupRef.current) {
           popupRef.current.remove();
@@ -723,18 +802,35 @@ export function MapboxMap({
           maxWidth: '200px'
         })
         .setLngLat(singleMarker.coordinates)
-        .setHTML(await createPopupContentWithTravelTime(singleMarker))
+        .setHTML(showDirections ? await createPopupContentWithTravelTime(singleMarker) : createPopupContent(singleMarker))
         .addTo(map.current);
 
         popupRef.current = popup;
       });
+      
+      // Debug marker wrapper
+      setTimeout(() => {
+        const allMarkers = document.querySelectorAll('.mapboxgl-marker');
+        console.log('Total markers on map:', allMarkers.length);
+        allMarkers.forEach((marker, index) => {
+          const computedStyle = window.getComputedStyle(marker);
+          console.log(`Marker ${index}:`, {
+            element: marker,
+            classes: marker.className,
+            transform: computedStyle.transform,
+            position: computedStyle.position,
+            width: computedStyle.width,
+            height: computedStyle.height
+          });
+        });
+      }, 100);
 
       // Add current location marker if available and not showing only current location
       if (userLocation && !showOnlyCurrentLocation) {
         console.log('Adding current location marker at:', userLocation);
         
         const currentLocationEl = document.createElement('div');
-        currentLocationEl.className = 'marker';
+        currentLocationEl.className = 'current-location-marker';
         currentLocationEl.style.width = '20px';
         currentLocationEl.style.height = '20px';
         currentLocationEl.style.backgroundColor = '#3B82F6';
@@ -742,13 +838,11 @@ export function MapboxMap({
         currentLocationEl.style.border = '3px solid white';
         currentLocationEl.style.boxShadow = '0 0 12px rgba(59, 130, 246, 0.6)';
         currentLocationEl.style.cursor = 'pointer';
-        currentLocationEl.style.zIndex = '1000';
-        currentLocationEl.style.position = 'relative';
         currentLocationEl.title = 'Your current location';
 
         const currentLocationMarker = new mapboxgl.Marker({
           element: currentLocationEl,
-          anchor: 'bottom'
+          anchor: 'center'
         })
         .setLngLat([userLocation.lng, userLocation.lat])
         .addTo(map.current);
@@ -759,7 +853,7 @@ export function MapboxMap({
       // Add clicked location marker if provided
       if (clickedLocation) {
         const clickedLocationEl = document.createElement('div');
-        clickedLocationEl.className = 'marker';
+        clickedLocationEl.className = 'clicked-location-marker';
         clickedLocationEl.style.width = '24px';
         clickedLocationEl.style.height = '24px';
         clickedLocationEl.style.backgroundColor = '#FF4F0B';
@@ -767,13 +861,11 @@ export function MapboxMap({
         clickedLocationEl.style.border = '3px solid white';
         clickedLocationEl.style.boxShadow = '0 0 12px rgba(255, 79, 11, 0.6)';
         clickedLocationEl.style.cursor = 'pointer';
-        clickedLocationEl.style.zIndex = '1000';
-        clickedLocationEl.style.position = 'relative';
         clickedLocationEl.title = 'Selected location';
 
         const clickedLocationMarker = new mapboxgl.Marker({
           element: clickedLocationEl,
-          anchor: 'bottom'
+          anchor: 'center'
         })
         .setLngLat([clickedLocation.lng, clickedLocation.lat])
         .addTo(map.current);
@@ -854,7 +946,58 @@ export function MapboxMap({
       return; // Exit early since we're showing a single marker
     }
 
-    // Filter markers based on active filters (for multiple markers)
+    // Render pins from database
+    if (pins && pins.length > 0) {
+      console.log('Rendering database pins:', pins.length);
+      
+      pins.forEach(pin => {
+        // Create marker element
+        const el = createMarkerElement(pin.type, false);
+        
+        // Create marker instance
+        const markerInstance = new mapboxgl.Marker({
+          element: el,
+          anchor: 'center'
+        })
+        .setLngLat([pin.longitude, pin.latitude])
+        .addTo(map.current!);
+
+        // Add click event to show popup
+        el.addEventListener('click', async () => {
+          if (popupRef.current) {
+            popupRef.current.remove();
+          }
+
+          // Convert Pin to Marker format for popup
+          const markerData: Marker = {
+            id: pin.id,
+            type: pin.type,
+            title: pin.title,
+            description: pin.locationName,
+            reportId: pin.reportId,
+            coordinates: [pin.longitude, pin.latitude],
+            locationName: pin.locationName,
+            latitude: pin.latitude,
+            longitude: pin.longitude
+          };
+
+          popupRef.current = new mapboxgl.Popup({ 
+            offset: 25,
+            closeButton: false,
+            closeOnClick: true,
+            className: 'custom-popup',
+            maxWidth: '200px'
+          })
+          .setLngLat([pin.longitude, pin.latitude])
+          .setHTML(showDirections ? await createPopupContentWithTravelTime(markerData) : createPopupContent(markerData))
+          .addTo(map.current!);
+        });
+
+        markersRef.current.push(markerInstance);
+      });
+    }
+
+    // Also render legacy sample markers (backward compatibility)
     const filteredMarkers = sampleMarkers.filter(marker => {
       if (!activeFilters) return true;
       
@@ -864,7 +1007,7 @@ export function MapboxMap({
       return isAccidentType || isFacilityType;
     });
 
-    // Add markers
+    // Add legacy markers
     filteredMarkers.forEach(marker => {
       const el = createMarkerElement(marker.type, false);
       const markerInstance = new mapboxgl.Marker({
@@ -888,13 +1031,13 @@ export function MapboxMap({
           maxWidth: '200px'
         })
           .setLngLat(marker.coordinates)
-          .setHTML(await createPopupContentWithTravelTime(marker))
+          .setHTML(showDirections ? await createPopupContentWithTravelTime(marker) : createPopupContent(marker))
           .addTo(map.current!);
       });
 
       markersRef.current.push(markerInstance);
     });
-  }, [mapLoaded, activeFilters, singleMarker, userLocation, showOnlyCurrentLocation, clickedLocation]);
+  }, [mapLoaded, activeFilters, singleMarker, pins, userLocation, showOnlyCurrentLocation, clickedLocation]);
 
   // Handle route display
   useEffect(() => {

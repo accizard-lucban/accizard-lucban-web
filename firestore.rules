@@ -144,6 +144,17 @@ service cloud.firestore {
       allow read, write: if true;
     }
     
+    // Pins collection (Map Markers)
+    match /pins/{pinId} {
+      // Public read access (mobile app + web app + anyone can view pins)
+      allow read: if true;
+      
+      // Allow public write (for regular LDRRMO admins who use localStorage auth, not Firebase Auth)
+      // Super admins (Firebase Auth) also have access
+      // This follows the same pattern as reports, announcements, and other admin-managed collections
+      allow create, update, delete: if true;
+    }
+    
     // ========================================
     // DEFAULT: DENY ALL OTHER ACCESS
     // ========================================
