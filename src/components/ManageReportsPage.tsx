@@ -336,7 +336,7 @@ export function ManageReportsPage() {
   };
   const handlePinOnMap = (report: any) => {
     console.log("Redirecting to map for report:", report.id);
-    navigate("/risk-map");
+    navigate("/risk-map", { state: { report } });
   };
   const handleViewLocation = (location: string) => {
     console.log("Viewing location:", location);
@@ -1774,7 +1774,7 @@ export function ManageReportsPage() {
                       <Checkbox
                         checked={paginatedReports.length > 0 && paginatedReports.every(report => selectedReports.includes(report.firestoreId))}
                         onCheckedChange={(checked: boolean) => handleSelectAll(checked)}
-                        className="border-white data-[state=checked]:bg-white data-[state=checked]:text-orange-500 hover:border-orange-200"
+                        className="border-white data-[state=checked]:bg-white data-[state=checked]:text-gray-800 hover:border-gray-200"
                       />
                     </TableHead>
                     <TableHead className="text-white font-semibold">Report ID</TableHead>
@@ -1803,7 +1803,6 @@ export function ManageReportsPage() {
                         <Checkbox
                           checked={selectedReports.includes(report.firestoreId)}
                           onCheckedChange={() => handleCheckboxChange(report.firestoreId)}
-                          className="border-gray-400 data-[state=checked]:bg-orange-500 data-[state=checked]:text-white data-[state=checked]:border-orange-500 hover:border-orange-500"
                         />
                       </TableCell>
                       <TableCell className="font-medium">{report.id}</TableCell>

@@ -1,4 +1,4 @@
-import { Home, FileText, BarChart3, MessageSquare, Bell, Users, User, ChevronLeft, ClipboardList, LogOut, X } from "lucide-react";
+import { Home, FileText, Map, MessageSquare, Bell, Users, User, ChevronLeft, ClipboardList, LogOut, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -30,7 +30,7 @@ const menuItems = [{
   preload: () => import("@/components/ManageReportsPage")
 }, {
   title: "Risk and Utility Map",
-  icon: BarChart3,
+  icon: Map,
   path: "/risk-map",
   preload: () => import("@/components/RiskMapPage")
 }, {

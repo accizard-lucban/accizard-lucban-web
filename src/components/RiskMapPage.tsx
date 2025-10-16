@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -7,8 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, MapPin, Layers, CalendarIcon, Search, Building2, Ambulance, Waves, Mountain, Building, CircleAlert, Users, ShieldAlert, Activity, Flame, Car, Siren, Home, Navigation } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Plus, MapPin, Layers, CalendarIcon, Search, Building2, Ambulance, Waves, Mountain, Building, CircleAlert, Users, ShieldAlert, Activity, Flame, Car, Siren, Home, Navigation, RotateCcw, HelpCircle } from "lucide-react";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Layout } from "./Layout";
@@ -50,17 +52,18 @@ const locationIcons: Record<string, any> = {
 };
 
 export function RiskMapPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [date, setDate] = useState<DateRange | undefined>();
-  const [showAddPinTypeDialog, setShowAddPinTypeDialog] = useState(false);
-  const [newPinType, setNewPinType] = useState({ name: "", icon: "" });
   const [searchQuery, setSearchQuery] = useState("");
+  const [isFromReport, setIsFromReport] = useState(false); // Track if data came from a report
   const [newPin, setNewPin] = useState({
     type: "",
     title: "",
-    description: "",
     latitude: "",
     longitude: "",
+    locationName: "",
     reportId: ""
   });
 
@@ -89,18 +92,130 @@ export function RiskMapPage() {
     residentCurrentLocation: false
   });
 
-  const pinTypes = [
+  // Accident/Hazard types
+  const accidentHazardTypes = [
     "Road Crash", "Fire", "Medical Emergency", "Flooding", "Volcanic Activity",
-    "Landslide", "Earthquake", "Civil Disturbance", "Armed Conflict", "Infectious Disease",
+    "Landslide", "Earthquake", "Civil Disturbance", "Armed Conflict", "Infectious Disease"
+  ];
+
+  // Emergency facility types
+  const emergencyFacilityTypes = [
     "Evacuation Centers", "Health Facilities", "Police Stations", "Fire Stations", "Government Offices"
   ];
 
+  // Combined pin types (for backward compatibility)
+  const pinTypes = [...accidentHazardTypes, ...emergencyFacilityTypes];
+
+  // Function to reverse geocode coordinates to get location name
+  const reverseGeocode = async (lat: string, lng: string) => {
+    try {
+      const latitude = parseFloat(lat);
+      const longitude = parseFloat(lng);
+      
+      if (isNaN(latitude) || isNaN(longitude)) {
+        return "Invalid coordinates";
+      }
+
+      const accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+      if (!accessToken) {
+        return "Geocoding unavailable";
+      }
+
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${accessToken}&types=address,poi,place,locality,neighborhood`;
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Geocoding API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.features && data.features.length > 0) {
+        const feature = data.features[0];
+        return feature.place_name || feature.text || 'Unknown Location';
+      } else {
+        return 'Unknown Location';
+      }
+    } catch (error) {
+      console.error('Error reverse geocoding:', error);
+      return 'Geocoding failed';
+    }
+  };
+
+  // Effect to populate form when navigating from a report
+  useEffect(() => {
+    const state = location.state as any;
+    console.log("Location state changed:", state);
+    if (state && state.report) {
+      const report = state.report;
+      console.log("Loading report data:", report);
+      setNewPin({
+        type: report.type || "",
+        title: "", // Keep title empty for admin to customize
+        latitude: report.latitude?.toString() || "",
+        longitude: report.longitude?.toString() || "",
+        locationName: report.location || "",
+        reportId: report.id || ""
+      });
+      setIsFromReport(true);
+      console.log("isFromReport set to true");
+      
+      // Clear the location state to prevent it from persisting on refresh
+      navigate("/risk-map", { replace: true, state: {} });
+    }
+  }, [location.state, navigate]);
+
+  // Debug effect to track isFromReport changes
+  useEffect(() => {
+    console.log("isFromReport changed to:", isFromReport);
+  }, [isFromReport]);
+
+  // Effect to reverse geocode when latitude/longitude changes (only if not from report)
+  useEffect(() => {
+    // Skip reverse geocoding if data came from a report
+    if (isFromReport) {
+      return;
+    }
+
+    const fetchLocationName = async () => {
+      if (newPin.latitude && newPin.longitude) {
+        setNewPin(prev => ({ ...prev, locationName: "Loading..." }));
+        const locationName = await reverseGeocode(newPin.latitude, newPin.longitude);
+        setNewPin(prev => ({ ...prev, locationName }));
+      } else {
+        setNewPin(prev => ({ ...prev, locationName: "" }));
+      }
+    };
+
+    // Debounce the geocoding call
+    const timer = setTimeout(() => {
+      fetchLocationName();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [newPin.latitude, newPin.longitude, isFromReport]);
+
   const handleAddPin = () => {
     console.log("Adding new pin:", newPin);
-    setNewPin({ type: "", title: "", description: "", latitude: "", longitude: "", reportId: "" });
+    setNewPin({ type: "", title: "", latitude: "", longitude: "", locationName: "", reportId: "" });
+    setIsFromReport(false); // Reset when adding a new pin
+  };
+
+  const handleClearForm = () => {
+    setNewPin({ type: "", title: "", latitude: "", longitude: "", locationName: "", reportId: "" });
+    setIsFromReport(false);
+  };
+
+  const hasFormData = () => {
+    return newPin.type || newPin.title || newPin.latitude || newPin.longitude || newPin.reportId;
   };
 
   const handleMapClick = useCallback((event: any) => {
+    // Don't allow map clicks to change coordinates if data came from a report
+    if (isFromReport) {
+      return;
+    }
+    
     // Simulate getting coordinates from map click
     const mockLat = (Math.random() * 180 - 90).toFixed(6);
     const mockLng = (Math.random() * 360 - 180).toFixed(6);
@@ -108,9 +223,10 @@ export function RiskMapPage() {
     setNewPin(prev => ({
       ...prev,
       latitude: mockLat,
-      longitude: mockLng
+      longitude: mockLng,
+      locationName: "" // Will be populated by useEffect
     }));
-  }, []);
+  }, [isFromReport]);
 
   const handleAccidentFilterChange = (key: keyof typeof accidentFilters) => {
     setAccidentFilters(prev => ({ ...prev, [key]: !prev[key] }));
@@ -194,9 +310,10 @@ export function RiskMapPage() {
 
   return (
     <Layout>
-      <div className="flex h-[calc(100vh-4rem)]">
-        <div className="w-[350px] flex-shrink-0 p-4 border-r overflow-y-auto">
-          <Tabs defaultValue="add-pin" className="w-full">
+      <TooltipProvider>
+        <div className="flex h-[calc(100vh-4rem)]">
+          <div className="w-[350px] flex-shrink-0 p-4 border-r overflow-y-auto">
+            <Tabs defaultValue="add-pin" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="add-pin">Add Pin</TabsTrigger>
               <TabsTrigger value="filters">Filters</TabsTrigger>
@@ -210,39 +327,50 @@ export function RiskMapPage() {
                     <span>Add New Pin</span>
                   </CardTitle>
                   <p className="text-sm text-gray-600">
-                    Fill out the form below, then click on the map to place your pin.
+                    {isFromReport 
+                      ? "Pin this report on the map. You can customize the marker title."
+                      : "Fill out the form below, then click on the map to place your pin."}
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="pin-type">Pin Type</Label>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowAddPinTypeDialog(true)}
-                        className="h-8 px-2 text-xs"
-                      >
-                        <Plus className="h-4 w-4 mr-1" />
-                        New Type
-                      </Button>
-                    </div>
-                    <Select value={newPin.type} onValueChange={(value) => setNewPin({ ...newPin, type: value })}>
-                      <SelectTrigger>
+                    <Label htmlFor="pin-type">Pin Type</Label>
+                    <Select value={newPin.type} onValueChange={(value) => setNewPin({ ...newPin, type: value })} disabled={isFromReport}>
+                      <SelectTrigger className={cn(isFromReport && "bg-gray-50 cursor-not-allowed")}>
                         <SelectValue placeholder="Select pin type" />
                       </SelectTrigger>
                       <SelectContent>
-                        {pinTypes.map((type) => {
-                          const Icon = pinTypeIcons[type] || MapPin;
-                          return (
-                            <SelectItem key={type} value={type}>
-                              <div className="flex items-center">
-                                <Icon className="h-4 w-4 mr-2" />
-                                {type}
-                              </div>
-                            </SelectItem>
-                          );
-                        })}
+                        <SelectGroup>
+                          <SelectLabel className="text-xs font-semibold text-gray-600 px-2 py-1.5">Accident/Hazard Types</SelectLabel>
+                          {accidentHazardTypes.map((type) => {
+                            const Icon = pinTypeIcons[type] || MapPin;
+                            return (
+                              <SelectItem key={type} value={type}>
+                                <div className="flex items-center">
+                                  <Icon className="h-4 w-4 mr-2" />
+                                  {type}
+                                </div>
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectGroup>
+                        
+                        <SelectSeparator className="my-1" />
+                        
+                        <SelectGroup>
+                          <SelectLabel className="text-xs font-semibold text-gray-600 px-2 py-1.5">Emergency Facilities</SelectLabel>
+                          {emergencyFacilityTypes.map((type) => {
+                            const Icon = pinTypeIcons[type] || MapPin;
+                            return (
+                              <SelectItem key={type} value={type}>
+                                <div className="flex items-center">
+                                  <Icon className="h-4 w-4 mr-2" />
+                                  {type}
+                                </div>
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectGroup>
                       </SelectContent>
                     </Select>
                   </div>
@@ -251,19 +379,9 @@ export function RiskMapPage() {
                     <Label htmlFor="pin-title">Title</Label>
                     <Input
                       id="pin-title"
-                      placeholder="Location name"
+                      placeholder="Marker Title"
                       value={newPin.title}
                       onChange={(e) => setNewPin({ ...newPin, title: e.target.value })}
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="pin-description">Description</Label>
-                    <Input
-                      id="pin-description"
-                      placeholder="Additional details"
-                      value={newPin.description}
-                      onChange={(e) => setNewPin({ ...newPin, description: e.target.value })}
                     />
                   </div>
 
@@ -274,7 +392,13 @@ export function RiskMapPage() {
                         id="latitude"
                         placeholder="0.000000"
                         value={newPin.latitude}
-                        onChange={(e) => setNewPin({ ...newPin, latitude: e.target.value })}
+                        onChange={(e) => {
+                          if (!isFromReport) {
+                            setNewPin({ ...newPin, latitude: e.target.value });
+                          }
+                        }}
+                        disabled={isFromReport}
+                        className={cn(isFromReport && "bg-gray-50 cursor-not-allowed")}
                       />
                     </div>
                     <div className="space-y-2">
@@ -283,28 +407,69 @@ export function RiskMapPage() {
                         id="longitude"
                         placeholder="0.000000"
                         value={newPin.longitude}
-                        onChange={(e) => setNewPin({ ...newPin, longitude: e.target.value })}
+                        onChange={(e) => {
+                          if (!isFromReport) {
+                            setNewPin({ ...newPin, longitude: e.target.value });
+                          }
+                        }}
+                        disabled={isFromReport}
+                        className={cn(isFromReport && "bg-gray-50 cursor-not-allowed")}
                       />
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="report-id">Report ID (Optional)</Label>
+                    <Label htmlFor="location-name">Location Name</Label>
+                    <Input
+                      id="location-name"
+                      placeholder="Auto-filled from coordinates"
+                      value={newPin.locationName}
+                      disabled
+                      className="bg-gray-50 cursor-not-allowed"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1">
+                      <Label htmlFor="report-id">Report ID</Label>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-3.5 w-3.5 text-gray-400 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="text-xs max-w-xs">
+                            {isFromReport 
+                              ? "Report ID from Manage Reports. This links the pin to the emergency report." 
+                              : "Auto-filled when pinning from Manage Reports"}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                     <Input
                       id="report-id"
-                      placeholder="REP-001"
+                      placeholder="Auto-filled from report"
                       value={newPin.reportId}
-                      onChange={(e) => setNewPin({ ...newPin, reportId: e.target.value })}
+                      disabled
+                      className="bg-gray-50 cursor-not-allowed"
                     />
-                    <p className="text-xs text-gray-500">
-                      Reference to corresponding report in Manage Reports
-                    </p>
                   </div>
                   
-                  <Button onClick={handleAddPin} className="w-full bg-[#FF4F0B] text-white hover:bg-[#FF4F0B]/80">
-                    <MapPin className="h-4 w-4 mr-2" />
-                    Add Pin to Map
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button onClick={handleAddPin} className="flex-1 bg-[#FF4F0B] text-white hover:bg-[#FF4F0B]/80">
+                      <MapPin className="h-4 w-4 mr-2" />
+                      Add Pin to Map
+                    </Button>
+                    {hasFormData() && (
+                      <Button 
+                        onClick={handleClearForm} 
+                        variant="outline"
+                        className="border-gray-300 hover:bg-gray-100"
+                        title="Clear form"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
@@ -381,7 +546,6 @@ export function RiskMapPage() {
                           id="all-accidents"
                           checked={Object.values(accidentFilters).every(Boolean)}
                           onCheckedChange={(checked) => handleSelectAllAccidents(checked as boolean)}
-                          className="border-orange-500 data-[state=checked]:bg-orange-500 data-[state=checked]:text-white"
                         />
                         <Label htmlFor="all-accidents" className="text-sm font-normal">
                           All
@@ -395,7 +559,6 @@ export function RiskMapPage() {
                               id={key}
                               checked={checked}
                               onCheckedChange={() => handleAccidentFilterChange(key as keyof typeof accidentFilters)}
-                              className="border-orange-500 data-[state=checked]:bg-orange-500 data-[state=checked]:text-white"
                             />
                             <Label htmlFor={key} className="text-sm font-normal flex items-center">
                               <Icon className="h-4 w-4 mr-2" />
@@ -416,7 +579,6 @@ export function RiskMapPage() {
                           id="all-facilities"
                           checked={Object.values(facilityFilters).every(Boolean)}
                           onCheckedChange={(checked) => handleSelectAllFacilities(checked as boolean)}
-                          className="border-orange-500 data-[state=checked]:bg-orange-500 data-[state=checked]:text-white"
                         />
                         <Label htmlFor="all-facilities" className="text-sm font-normal">
                           All
@@ -430,7 +592,6 @@ export function RiskMapPage() {
                               id={key}
                               checked={checked}
                               onCheckedChange={() => handleFacilityFilterChange(key as keyof typeof facilityFilters)}
-                              className="border-orange-500 data-[state=checked]:bg-orange-500 data-[state=checked]:text-white"
                             />
                             <Label htmlFor={key} className="text-sm font-normal flex items-center">
                               <Icon className="h-4 w-4 mr-2" />
@@ -470,39 +631,44 @@ export function RiskMapPage() {
           </Tabs>
         </div>
 
-        <div className="flex-1 relative">
-          {/* Search Bar */}
-          <div className="absolute top-4 left-4 right-4 z-10">
-            <div className="max-w-4xl mx-auto flex items-center space-x-2">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500" />
-                <Input
-                  type="text"
-                  placeholder="Search for a location..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 pr-4 h-10 w-full bg-white shadow-lg"
-                />
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowHeatmap(!showHeatmap)}
-                className={cn(
-                  "h-10 px-4",
-                  showHeatmap && "bg-orange-50 text-orange-600 border-orange-200"
-                )}
-              >
-                <Layers className="h-4 w-4 mr-2" />
-                Heatmap {showHeatmap ? "On" : "Off"}
-              </Button>
+        <div className="flex-1 flex flex-col">
+          {/* Map Toolbar */}
+          <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500" />
+              <Input
+                type="text"
+                placeholder="Search for a location..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 pr-4 h-9 w-full border-gray-300"
+              />
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowHeatmap(!showHeatmap)}
+              className={cn(
+                "h-9 px-3",
+                showHeatmap && "bg-gray-800 text-white hover:bg-gray-700 hover:text-white"
+              )}
+            >
+              <Layers className="h-4 w-4 mr-2" />
+              Heatmap
+            </Button>
           </div>
 
           {/* Map Container */}
-          <div className="w-full h-full bg-gray-100">
+          <div className="flex-1 bg-gray-100">
             <MapboxMap 
               onMapClick={(lngLat) => {
+                console.log("Map clicked, lngLat:", lngLat);
+                console.log("Current isFromReport value:", isFromReport);
+                if (isFromReport) {
+                  console.log("Blocked: Cannot change coordinates from a report");
+                  return;
+                }
+                console.log("Updating coordinates to:", lngLat);
                 setNewPin(prev => ({
                   ...prev,
                   latitude: lngLat.lat.toFixed(6),
@@ -510,66 +676,33 @@ export function RiskMapPage() {
                 }));
               }}
               showHeatmap={showHeatmap}
-              center={[121.5556, 14.1139]} // Lucban, Quezon coordinates
-              zoom={13}
-              activeFilters={getActiveFilters()}
+              center={
+                newPin.latitude && newPin.longitude
+                  ? [parseFloat(newPin.longitude), parseFloat(newPin.latitude)]
+                  : [121.5556, 14.1139] // Lucban, Quezon coordinates
+              }
+              zoom={newPin.latitude && newPin.longitude ? 15 : 13}
+              activeFilters={!isFromReport && !newPin.latitude && !newPin.longitude ? getActiveFilters() : undefined}
+              singleMarker={
+                newPin.latitude && newPin.longitude
+                  ? {
+                      id: newPin.reportId || 'temp-marker',
+                      type: newPin.type || 'Default',
+                      title: newPin.title || newPin.locationName || 'Selected Location',
+                      description: newPin.locationName || 'Temporary marker',
+                      reportId: newPin.reportId,
+                      coordinates: [parseFloat(newPin.longitude), parseFloat(newPin.latitude)] as [number, number],
+                      locationName: newPin.locationName,
+                      latitude: parseFloat(newPin.latitude),
+                      longitude: parseFloat(newPin.longitude)
+                    }
+                  : undefined
+              }
             />
-            {(newPin.latitude && newPin.longitude) && (
-              <div className="absolute bottom-4 left-4 p-2 bg-green-100 text-green-700 rounded shadow-lg">
-                Selected: {newPin.latitude}, {newPin.longitude}
-              </div>
-            )}
           </div>
         </div>
       </div>
-
-      {/* Add Pin Type Dialog */}
-      <Dialog open={showAddPinTypeDialog} onOpenChange={setShowAddPinTypeDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add New Pin Type</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Pin Type Name</Label>
-              <Input
-                placeholder="Enter pin type name"
-                value={newPinType.name}
-                onChange={(e) => setNewPinType({ ...newPinType, name: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Icon</Label>
-              <Select value={newPinType.icon} onValueChange={(value) => setNewPinType({ ...newPinType, icon: value })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select an icon" />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(pinTypeIcons).map(([name, Icon]) => (
-                    <SelectItem key={name} value={name}>
-                      <div className="flex items-center">
-                        <Icon className="h-4 w-4 mr-2" />
-                        {name}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddPinTypeDialog(false)}>
-              Cancel
-            </Button>
-            <Button onClick={() => {
-              // Add the new pin type logic here
-              setShowAddPinTypeDialog(false);
-            }}>
-              Add Pin Type
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      </TooltipProvider>
     </Layout>
   );
 }

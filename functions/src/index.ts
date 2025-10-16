@@ -208,6 +208,146 @@ export const sendChatNotification = onDocumentCreated(
   }
 );
 
+// Cloud Function: Send push notifications when new announcement is created
+export const sendAnnouncementNotification = onDocumentCreated(
+  "announcements/{announcementId}",
+  async (event) => {
+    const announcementData = event.data?.data();
+    
+    if (!announcementData) {
+      logger.warn("No announcement data found");
+      return;
+    }
+
+    const { type, description, priority, date } = announcementData;
+
+    try {
+      // Get all users with FCM tokens
+      const usersSnapshot = await admin.firestore().collection("users").get();
+      
+      const usersWithTokens = usersSnapshot.docs
+        .map(doc => ({
+          userId: doc.id,
+          fcmToken: doc.data().fcmToken
+        }))
+        .filter(user => user.fcmToken); // Only users with FCM tokens
+
+      if (usersWithTokens.length === 0) {
+        logger.info("No users with FCM tokens found");
+        return;
+      }
+
+      logger.info(`Sending announcement notification to ${usersWithTokens.length} users`);
+
+      // Determine notification title based on priority
+      let notificationTitle = "New Announcement";
+      if (priority === "high") {
+        notificationTitle = "🚨 Important Announcement";
+      } else if (priority === "medium") {
+        notificationTitle = "📢 New Announcement";
+      } else {
+        notificationTitle = "ℹ️ Announcement";
+      }
+
+      // Truncate description for notification body (max 100 chars)
+      const notificationBody = description && description.length > 100
+        ? description.substring(0, 97) + "..."
+        : description || "Check the app for details";
+
+      // Prepare notification payload
+      const basePayload = {
+        notification: {
+          title: notificationTitle,
+          body: notificationBody,
+        },
+        data: {
+          type: "announcement",
+          announcementId: event.params.announcementId,
+          announcementType: type || "general",
+          priority: priority || "low",
+          date: date || "",
+        },
+        android: {
+          priority: priority === "high" ? "high" as const : "normal" as const,
+          notification: {
+            sound: "default",
+            channelId: priority === "high" ? "high_priority_announcements" : "announcements",
+            priority: priority === "high" ? "high" as const : "default" as const,
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: "default",
+              badge: 1,
+            },
+          },
+        },
+      };
+
+      // Send notifications in batches (FCM limit: 500 per batch)
+      const batchSize = 500;
+      const batches = [];
+      
+      for (let i = 0; i < usersWithTokens.length; i += batchSize) {
+        const batch = usersWithTokens.slice(i, i + batchSize);
+        batches.push(batch);
+      }
+
+      let successCount = 0;
+      let failureCount = 0;
+      const invalidTokens: string[] = [];
+
+      for (const batch of batches) {
+        const messages = batch.map(user => ({
+          ...basePayload,
+          token: user.fcmToken,
+        }));
+
+        try {
+          const response = await admin.messaging().sendEach(messages);
+          
+          successCount += response.successCount;
+          failureCount += response.failureCount;
+
+          // Track invalid tokens
+          response.responses.forEach((result, index) => {
+            if (!result.success && result.error) {
+              const errorCode = result.error.code;
+              if (errorCode === "messaging/invalid-registration-token" ||
+                  errorCode === "messaging/registration-token-not-registered") {
+                invalidTokens.push(batch[index].userId);
+              }
+            }
+          });
+          
+        } catch (error: any) {
+          logger.error("Error sending batch notifications:", error);
+          failureCount += batch.length;
+        }
+      }
+
+      // Remove invalid tokens from Firestore
+      if (invalidTokens.length > 0) {
+        logger.info(`Removing ${invalidTokens.length} invalid FCM tokens`);
+        
+        const deletePromises = invalidTokens.map(userId =>
+          admin.firestore().collection("users").doc(userId).update({
+            fcmToken: admin.firestore.FieldValue.delete()
+          })
+        );
+        
+        await Promise.all(deletePromises);
+      }
+
+      logger.info(`Announcement notification sent. Success: ${successCount}, Failed: ${failureCount}, Invalid tokens removed: ${invalidTokens.length}`);
+      
+    } catch (error: any) {
+      logger.error("Error sending announcement notifications:", error);
+    }
+  }
+);
+
 // export const helloWorld = onRequest((request, response) => {
 //   logger.info("Hello logs!", {structuredData: true});
 //   response.send("Hello from Firebase!");

@@ -94,6 +94,8 @@ export default {
 				DEFAULT: '#f97316', // orange-500 - Main brand orange
 				400: '#fb923c'      // orange-400 - Lighter for hovers/active
 			}
+
+			
 		},
 			borderRadius: {
 				lg: 'var(--radius)',

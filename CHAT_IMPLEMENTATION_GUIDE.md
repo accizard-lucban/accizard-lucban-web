@@ -428,15 +428,24 @@ messaging().onMessage(async (remoteMessage) => {
   
   // Show local notification or update UI
   if (remoteMessage.notification) {
+    const { type } = remoteMessage.data || {};
+    
     // Display in-app notification banner
     showInAppNotification({
       title: remoteMessage.notification.title,
       body: remoteMessage.notification.body,
       onPress: () => {
-        // Navigate to chat screen
-        navigation.navigate('Chat', {
-          userId: remoteMessage.data?.userId
-        });
+        if (type === 'chat_message') {
+          // Navigate to chat screen
+          navigation.navigate('Chat', {
+            userId: remoteMessage.data?.userId
+          });
+        } else if (type === 'announcement') {
+          // Navigate to announcements screen
+          navigation.navigate('Announcements', {
+            announcementId: remoteMessage.data?.announcementId
+          });
+        }
       }
     });
   }
@@ -451,10 +460,13 @@ messaging().setBackgroundMessageHandler(async (remoteMessage) => {
   console.log('Background notification received:', remoteMessage);
   
   // Process notification data
-  const { type, userId, messageId } = remoteMessage.data || {};
+  const { type, userId, messageId, announcementId } = remoteMessage.data || {};
   
   if (type === 'chat_message' && userId) {
-    // Update local state or cache
+    // Update local state or cache for chat
+    // The notification will be shown automatically by the system
+  } else if (type === 'announcement' && announcementId) {
+    // Update local cache for announcements
     // The notification will be shown automatically by the system
   }
 });
@@ -464,10 +476,12 @@ messaging().getInitialNotification().then((remoteMessage) => {
   if (remoteMessage) {
     console.log('App opened from notification:', remoteMessage);
     
-    // Navigate to chat screen
-    const userId = remoteMessage.data?.userId;
-    if (userId) {
+    const { type, userId, announcementId } = remoteMessage.data || {};
+    
+    if (type === 'chat_message' && userId) {
       navigation.navigate('Chat', { userId });
+    } else if (type === 'announcement' && announcementId) {
+      navigation.navigate('Announcements', { announcementId });
     }
   }
 });
@@ -476,20 +490,24 @@ messaging().getInitialNotification().then((remoteMessage) => {
 messaging().onNotificationOpenedApp((remoteMessage) => {
   console.log('Notification opened app:', remoteMessage);
   
-  const userId = remoteMessage.data?.userId;
-  if (userId) {
+  const { type, userId, announcementId } = remoteMessage.data || {};
+  
+  if (type === 'chat_message' && userId) {
     navigation.navigate('Chat', { userId });
+  } else if (type === 'announcement' && announcementId) {
+    navigation.navigate('Announcements', { announcementId });
   }
 });
 ```
 
-#### 7. **Android Notification Channel**
+#### 7. **Android Notification Channels**
 
 ```javascript
-// Create notification channel for Android (required for Android 8.0+)
+// Create notification channels for Android (required for Android 8.0+)
 import notifee from '@notifee/react-native';
 
-async function createNotificationChannel() {
+async function createNotificationChannels() {
+  // Chat messages channel
   await notifee.createChannel({
     id: 'chat_messages',
     name: 'Chat Messages',
@@ -498,10 +516,32 @@ async function createNotificationChannel() {
     sound: 'default',
     vibration: true,
   });
+  
+  // Announcements channel (normal priority)
+  await notifee.createChannel({
+    id: 'announcements',
+    name: 'Announcements',
+    description: 'General announcements from AcciZard',
+    importance: AndroidImportance.DEFAULT,
+    sound: 'default',
+    vibration: true,
+  });
+  
+  // High priority announcements channel
+  await notifee.createChannel({
+    id: 'high_priority_announcements',
+    name: 'Important Announcements',
+    description: 'Urgent announcements requiring immediate attention',
+    importance: AndroidImportance.HIGH,
+    sound: 'default',
+    vibration: true,
+    lights: true,
+    lightColor: '#FF0000',
+  });
 }
 
 // Call on app initialization
-await createNotificationChannel();
+await createNotificationChannels();
 ```
 
 #### 8. **Clear Token on Logout**
@@ -544,6 +584,71 @@ async function testNotification() {
 }
 ```
 
+### Testing Push Notifications
+
+#### **Test Chat Notifications:**
+
+1. **Setup:**
+   - Ensure mobile app has FCM token stored in Firestore
+   - Log in to web app as admin
+   - Log in to mobile app as resident user
+
+2. **Send test message:**
+   - From web app, send a chat message to the resident
+   - Cloud Function should trigger automatically
+   - Mobile device should receive notification
+
+3. **Verify:**
+   - Check notification appears in system tray
+   - Tap notification - should open chat screen
+   - Check Firebase Console > Functions > Logs for success message
+
+#### **Test Announcement Notifications:**
+
+1. **Setup:**
+   - Ensure at least one user has FCM token in Firestore
+   - Log in to web app as admin
+
+2. **Create announcement:**
+   - Go to Announcements page
+   - Click "New Announcement"
+   - Fill in details (type, priority, description)
+   - Click "Create Announcement"
+
+3. **Verify:**
+   - Check all mobile devices receive notification
+   - Higher priority should have different title (🚨 vs 📢 vs ℹ️)
+   - Tap notification - should open announcements screen
+   - Check Firebase Console > Functions > Logs for batch results
+
+#### **Monitor Cloud Functions:**
+
+```bash
+# View real-time logs
+firebase functions:log --only sendChatNotification
+firebase functions:log --only sendAnnouncementNotification
+
+# View logs in Firebase Console
+# Functions > Dashboard > Select function > Logs tab
+```
+
+**Look for:**
+- ✅ "Successfully sent notification to user..."
+- ✅ "Announcement notification sent. Success: X, Failed: Y"
+- ⚠️ "No FCM token found for user..."
+- ⚠️ "Removing invalid FCM tokens"
+- ❌ Any error messages
+
+#### **Troubleshooting:**
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| No notification received | No FCM token in Firestore | Check mobile app saved token |
+| "Invalid token" error | Token expired/deleted | Mobile app should refresh token |
+| "User not found" error | User document missing | Check userId in message data |
+| No batch logs | Function didn't trigger | Check function deployment status |
+| Notification received but can't tap | Missing data payload | Check function sends all required data fields |
+
 ### Cloud Function Details
 
 **Function:** `sendChatNotification`
@@ -561,28 +666,91 @@ async function testNotification() {
   - Automatic token cleanup on errors
   - Detailed logging for debugging
 
-### Deploying the Cloud Function
+### Deploying the Cloud Functions
 
-**To deploy the push notification function:**
+**To deploy push notification functions:**
 
 ```bash
 # Deploy all functions
 firebase deploy --only functions
 
-# Or deploy specific function
+# Or deploy specific functions
 firebase deploy --only functions:sendChatNotification
+firebase deploy --only functions:sendAnnouncementNotification
 ```
 
 **After deployment:**
-- Function will automatically trigger on new messages
+- Functions will automatically trigger on new messages/announcements
 - Check Firebase Console > Functions to verify deployment
 - Monitor Cloud Function logs for debugging
-- Test by sending a message from web app to mobile user
+- **Test chat notifications:** Send a message from web app to mobile user
+- **Test announcement notifications:** Create a new announcement from web app
 
 **Required Firebase services:**
 - ✅ Firebase Cloud Messaging (FCM) enabled
 - ✅ Cloud Functions enabled (Blaze plan required)
 - ✅ Admin SDK initialized in functions
+
+**Active Cloud Functions:**
+1. `sendChatNotification` - Sends notifications for new chat messages (one-to-one)
+2. `sendAnnouncementNotification` - Broadcasts announcements to all users
+3. `deleteAuthUserOnFirestoreDelete` - Cleanup function for user deletion
+4. `deleteResidentUser` - Callable function for user deletion
+
+### ✅ Push Notifications for Announcements
+
+- **Broadcast notifications** sent to all users when new announcements are created
+- **Automatic delivery** via Cloud Function trigger
+- **How it works:**
+  - Cloud Function triggers when new document created in `announcements` collection
+  - Retrieves all users with FCM tokens from `users` collection
+  - Sends notification to all users simultaneously
+  - Batch processing for efficient delivery (500 users per batch)
+- **Priority-based notifications:**
+  - **High priority:** "🚨 Important Announcement" with high priority delivery
+  - **Medium priority:** "📢 New Announcement" with normal delivery
+  - **Low priority:** "ℹ️ Announcement" with normal delivery
+- **Smart notification content:**
+  - **Title:** Priority-specific emoji and text
+  - **Body:** First 100 characters of description (truncated with "...")
+  - Full announcement accessible when tapped
+- **Notification data payload:**
+  - Announcement ID for direct navigation
+  - Announcement type and priority
+  - Date information
+  - Type identifier for handling
+- **Platform-specific features:**
+  - **Android:**
+    - High priority announcements use separate notification channel
+    - Custom sound support
+    - High/normal priority delivery based on announcement priority
+  - **iOS:**
+    - Sound alerts
+    - Badge counter updates
+    - APNs payload
+- **Batch processing:**
+  - Sends up to 500 notifications per batch
+  - Handles large user bases efficiently
+  - FCM rate limit compliant
+- **Token management:**
+  - Automatically removes invalid/expired tokens
+  - Tracks success/failure rates
+  - Logs detailed statistics
+- **Performance:**
+  - Success count tracking
+  - Failure count tracking
+  - Invalid token cleanup
+  - Detailed logging for monitoring
+
+**Cloud Function:** `sendAnnouncementNotification`
+- **Trigger:** `onDocumentCreated` on `announcements/{announcementId}`
+- **Location:** `functions/src/index.ts`
+- **Audience:** All users with FCM tokens (broadcast)
+- **Deployment:** `firebase deploy --only functions:sendAnnouncementNotification`
+
+**Mobile app notification channels required:**
+- `announcements` - For normal priority announcements
+- `high_priority_announcements` - For urgent announcements
 
 ### ✅ Online Status & Presence System
 
@@ -620,8 +788,9 @@ firebase deploy --only functions:sendChatNotification
 ✅ **Secure**: Proper security rules prevent unauthorized access
 ✅ **Session Persistence**: Messages survive app restarts
 ✅ **Consistent Branding**: All admin messages show as "AcciZard Lucban" for professional identity
-✅ **Push Notifications**: Instant alerts when users receive new messages
+✅ **Push Notifications**: Instant alerts for chat messages and announcements
 ✅ **Online Status**: Real-time presence tracking for better communication
+✅ **Broadcast Messaging**: Announcements reach all users instantly via push notifications
 
 ## File Attachments Implementation
 
@@ -1066,6 +1235,8 @@ The delete confirmation dialog clearly explains what will happen:
 - [ ] Add drag-and-drop file upload
 - [ ] Add image editing before sending (crop, rotate, filters)
 - [ ] Add voice message recording with one-tap functionality
+- [ ] Add notification preferences/settings for users
+- [ ] Add scheduled announcements (send at specific time)
 - [ ] **Add Admin/LDRRMO Staff Group Chat Room** (see implementation guide below)
 
 ---

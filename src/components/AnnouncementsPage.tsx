@@ -1,3 +1,23 @@
+/**
+ * Announcements Page
+ * 
+ * Features:
+ * - Create, edit, and delete announcements
+ * - Filter by type, priority, and date range
+ * - Batch delete functionality
+ * - Preview announcement details
+ * 
+ * Push Notifications:
+ * - Automatically sends push notifications to ALL users when a new announcement is created
+ * - Cloud Function: sendAnnouncementNotification (functions/src/index.ts)
+ * - Priority-based notification titles:
+ *   - High: "🚨 Important Announcement"
+ *   - Medium: "📢 New Announcement"
+ *   - Low: "ℹ️ Announcement"
+ * - Broadcasts to all users with FCM tokens (batch processing for scalability)
+ * - See CHAT_IMPLEMENTATION_GUIDE.md for full details
+ */
+
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
