@@ -12,7 +12,8 @@ import {
 // File type validation
 export const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
 export const ALLOWED_DOCUMENT_TYPES = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-export const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/avi', 'video/mov', 'video/wmv'];
+export const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/avi', 'video/mov', 'video/wmv', 'video/quicktime', 'video/x-msvideo', 'video/x-ms-wmv'];
+export const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg', 'audio/m4a', 'audio/aac', 'audio/x-m4a'];
 export const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
 
 // File type categories
@@ -57,8 +58,18 @@ export const uploadFile = async (
   onProgress?: UploadProgressCallback
 ): Promise<{ url: string; path: string; fileName: string }> => {
   try {
-    // Validate file
-    const validation = validateFile(file);
+    // Determine allowed file types based on category
+    let allowedTypes = ALLOWED_IMAGE_TYPES;
+    
+    if (category === 'document') {
+      allowedTypes = ALLOWED_DOCUMENT_TYPES;
+    } else if (category === 'general' || category === 'report' || category === 'announcement') {
+      // For general, reports, and announcements: allow images, documents, videos, and audio
+      allowedTypes = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_DOCUMENT_TYPES, ...ALLOWED_VIDEO_TYPES, ...ALLOWED_AUDIO_TYPES];
+    }
+    
+    // Validate file with appropriate allowed types
+    const validation = validateFile(file, allowedTypes);
     if (!validation.isValid) {
       throw new Error(validation.error);
     }
@@ -284,6 +295,11 @@ export const isDocumentFile = (file: File): boolean => {
 // Utility function to check if file is a video
 export const isVideoFile = (file: File): boolean => {
   return ALLOWED_VIDEO_TYPES.includes(file.type);
+};
+
+// Utility function to check if file is audio
+export const isAudioFile = (file: File): boolean => {
+  return ALLOWED_AUDIO_TYPES.includes(file.type);
 };
 
 // Get file extension

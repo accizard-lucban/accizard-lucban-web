@@ -5,7 +5,7 @@ import { useLocation } from "react-router-dom";
 import { Home, ClipboardList, BarChart3, MessageSquare, Bell, Users, User, LucideIcon, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { db } from "@/lib/firebase";
-import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { collection, onSnapshot, query, orderBy, where } from "firebase/firestore";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -65,6 +65,7 @@ export function Layout({ children }: LayoutProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [unseenReportsCount, setUnseenReportsCount] = useState(0);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
   const location = useLocation();
   const currentPage = pageConfig[location.pathname] || {
     title: "404",
@@ -126,6 +127,33 @@ export function Layout({ children }: LayoutProps) {
     }
   }, []);
 
+  // Fetch and count unread chat messages
+  useEffect(() => {
+    try {
+      const messagesRef = collection(db, "chat_messages");
+      const q = query(messagesRef, where("isRead", "==", false));
+      
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        let totalUnread = 0;
+        
+        snapshot.docs.forEach(msgDoc => {
+          const data = msgDoc.data();
+          const userId = data.userId;
+          // Only count messages from users (not admin messages)
+          if (userId && data.senderId === userId) {
+            totalUnread++;
+          }
+        });
+        
+        setUnreadChatCount(totalUnread);
+      });
+
+      return () => unsubscribe();
+    } catch (error) {
+      console.error("Error fetching unread chat messages:", error);
+    }
+  }, []);
+
   return (
     <div className="min-h-screen flex w-full bg-gray-50">
       <Sidebar 
@@ -134,6 +162,7 @@ export function Layout({ children }: LayoutProps) {
         isMobileOpen={isMobileOpen}
         onMobileClose={() => setIsMobileOpen(false)}
         manageReportsBadge={unseenReportsCount}
+        chatSupportBadge={unreadChatCount}
       />
       
       {/* Mobile hamburger button */}

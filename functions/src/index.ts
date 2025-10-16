@@ -8,7 +8,7 @@
  */
 
 import { setGlobalOptions } from "firebase-functions/v2";
-import { onDocumentDeleted } from "firebase-functions/v2/firestore";
+import { onDocumentDeleted, onDocumentCreated } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
@@ -107,6 +107,106 @@ export const deleteResidentUser = onCall(async (request) => {
 // If a user is manually deleted from Firebase Authentication Console,
 // you should also manually delete the corresponding Firestore document from the 'users' collection.
 // The primary deletion flow is through the app, which handles both Auth and Firestore automatically.
+
+// Cloud Function: Send push notification when new chat message is created
+export const sendChatNotification = onDocumentCreated(
+  "chat_messages/{messageId}",
+  async (event) => {
+    const messageData = event.data?.data();
+    
+    if (!messageData) {
+      logger.warn("No message data found");
+      return;
+    }
+
+    const { userId, senderId, senderName, message, imageUrl, videoUrl, audioUrl, fileUrl, fileName } = messageData;
+
+    // Don't send notification if sender is the user themselves
+    if (userId === senderId) {
+      logger.info("Message sent by user themselves, skipping notification");
+      return;
+    }
+
+    try {
+      // Get user's FCM token from Firestore
+      const userDoc = await admin.firestore().collection("users").doc(userId).get();
+      
+      if (!userDoc.exists) {
+        logger.warn(`User document not found for userId: ${userId}`);
+        return;
+      }
+
+      const userData = userDoc.data();
+      const fcmToken = userData?.fcmToken;
+
+      if (!fcmToken) {
+        logger.warn(`No FCM token found for user: ${userId}`);
+        return;
+      }
+
+      // Determine notification body based on message type
+      let notificationBody = message || "New message";
+      
+      if (imageUrl) {
+        notificationBody = "📷 Sent a photo";
+      } else if (videoUrl) {
+        notificationBody = "🎥 Sent a video";
+      } else if (audioUrl) {
+        notificationBody = "🎵 Sent an audio";
+      } else if (fileUrl) {
+        notificationBody = `📎 Sent ${fileName || "a file"}`;
+      }
+
+      // Prepare notification payload
+      const notificationPayload = {
+        token: fcmToken,
+        notification: {
+          title: senderName || "AcciZard Lucban",
+          body: notificationBody,
+        },
+        data: {
+          type: "chat_message",
+          userId: userId,
+          messageId: event.params.messageId,
+          senderId: senderId,
+          senderName: senderName || "AcciZard Lucban",
+        },
+        android: {
+          priority: "high" as const,
+          notification: {
+            sound: "default",
+            channelId: "chat_messages",
+            priority: "high" as const,
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: "default",
+              badge: 1,
+            },
+          },
+        },
+      };
+
+      // Send notification
+      const response = await admin.messaging().send(notificationPayload);
+      logger.info(`Successfully sent notification to user ${userId}. Response: ${response}`);
+      
+    } catch (error: any) {
+      logger.error(`Error sending notification to user ${userId}:`, error);
+      
+      // If token is invalid, remove it from Firestore
+      if (error.code === "messaging/invalid-registration-token" || 
+          error.code === "messaging/registration-token-not-registered") {
+        logger.info(`Removing invalid FCM token for user ${userId}`);
+        await admin.firestore().collection("users").doc(userId).update({
+          fcmToken: admin.firestore.FieldValue.delete()
+        });
+      }
+    }
+  }
+);
 
 // export const helloWorld = onRequest((request, response) => {
 //   logger.info("Hello logs!", {structuredData: true});

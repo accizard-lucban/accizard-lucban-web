@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Search, Trash2, MessageSquare, Clock, User, Paperclip, Image as ImageIcon, FileText, Send, Check, CheckCheck, Loader2, X, Download, File } from "lucide-react";
+import { Search, Trash2, MessageSquare, Clock, User, Paperclip, Image as ImageIcon, FileText, Send, Check, CheckCheck, Loader2, X, Download, File, ChevronUp, ChevronDown, Video, Music } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Layout } from "./Layout";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -12,7 +12,7 @@ import { collection, getDocs, getDoc, query, where, orderBy, onSnapshot, addDoc,
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/components/ui/sonner";
 import { useFileUpload } from "@/hooks/useFileUpload";
-import { formatFileSize, isImageFile } from "@/lib/storage";
+import { formatFileSize, isImageFile, isVideoFile, isAudioFile } from "@/lib/storage";
 
 interface ChatMessage {
   id: string;
@@ -26,6 +26,8 @@ interface ChatMessage {
   userName?: string;
   isRead?: boolean;
   imageUrl?: string; // For image attachments
+  videoUrl?: string; // For video attachments
+  audioUrl?: string; // For audio attachments
   fileUrl?: string; // For file attachments
   fileName?: string; // Original file name
   fileSize?: number; // File size in bytes
@@ -37,6 +39,8 @@ interface AttachmentPreview {
   file: File;
   url: string;
   isImage: boolean;
+  isVideo: boolean;
+  isAudio: boolean;
   id: string;
 }
 
@@ -69,6 +73,14 @@ export function ChatSupportPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [attachmentPreviews, setAttachmentPreviews] = useState<AttachmentPreview[]>([]);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [isUserTyping, setIsUserTyping] = useState(false);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [messageSearchQuery, setMessageSearchQuery] = useState("");
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
+  const messageRefs = useRef<{[key: string]: HTMLDivElement | null}>({});
+  const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
+  const [userLastSeen, setUserLastSeen] = useState<Record<string, Date>>({});
   const navigate = useNavigate();
   const { uploadSingleFile, uploadState } = useFileUpload();
 
@@ -261,6 +273,100 @@ export function ChatSupportPage() {
     }
   }, []);
 
+  // Real-time listener for user online status
+  useEffect(() => {
+    try {
+      const usersRef = collection(db, "users");
+      
+      const unsubscribe = onSnapshot(usersRef, (snapshot) => {
+        const online = new Set<string>();
+        const lastSeen: Record<string, Date> = {};
+        
+        snapshot.docs.forEach(userDoc => {
+          const data = userDoc.data();
+          const userId = data.firebaseUid || userDoc.id;
+          const isOnline = data.isOnline || false;
+          const lastSeenTimestamp = data.lastSeen;
+          
+          if (isOnline) {
+            // Check if online status is recent (within last 2 minutes)
+            if (lastSeenTimestamp) {
+              const lastSeenDate = lastSeenTimestamp?.toDate?.() || new Date(lastSeenTimestamp);
+              const now = new Date();
+              const diffMinutes = (now.getTime() - lastSeenDate.getTime()) / (1000 * 60);
+              
+              if (diffMinutes < 2) {
+                online.add(userId);
+              } else if (lastSeenDate) {
+                lastSeen[userId] = lastSeenDate;
+              }
+            } else {
+              online.add(userId);
+            }
+          } else if (lastSeenTimestamp) {
+            const lastSeenDate = lastSeenTimestamp?.toDate?.() || new Date(lastSeenTimestamp);
+            lastSeen[userId] = lastSeenDate;
+          }
+        });
+        
+        setOnlineUsers(online);
+        setUserLastSeen(lastSeen);
+      });
+
+      return () => unsubscribe();
+    } catch (error) {
+      console.error("Error setting up online status listener:", error);
+    }
+  }, []);
+
+  // Real-time listener for user typing status
+  useEffect(() => {
+    if (!selectedSession?.userId) {
+      setIsUserTyping(false);
+      return;
+    }
+
+    try {
+      const chatRef = doc(db, "chats", selectedSession.userId);
+      
+      const unsubscribe = onSnapshot(chatRef, (docSnapshot) => {
+        if (docSnapshot.exists()) {
+          const data = docSnapshot.data();
+          const userTyping = data.userTyping || false;
+          const typingTimestamp = data.userTypingTimestamp?.toDate?.() || null;
+          
+          // Check if typing status is recent (within last 5 seconds)
+          if (userTyping && typingTimestamp) {
+            const now = new Date();
+            const diffSeconds = (now.getTime() - typingTimestamp.getTime()) / 1000;
+            setIsUserTyping(diffSeconds < 5);
+          } else {
+            setIsUserTyping(false);
+          }
+        }
+      });
+
+      return () => unsubscribe();
+    } catch (error) {
+      console.error("Error setting up typing listener:", error);
+    }
+  }, [selectedSession?.userId]);
+
+  // Update admin typing status
+  const updateAdminTypingStatus = async (isTyping: boolean) => {
+    if (!selectedSession?.userId) return;
+    
+    try {
+      const chatRef = doc(db, "chats", selectedSession.userId);
+      await updateDoc(chatRef, {
+        adminTyping: isTyping,
+        adminTypingTimestamp: serverTimestamp()
+      });
+    } catch (error) {
+      console.error("Error updating typing status:", error);
+    }
+  };
+
   // Mark messages as read
   const markMessagesAsRead = async (messagesToMark: ChatMessage[]) => {
     try {
@@ -308,7 +414,7 @@ export function ChatSupportPage() {
         orderBy("timestamp", "asc")
       );
 
-      const unsubscribe = onSnapshot(q, (snapshot) => {
+      const unsubscribe = onSnapshot(q, async (snapshot) => {
         console.log("📨 Raw snapshot data:", snapshot.docs.map(msgDoc => ({ id: msgDoc.id, data: msgDoc.data() })));
         
         const messagesData = snapshot.docs.map(msgDoc => ({
@@ -319,6 +425,36 @@ export function ChatSupportPage() {
         console.log("💬 Processed messages:", messagesData);
         setMessages(messagesData);
         setLoadingMessages(false);
+        
+        // Update chat metadata with the actual latest message
+        if (messagesData.length > 0) {
+          const latestMessage = messagesData[messagesData.length - 1];
+          const chatRef = doc(db, "chats", selectedSession.userId);
+          
+          // Determine the preview text
+          let previewText = latestMessage.message || "Message";
+          if (latestMessage.imageUrl && !latestMessage.message) {
+            previewText = "📷 Photo";
+          } else if (latestMessage.videoUrl && !latestMessage.message) {
+            previewText = "🎥 Video";
+          } else if (latestMessage.audioUrl && !latestMessage.message) {
+            previewText = "🎵 Audio";
+          } else if (latestMessage.fileUrl && !latestMessage.message) {
+            previewText = `📎 ${latestMessage.fileName || "File"}`;
+          }
+          
+          try {
+            await updateDoc(chatRef, {
+              lastMessage: previewText,
+              lastMessageTime: latestMessage.timestamp || serverTimestamp(),
+              lastMessageSenderName: latestMessage.senderName || "Unknown",
+              lastAccessTime: serverTimestamp()
+            });
+            console.log("✅ Updated chat metadata with latest message from:", latestMessage.senderName);
+          } catch (error) {
+            console.error("❌ Error updating chat metadata:", error);
+          }
+        }
         
         // Mark messages as read after loading
         markMessagesAsRead(messagesData);
@@ -466,11 +602,15 @@ export function ChatSupportPage() {
         // Create preview URL
         const previewUrl = URL.createObjectURL(file);
         const isImage = isImageFile(file);
+        const isVideo = isVideoFile(file);
+        const isAudio = isAudioFile(file);
         
         newPreviews.push({
           file,
           url: previewUrl,
           isImage,
+          isVideo,
+          isAudio,
           id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
         });
       });
@@ -502,6 +642,32 @@ export function ChatSupportPage() {
     setAttachmentPreviews([]);
   };
 
+  // Handle message input change and update typing status
+  const handleMessageChange = (value: string) => {
+    setMessage(value);
+    
+    // Update typing status
+    if (value.trim()) {
+      updateAdminTypingStatus(true);
+      
+      // Clear any existing timeout
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      
+      // Set timeout to clear typing status after 3 seconds of inactivity
+      typingTimeoutRef.current = setTimeout(() => {
+        updateAdminTypingStatus(false);
+      }, 3000);
+    } else {
+      // Clear typing status immediately if input is empty
+      updateAdminTypingStatus(false);
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    }
+  };
+
   const handleSendMessage = async () => {
     if ((!message.trim() && attachmentPreviews.length === 0) || !selectedSession || sendingMessage) {
       return;
@@ -517,7 +683,7 @@ export function ChatSupportPage() {
       const adminId = currentUser?.uid || "admin";
 
       // Upload all attachments
-      const uploadedFiles: Array<{url: string, fileName: string, fileSize: number, fileType: string, isImage: boolean}> = [];
+      const uploadedFiles: Array<{url: string, fileName: string, fileSize: number, fileType: string, isImage: boolean, isVideo: boolean, isAudio: boolean}> = [];
       
       if (attachmentPreviews.length > 0) {
         try {
@@ -535,7 +701,9 @@ export function ChatSupportPage() {
                 fileName: attachment.file.name,
                 fileSize: attachment.file.size,
                 fileType: attachment.file.type,
-                isImage: attachment.isImage
+                isImage: attachment.isImage,
+                isVideo: attachment.isVideo,
+                isAudio: attachment.isAudio
               });
             }
           }
@@ -564,11 +732,16 @@ export function ChatSupportPage() {
 
       // Send each attachment as a separate message
       for (const file of uploadedFiles) {
+        let attachmentType = 'file';
+        if (file.isImage) attachmentType = 'photo';
+        else if (file.isVideo) attachmentType = 'video';
+        else if (file.isAudio) attachmentType = 'audio';
+        
         const messageData: any = {
           userId: selectedSession.userId,
           senderId: adminId,
           senderName: adminName,
-          message: message.trim() || `Sent a ${file.isImage ? 'photo' : 'file'}`,
+          message: message.trim() || `Sent a ${attachmentType}`,
           timestamp: serverTimestamp(),
           isRead: false,
           fileName: file.fileName,
@@ -578,6 +751,10 @@ export function ChatSupportPage() {
 
         if (file.isImage) {
           messageData.imageUrl = file.url;
+        } else if (file.isVideo) {
+          messageData.videoUrl = file.url;
+        } else if (file.isAudio) {
+          messageData.audioUrl = file.url;
         } else {
           messageData.fileUrl = file.url;
         }
@@ -591,15 +768,17 @@ export function ChatSupportPage() {
       
       if (!lastMessagePreview && uploadedFiles.length > 0) {
         const imageCount = uploadedFiles.filter(f => f.isImage).length;
-        const fileCount = uploadedFiles.filter(f => !f.isImage).length;
+        const videoCount = uploadedFiles.filter(f => f.isVideo).length;
+        const audioCount = uploadedFiles.filter(f => f.isAudio).length;
+        const fileCount = uploadedFiles.filter(f => !f.isImage && !f.isVideo && !f.isAudio).length;
         
-        if (imageCount > 0 && fileCount > 0) {
-          lastMessagePreview = `📎 ${imageCount} photo(s), ${fileCount} file(s)`;
-        } else if (imageCount > 0) {
-          lastMessagePreview = `📷 ${imageCount} photo${imageCount > 1 ? 's' : ''}`;
-        } else {
-          lastMessagePreview = `📎 ${fileCount} file${fileCount > 1 ? 's' : ''}`;
-        }
+        const parts: string[] = [];
+        if (imageCount > 0) parts.push(`📷 ${imageCount} photo${imageCount > 1 ? 's' : ''}`);
+        if (videoCount > 0) parts.push(`🎥 ${videoCount} video${videoCount > 1 ? 's' : ''}`);
+        if (audioCount > 0) parts.push(`🎵 ${audioCount} audio${audioCount > 1 ? 's' : ''}`);
+        if (fileCount > 0) parts.push(`📎 ${fileCount} file${fileCount > 1 ? 's' : ''}`);
+        
+        lastMessagePreview = parts.join(', ');
       }
       
       await setDoc(chatRef, {
@@ -614,7 +793,12 @@ export function ChatSupportPage() {
 
       setMessage("");
       clearAllAttachments();
-      toast.success("Message sent");
+      
+      // Clear typing status and timeout
+      updateAdminTypingStatus(false);
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
     } catch (error) {
       console.error("Error sending message:", error);
       toast.error("Failed to send message");
@@ -622,6 +806,70 @@ export function ChatSupportPage() {
       setSendingMessage(false);
       setUploadingFile(false);
     }
+  };
+
+  // Get matching message IDs for search navigation
+  const searchMatchingMessages = messageSearchQuery.trim() 
+    ? messages.filter(msg => {
+        const messageText = msg.message || (msg as any).text || (msg as any).content || (msg as any).body || '';
+        const fileName = msg.fileName || '';
+        const senderName = msg.senderName || '';
+        
+        return messageText.toLowerCase().includes(messageSearchQuery.toLowerCase()) ||
+               fileName.toLowerCase().includes(messageSearchQuery.toLowerCase()) ||
+               senderName.toLowerCase().includes(messageSearchQuery.toLowerCase());
+      })
+    : [];
+
+  // Reset search index when search query changes or messages update
+  useEffect(() => {
+    if (messageSearchQuery.trim() && searchMatchingMessages.length > 0) {
+      setCurrentSearchIndex(0);
+      // Scroll to first match
+      setTimeout(() => {
+        scrollToMessage(searchMatchingMessages[0].id);
+      }, 100);
+    }
+  }, [messageSearchQuery, messages.length]);
+
+  // Navigate to next search result
+  const goToNextSearchResult = () => {
+    if (searchMatchingMessages.length === 0) return;
+    
+    const nextIndex = (currentSearchIndex + 1) % searchMatchingMessages.length;
+    setCurrentSearchIndex(nextIndex);
+    scrollToMessage(searchMatchingMessages[nextIndex].id);
+  };
+
+  // Navigate to previous search result
+  const goToPreviousSearchResult = () => {
+    if (searchMatchingMessages.length === 0) return;
+    
+    const prevIndex = currentSearchIndex === 0 
+      ? searchMatchingMessages.length - 1 
+      : currentSearchIndex - 1;
+    setCurrentSearchIndex(prevIndex);
+    scrollToMessage(searchMatchingMessages[prevIndex].id);
+  };
+
+  // Scroll to specific message
+  const scrollToMessage = (messageId: string) => {
+    const messageElement = messageRefs.current[messageId];
+    if (messageElement) {
+      messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
+  // Helper to highlight search query in text
+  const highlightText = (text: string, query: string) => {
+    if (!query.trim()) return text;
+    
+    const parts = text.split(new RegExp(`(${query})`, 'gi'));
+    return parts.map((part, index) => 
+      part.toLowerCase() === query.toLowerCase() 
+        ? `<mark class="bg-yellow-200 text-gray-900">${part}</mark>`
+        : part
+    ).join('');
   };
 
   const formatTime = (date: Date) => {
@@ -632,6 +880,18 @@ export function ChatSupportPage() {
     if (diffMins < 60) return `${diffMins}m ago`;
     if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
     return `${Math.floor(diffMins / 1440)}d ago`;
+  };
+
+  const formatLastSeen = (date: Date) => {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    
+    if (diffMins < 1) return "Active now";
+    if (diffMins < 60) return `Active ${diffMins}m ago`;
+    if (diffMins < 1440) return `Active ${Math.floor(diffMins / 60)}h ago`;
+    if (diffMins < 10080) return `Active ${Math.floor(diffMins / 1440)}d ago`;
+    return date.toLocaleDateString();
   };
 
   // Helper to go to ManageUsersPage.tsx > Residents tab with search
@@ -795,7 +1055,7 @@ export function ChatSupportPage() {
                                   console.log("👤 User data:", user);
                                   goToResidentProfile(user); 
                                 }}
-                                className="focus:outline-none"
+                                className="focus:outline-none relative"
                                 title="View Resident Profile"
                               >
                                 {user.profilePicture ? (
@@ -820,6 +1080,10 @@ export function ChatSupportPage() {
                                     <User className="h-4 w-4 text-gray-400" />
                                   </div>
                                 )}
+                                {/* Online status indicator */}
+                                {onlineUsers.has(user.userId) && (
+                                  <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white"></div>
+                                )}
                               </button>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center space-x-2">
@@ -836,7 +1100,19 @@ export function ChatSupportPage() {
                                     {user.lastMessageSenderName ? `${user.lastMessageSenderName}: ` : ''}{user.lastMessage}
                                   </p>
                                 )}
-                                <p className="text-xs text-gray-400 mt-1 truncate">{user.userPhoneNumber || user.mobileNumber || user.phoneNumber || 'No phone number'}</p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <p className="text-xs text-gray-400 truncate">{user.userPhoneNumber || user.mobileNumber || user.phoneNumber || 'No phone number'}</p>
+                                  {onlineUsers.has(user.userId) ? (
+                                    <span className="text-xs text-green-600 font-medium flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                                      Online
+                                    </span>
+                                  ) : userLastSeen[user.userId] && (
+                                    <span className="text-xs text-gray-400">
+                                      {formatLastSeen(userLastSeen[user.userId])}
+                                    </span>
+                                  )}
+                                </div>
                                 {user.lastMessageTime && (
                                   <p className="text-xs text-gray-400 mt-1">
                                     {formatTime(
@@ -876,6 +1152,7 @@ export function ChatSupportPage() {
               {selectedSession ? (
                 <>
                   <CardHeader className="border-b bg-white rounded-t-lg">
+                    <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
                       <button
                         type="button"
@@ -884,7 +1161,7 @@ export function ChatSupportPage() {
                           console.log("👤 Selected session data:", selectedSession);
                           goToResidentProfile(selectedSession);
                         }}
-                        className="focus:outline-none"
+                        className="focus:outline-none relative"
                         title="View Resident Profile"
                       >
                         {selectedSession.profilePicture ? (
@@ -902,14 +1179,100 @@ export function ChatSupportPage() {
                             <User className="h-5 w-5 text-gray-400" />
                           </div>
                         )}
+                        {/* Online status indicator */}
+                        {onlineUsers.has(selectedSession.userId) && (
+                          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                        )}
                       </button>
                       <div>
-                        <CardTitle className="text-lg">{selectedSession.fullName || selectedSession.name || selectedSession.userId}</CardTitle>
-                        <p className="text-sm text-gray-500">{selectedSession.userPhoneNumber || selectedSession.mobileNumber || selectedSession.phoneNumber || 'No phone number'}</p>
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="text-lg">{selectedSession.fullName || selectedSession.name || selectedSession.userId}</CardTitle>
+                          {onlineUsers.has(selectedSession.userId) && (
+                            <div className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                              Online
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm text-gray-500">{selectedSession.userPhoneNumber || selectedSession.mobileNumber || selectedSession.phoneNumber || 'No phone number'}</p>
+                          {!onlineUsers.has(selectedSession.userId) && userLastSeen[selectedSession.userId] && (
+                            <span className="text-xs text-gray-400">
+                              • {formatLastSeen(userLastSeen[selectedSession.userId])}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
+                      
+                      {/* Message Search */}
+                      <div className="flex items-center gap-2">
+                        <div className="relative w-64">
+                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                          <Input
+                            placeholder="Search messages..."
+                            value={messageSearchQuery}
+                            onChange={(e) => {
+                              setMessageSearchQuery(e.target.value);
+                              setShowSearchResults(e.target.value.trim().length > 0);
+                            }}
+                            className="pl-10 w-full border-gray-200"
+                          />
+                          {messageSearchQuery && (
+                            <button
+                              onClick={() => {
+                                setMessageSearchQuery("");
+                                setShowSearchResults(false);
+                                setCurrentSearchIndex(0);
+                              }}
+                              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                        
+                        {/* Navigation arrows - shown when there are search results */}
+                        {showSearchResults && searchMatchingMessages.length > 0 && (
+                          <div className="flex items-center gap-1 bg-gray-100 rounded-lg px-2 py-1">
+                            <span className="text-xs text-gray-600 px-2">
+                              {currentSearchIndex + 1} / {searchMatchingMessages.length}
+                            </span>
+                            <button
+                              onClick={goToPreviousSearchResult}
+                              className="p-1 hover:bg-gray-200 rounded transition-colors"
+                              title="Previous result"
+                              disabled={searchMatchingMessages.length === 0}
+                            >
+                              <ChevronUp className="h-4 w-4 text-gray-600" />
+                            </button>
+                            <button
+                              onClick={goToNextSearchResult}
+                              className="p-1 hover:bg-gray-200 rounded transition-colors"
+                              title="Next result"
+                              disabled={searchMatchingMessages.length === 0}
+                            >
+                              <ChevronDown className="h-4 w-4 text-gray-600" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Search results count */}
+                    {showSearchResults && (
+                      <div className="mt-3 pt-3 border-t">
+                        <p className="text-sm text-gray-600">
+                          {searchMatchingMessages.length === 0 ? (
+                            "No messages found"
+                          ) : (
+                            `Found ${searchMatchingMessages.length} message${searchMatchingMessages.length !== 1 ? 's' : ''}`
+                          )}
+                        </p>
+                      </div>
+                    )}
                   </CardHeader>
-                  <CardContent className="flex-1 overflow-auto p-4 bg-gray-50">
+                  <CardContent className="flex-1 overflow-auto p-4">
                     {/* Introduction section at the top of every chat session */}
                     <div className="flex flex-col items-center justify-center gap-6 w-full mb-6">
                       <img src="/accizard-uploads/accizard-logo-svg.svg" alt="Accizard Logo" className="w-32 h-32 mx-auto" />
@@ -936,6 +1299,9 @@ export function ChatSupportPage() {
                           
                           const isAdmin = msg.senderId !== selectedSession?.userId;
                           
+                          // Check if this message matches the search query
+                          const isSearchMatch = searchMatchingMessages.some(m => m.id === msg.id);
+                          
                           // Handle different timestamp formats
                           let messageTime: Date;
                           if (msg.timestamp?.toDate && typeof msg.timestamp.toDate === 'function') {
@@ -958,10 +1324,13 @@ export function ChatSupportPage() {
                           return (
                             <div
                               key={msg.id}
+                              ref={(el) => {
+                                messageRefs.current[msg.id] = el;
+                              }}
                               className={`flex gap-2 ${isAdmin ? 'justify-end' : 'justify-start'}`}
                             >
-                              {/* User profile picture (only for non-admin messages) */}
-                              {!isAdmin && (
+                              {/* User profile picture (only for non-admin messages without attachments) */}
+                              {!isAdmin && !msg.imageUrl && !msg.videoUrl && !msg.audioUrl && !msg.fileUrl && (
                                 <div className="flex-shrink-0">
                                   {selectedSession.profilePicture ? (
                                     <img 
@@ -982,80 +1351,220 @@ export function ChatSupportPage() {
                                 </div>
                               )}
                               
-                              <div
-                                className={`max-w-[70%] rounded-lg px-4 py-2 ${
-                                  isAdmin
-                                    ? 'bg-brand-orange text-white rounded-br-none'
-                                    : 'bg-white text-gray-800 rounded-bl-none shadow-sm'
-                                }`}
-                              >
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className={`text-xs font-semibold ${isAdmin ? 'text-orange-100' : 'text-gray-600'}`}>
-                                    {msg.senderName || (msg as any).sender || (msg as any).from || 'Unknown'}
-                                  </span>
-                                </div>
-                                {/* Image attachment */}
+                              <div className={`flex flex-col gap-1 ${isAdmin ? 'items-end' : 'items-start'} max-w-[70%]`}>
+                                {/* Image attachment - just the image, no background */}
                                 {msg.imageUrl && (
-                                  <div className="mb-2">
+                                  <div className="relative group">
                                     <img 
                                       src={msg.imageUrl} 
                                       alt="Attachment" 
-                                      className="max-w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                                      className="max-w-full rounded-lg cursor-pointer hover:opacity-95 transition-opacity"
                                       style={{ maxHeight: '300px', objectFit: 'contain' }}
                                       onClick={() => window.open(msg.imageUrl, '_blank')}
                                     />
+                                    {/* Timestamp overlay on hover */}
+                                    <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center gap-1">
+                                      {messageTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      {/* Read receipt for admin messages */}
+                                      {isAdmin && (
+                                        <span className="ml-1" title={msg.isRead ? 'Read' : 'Delivered'}>
+                                          {msg.isRead ? (
+                                            <CheckCheck className="h-3 w-3 inline" />
+                                          ) : (
+                                            <Check className="h-3 w-3 inline" />
+                                          )}
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                 )}
                                 
-                                {/* File attachment */}
-                                {msg.fileUrl && (
-                                  <a 
-                                    href={msg.fileUrl} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                    className={`flex items-center gap-2 p-3 rounded-lg mb-2 ${
-                                      isAdmin ? 'bg-orange-700' : 'bg-gray-100'
-                                    }`}
-                                  >
-                                    <File className={`h-5 w-5 ${isAdmin ? 'text-white' : 'text-gray-600'}`} />
-                                    <div className="flex-1 min-w-0">
-                                      <p className={`text-sm font-medium truncate ${isAdmin ? 'text-white' : 'text-gray-900'}`}>
-                                        {msg.fileName || 'File'}
-                                      </p>
-                                      {msg.fileSize && (
-                                        <p className={`text-xs ${isAdmin ? 'text-orange-100' : 'text-gray-500'}`}>
-                                          {formatFileSize(msg.fileSize)}
-                                        </p>
+                                {/* Video attachment - just the video player */}
+                                {msg.videoUrl && (
+                                  <div className="relative group">
+                                    <video 
+                                      controls 
+                                      className="max-w-full rounded-lg"
+                                      style={{ maxHeight: '300px' }}
+                                    >
+                                      <source src={msg.videoUrl} type={msg.fileType || 'video/mp4'} />
+                                      Your browser does not support the video tag.
+                                    </video>
+                                    {/* Timestamp overlay on hover */}
+                                    <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center gap-1 pointer-events-none">
+                                      {messageTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      {/* Read receipt for admin messages */}
+                                      {isAdmin && (
+                                        <span className="ml-1" title={msg.isRead ? 'Read' : 'Delivered'}>
+                                          {msg.isRead ? (
+                                            <CheckCheck className="h-3 w-3 inline" />
+                                          ) : (
+                                            <Check className="h-3 w-3 inline" />
+                                          )}
+                                      </span>
                                       )}
                                     </div>
-                                    <Download className={`h-4 w-4 ${isAdmin ? 'text-white' : 'text-gray-600'}`} />
-                                  </a>
+                                  </div>
                                 )}
                                 
-                                {/* Text message */}
-                                <p className="text-sm whitespace-pre-wrap break-words">
-                                  {msg.message || (msg as any).text || (msg as any).content || (msg as any).body || ''}
-                                </p>
-                                <div className={`flex items-center gap-1 mt-1 ${isAdmin ? 'justify-end' : 'justify-start'}`}>
-                                  <span className={`text-xs ${isAdmin ? 'text-orange-100' : 'text-gray-500'}`}>
-                                    {messageTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                  </span>
-                                  {/* Read receipt indicator (only for user messages) */}
-                                  {!isAdmin && (
-                                    <span className="text-xs" title={msg.isRead ? 'Read' : 'Delivered'}>
-                                      {msg.isRead ? (
-                                        <CheckCheck className="h-3 w-3 text-brand-orange" />
-                                      ) : (
-                                        <Check className="h-3 w-3 text-gray-400" />
+                                {/* Audio attachment - just the audio player */}
+                                {msg.audioUrl && (
+                                  <div className="relative group">
+                                    <audio 
+                                      controls 
+                                      className="max-w-full rounded-lg"
+                                    >
+                                      <source src={msg.audioUrl} type={msg.fileType || 'audio/mpeg'} />
+                                      Your browser does not support the audio tag.
+                                    </audio>
+                                    {/* Timestamp overlay on hover */}
+                                    <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center gap-1 pointer-events-none">
+                                      {messageTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      {/* Read receipt for admin messages */}
+                                      {isAdmin && (
+                                        <span className="ml-1" title={msg.isRead ? 'Read' : 'Delivered'}>
+                                          {msg.isRead ? (
+                                            <CheckCheck className="h-3 w-3 inline" />
+                                          ) : (
+                                            <Check className="h-3 w-3 inline" />
+                                          )}
+                                        </span>
                                       )}
-                                    </span>
-                                  )}
-                                </div>
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {/* File attachment - just the file card, no background bubble */}
+                                    {msg.fileUrl && (
+                                  <div className="relative group">
+                                      <a 
+                                        href={msg.fileUrl} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                      className="flex items-center gap-2 p-3 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors"
+                                      >
+                                      <File className="h-5 w-5 text-gray-600" />
+                                        <div className="flex-1 min-w-0">
+                                        {messageSearchQuery.trim() ? (
+                                          <p 
+                                            className="text-sm font-medium truncate text-gray-900"
+                                            dangerouslySetInnerHTML={{ 
+                                              __html: highlightText(msg.fileName || 'File', messageSearchQuery)
+                                            }}
+                                          />
+                                        ) : (
+                                          <p className="text-sm font-medium truncate text-gray-900">
+                                            {msg.fileName || 'File'}
+                                          </p>
+                                        )}
+                                          {msg.fileSize && (
+                                          <p className="text-xs text-gray-500">
+                                              {formatFileSize(msg.fileSize)}
+                                            </p>
+                                          )}
+                                        </div>
+                                      <Download className="h-4 w-4 text-gray-600" />
+                                    </a>
+                                    {/* Timestamp overlay on hover */}
+                                    <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-black/70 text-white px-2 py-1 rounded text-xs flex items-center gap-1 pointer-events-none">
+                                      {messageTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      {/* Read receipt for admin messages */}
+                                      {isAdmin && (
+                                        <span className="ml-1" title={msg.isRead ? 'Read' : 'Delivered'}>
+                                          {msg.isRead ? (
+                                            <CheckCheck className="h-3 w-3 inline" />
+                                          ) : (
+                                            <Check className="h-3 w-3 inline" />
+                                          )}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {/* Text message bubble (only if there's actual text and no file attachment) */}
+                                {!msg.fileUrl && (msg.message || (msg as any).text || (msg as any).content || (msg as any).body) && (
+                                  <div
+                                    className={`rounded-lg px-4 py-2 ${
+                                      isAdmin
+                                        ? 'bg-brand-orange text-white rounded-br-none'
+                                        : 'bg-white text-gray-800 rounded-bl-none shadow-sm'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className={`text-xs font-semibold ${isAdmin ? 'text-orange-100' : 'text-gray-600'}`}>
+                                        {msg.senderName || (msg as any).sender || (msg as any).from || 'Unknown'}
+                                      </span>
+                                    </div>
+                                    
+                                    {/* Text message */}
+                                    {messageSearchQuery.trim() ? (
+                                      <p 
+                                        className="text-sm whitespace-pre-wrap break-words"
+                                        dangerouslySetInnerHTML={{ 
+                                          __html: highlightText(
+                                            msg.message || (msg as any).text || (msg as any).content || (msg as any).body || '', 
+                                            messageSearchQuery
+                                          )
+                                        }}
+                                      />
+                                    ) : (
+                                      <p className="text-sm whitespace-pre-wrap break-words">
+                                        {msg.message || (msg as any).text || (msg as any).content || (msg as any).body || ''}
+                                      </p>
+                                    )}
+                                    
+                                    <div className={`flex items-center gap-1 mt-1 ${isAdmin ? 'justify-end' : 'justify-start'}`}>
+                                      <span className={`text-xs ${isAdmin ? 'text-orange-100' : 'text-gray-500'}`}>
+                                        {messageTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                      {/* Read receipt indicator (only for admin messages) */}
+                                      {isAdmin && (
+                                        <span className="text-xs" title={msg.isRead ? 'Read' : 'Delivered'}>
+                                          {msg.isRead ? (
+                                            <CheckCheck className="h-3 w-3 text-orange-100" />
+                                          ) : (
+                                            <Check className="h-3 w-3 text-orange-200" />
+                                          )}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           );
                         })
                       )}
+                      
+                      {/* Typing indicator */}
+                      {isUserTyping && (
+                        <div className="flex gap-2 justify-start">
+                          <div className="flex-shrink-0">
+                            {selectedSession.profilePicture ? (
+                              <img 
+                                src={selectedSession.profilePicture} 
+                                alt={selectedSession.fullName || 'User'} 
+                                className="h-8 w-8 rounded-full object-cover"
+                              />
+                            ) : (
+                              <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center">
+                                <User className="h-4 w-4 text-gray-400" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="bg-white text-gray-800 rounded-lg rounded-bl-none shadow-sm px-4 py-3">
+                            <div className="flex items-center gap-1">
+                              <div className="flex space-x-1">
+                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
                       <div ref={messagesEndRef} />
                     </div>
                   </CardContent>
@@ -1072,6 +1581,14 @@ export function ChatSupportPage() {
                                   alt="Preview" 
                                   className="w-12 h-12 object-cover rounded"
                                 />
+                              ) : attachment.isVideo ? (
+                                <div className="w-12 h-12 bg-purple-100 rounded flex items-center justify-center flex-shrink-0">
+                                  <Video className="h-6 w-6 text-purple-600" />
+                                </div>
+                              ) : attachment.isAudio ? (
+                                <div className="w-12 h-12 bg-orange-100 rounded flex items-center justify-center flex-shrink-0">
+                                  <Music className="h-6 w-6 text-orange-600" />
+                                </div>
                               ) : (
                                 <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center flex-shrink-0">
                                   <File className="h-6 w-6 text-gray-500" />
@@ -1111,7 +1628,7 @@ export function ChatSupportPage() {
                         <Input
                           placeholder="Type your message..."
                           value={message}
-                          onChange={(e) => setMessage(e.target.value)}
+                          onChange={(e) => handleMessageChange(e.target.value)}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' && !e.shiftKey && !uploadingFile) {
                               e.preventDefault();
@@ -1126,7 +1643,7 @@ export function ChatSupportPage() {
                           ref={fileInputRef}
                           onChange={handleFileSelect}
                           className="hidden"
-                          accept="image/*,application/pdf,.doc,.docx"
+                          accept="image/*,video/*,audio/*,application/pdf,.doc,.docx"
                           multiple
                         />
                         <Popover>
@@ -1182,6 +1699,46 @@ export function ChatSupportPage() {
                                   <div className="flex flex-col items-start">
                                     <span className="font-medium text-sm">Documents</span>
                                     <span className="text-xs text-gray-500">PDF, DOC, DOCX</span>
+                                  </div>
+                                </div>
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                className="w-full justify-start h-10 hover:bg-purple-50 hover:text-purple-700 transition-colors"
+                                onClick={() => {
+                                  if (fileInputRef.current) {
+                                    fileInputRef.current.accept = "video/*";
+                                    fileInputRef.current.click();
+                                  }
+                                }}
+                              >
+                                <div className="flex items-center gap-3 w-full">
+                                  <div className="bg-purple-100 p-1.5 rounded">
+                                    <Video className="h-4 w-4 text-purple-600" />
+                                  </div>
+                                  <div className="flex flex-col items-start">
+                                    <span className="font-medium text-sm">Videos</span>
+                                    <span className="text-xs text-gray-500">MP4, AVI, MOV, WMV</span>
+                                  </div>
+                                </div>
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                className="w-full justify-start h-10 hover:bg-orange-50 hover:text-orange-700 transition-colors"
+                                onClick={() => {
+                                  if (fileInputRef.current) {
+                                    fileInputRef.current.accept = "audio/*";
+                                    fileInputRef.current.click();
+                                  }
+                                }}
+                              >
+                                <div className="flex items-center gap-3 w-full">
+                                  <div className="bg-orange-100 p-1.5 rounded">
+                                    <Music className="h-4 w-4 text-orange-600" />
+                                  </div>
+                                  <div className="flex flex-col items-start">
+                                    <span className="font-medium text-sm">Audio</span>
+                                    <span className="text-xs text-gray-500">MP3, WAV, OGG, M4A</span>
                                   </div>
                                 </div>
                               </Button>

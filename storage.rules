@@ -29,6 +29,16 @@ service firebase.storage {
              request.resource.contentType.matches('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     }
     
+    // Check if file is a video
+    function isVideo() {
+      return request.resource.contentType.matches('video/.*');
+    }
+    
+    // Check if file is audio
+    function isAudio() {
+      return request.resource.contentType.matches('audio/.*');
+    }
+    
     // ========================================
     // EXISTING RULES (PRESERVED)
     // ========================================
@@ -74,11 +84,12 @@ service firebase.storage {
     // ========================================
     
     // Chat attachments - enhanced with file type and size validation
-    // Now works with Silent Firebase Auth for admins
+    // Now supports: images, documents, videos, and audio files
+    // Works with Silent Firebase Auth for admins
     match /chat_attachments/{allPaths=**} {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated() && 
-                      (isImage() || isDocument()) && 
+                      (isImage() || isDocument() || isVideo() || isAudio()) && 
                       isValidSize();
       allow delete: if isAuthenticated();
     }

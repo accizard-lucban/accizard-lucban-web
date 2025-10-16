@@ -13,6 +13,7 @@ interface SidebarProps {
   onCollapse: (collapsed: boolean) => void;
   manageUsersBadge?: number;
   manageReportsBadge?: number;
+  chatSupportBadge?: number;
   isMobileOpen?: boolean;
   onMobileClose?: () => void;
 }
@@ -56,7 +57,7 @@ const otherItems = [{
   preload: () => import("@/components/ProfilePage")
 }];
 
-export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageReportsBadge, isMobileOpen = false, onMobileClose }: SidebarProps) {
+export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageReportsBadge, chatSupportBadge, isMobileOpen = false, onMobileClose }: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [showSignOut, setShowSignOut] = useState(false);
@@ -155,6 +156,11 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
                 {(!isCollapsed || isMobileOpen) && item.title === "Manage Reports" && (manageReportsBadge ?? 0) > 0 && (
                   <Badge className="bg-orange-500 hover:bg-orange-400 text-white text-xs border-0 font-semibold animate-pulse">
                     {manageReportsBadge}
+                  </Badge>
+                )}
+                {(!isCollapsed || isMobileOpen) && item.title === "Chat Support" && (chatSupportBadge ?? 0) > 0 && (
+                  <Badge className="bg-orange-500 hover:bg-orange-400 text-white text-xs border-0 font-semibold">
+                    {chatSupportBadge}
                   </Badge>
                 )}
                 {(!isCollapsed || isMobileOpen) && item.title === "Manage Users" && (manageUsersBadge ?? 0) > 0 && (
