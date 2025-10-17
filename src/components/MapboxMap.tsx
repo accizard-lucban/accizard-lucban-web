@@ -1230,7 +1230,7 @@ export function MapboxMap({
       <div 
         ref={mapContainer} 
         className="w-full h-full rounded-lg"
-        style={{ width: '100%', height: '100%', minHeight: '480px' }}
+        style={{ width: '100%', height: '100%', minHeight: '300px' }}
       />
       
       {!mapLoaded && !mapError && (

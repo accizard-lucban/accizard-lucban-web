@@ -6,6 +6,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Toggle } from "@/components/ui/toggle";
+import { Switch } from "@/components/ui/switch";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from "@/components/ui/select";
@@ -53,10 +55,6 @@ const facilityIcons: Record<string, any> = {
   governmentOffices: Building2,
 };
 
-// Location icons mapping
-const locationIcons: Record<string, any> = {
-  residentCurrentLocation: Navigation,
-};
 
 export function RiskMapPage() {
   const location = useLocation();
@@ -73,10 +71,7 @@ export function RiskMapPage() {
   const [pinModalMode, setPinModalMode] = useState<"create" | "edit">("create");
   const [editingPin, setEditingPin] = useState<Pin | undefined>(undefined);
   const [pinModalPrefill, setPinModalPrefill] = useState<Partial<PinFormData> | undefined>(undefined);
-  
-  // Map Click Popup State
-  const [isMapClickPopupOpen, setIsMapClickPopupOpen] = useState(false);
-  const [mapClickLocation, setMapClickLocation] = useState<{ lng: number; lat: number; locationName: string } | null>(null);
+  const [tempClickedLocation, setTempClickedLocation] = useState<{ lat: number; lng: number; locationName: string } | null>(null);
   
   // Delete Confirmation State
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -106,9 +101,6 @@ export function RiskMapPage() {
     governmentOffices: false
   });
 
-  const [locationFilters, setLocationFilters] = useState({
-    residentCurrentLocation: false
-  });
 
   // Accident/Hazard types
   const accidentHazardTypes = [
@@ -193,11 +185,6 @@ export function RiskMapPage() {
     setFacilityFilters(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handleLocationFilterChange = (key: keyof typeof locationFilters) => {
-    setLocationFilters(prev => ({ ...prev, [key]: !prev[key] }));
-    // Auto-refresh map when filter changes
-    console.log("Filter changed:", key);
-  };
 
   const handleQuickDateFilter = (period: 'week' | 'month' | 'year') => {
     const today = new Date();
@@ -247,36 +234,6 @@ export function RiskMapPage() {
       governmentOffices: checked
     };
     setFacilityFilters(newFilters);
-  };
-
-  // Map Click Popup Handlers
-  const handleAddPinFromPopup = () => {
-    if (!mapClickLocation) return;
-    
-    // Close the popup
-    setIsMapClickPopupOpen(false);
-    
-    // Open the modal with the clicked location
-    setPinModalMode("create");
-    setPinModalPrefill({
-      type: "",
-      title: "",
-      latitude: mapClickLocation.lat,
-      longitude: mapClickLocation.lng,
-      locationName: mapClickLocation.locationName,
-      reportId: undefined
-    });
-    setIsPinModalOpen(true);
-    
-    // Clear the popup location
-    setMapClickLocation(null);
-    
-    toast.success("Location selected! Fill in pin details.");
-  };
-
-  const handleCloseMapClickPopup = () => {
-    setIsMapClickPopupOpen(false);
-    setMapClickLocation(null);
   };
 
   // New Modal-based Pin Management Handlers
@@ -441,9 +398,9 @@ export function RiskMapPage() {
   return (
     <Layout>
       <TooltipProvider>
-        <div className="flex h-[calc(100vh-4rem)]">
+        <div className="flex h-[calc(100vh-4rem)] min-h-[400px] md:min-h-[600px]">
           {/* Map takes full width - no sidebar */}
-          <div className="flex-1 flex flex-col">
+          <div className="flex-1 flex flex-col min-h-0">
             {/* Map Toolbar */}
           <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
             <div className="flex-1 relative">
@@ -474,19 +431,6 @@ export function RiskMapPage() {
                 <p>Filter pins by type and date</p>
               </TooltipContent>
             </Tooltip>
-            
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowHeatmap(!showHeatmap)}
-              className={cn(
-                "h-9 px-3",
-                showHeatmap && "bg-gray-800 text-white hover:bg-gray-700 hover:text-white"
-              )}
-            >
-              <Layers className="h-4 w-4 mr-2" />
-              Heatmap
-            </Button>
             
             {/* Map Legend Button */}
             <Dialog>
@@ -621,29 +565,40 @@ export function RiskMapPage() {
           </div>
 
           {/* Map Container */}
-          <div className="flex-1 bg-gray-100">
+          <div className="flex-1 bg-gray-100 relative overflow-hidden min-h-0">
             <MapboxMap 
               onMapClick={async (lngLat) => {
                 console.log("=== MAP CLICK EVENT ===");
                 console.log("Clicked coordinates:", lngLat);
                 
-                // Don't show popup if modal is already open
-                if (isPinModalOpen) {
-                  console.log("Modal is open - ignoring map click");
-                  return;
-                }
-                
                 // Reverse geocode to get location name
                 const locationName = await reverseGeocode(lngLat.lat.toString(), lngLat.lng.toString());
                 
-                // Show popup with Add Pin button
-                console.log("Showing map click popup");
-                setMapClickLocation({
-                  lng: lngLat.lng,
-                  lat: lngLat.lat,
-                  locationName: locationName
-                });
-                setIsMapClickPopupOpen(true);
+                // If modal is already open (create mode), just update coordinates
+                if (isPinModalOpen && pinModalMode === "create") {
+                  console.log("Modal is open - updating prefill");
+                  setPinModalPrefill(prev => ({
+                    ...prev,
+                    latitude: lngLat.lat,
+                    longitude: lngLat.lng,
+                    locationName: locationName
+                  }));
+                  toast.success("Location updated!");
+                } else {
+                  // Modal not open - open it with the clicked location
+                  console.log("Opening modal with clicked location");
+                  setPinModalMode("create");
+                  setPinModalPrefill({
+                    type: "",
+                    title: "",
+                    latitude: lngLat.lat,
+                    longitude: lngLat.lng,
+                    locationName: locationName,
+                    reportId: undefined
+                  });
+                  setIsPinModalOpen(true);
+                  toast.success("Location selected! Fill in pin details.");
+                }
               }}
               showHeatmap={showHeatmap}
               showDirections={false}
@@ -671,57 +626,23 @@ export function RiskMapPage() {
               onEditPin={handleEditPin}
               onDeletePin={handleDeletePinClick}
                       />
+            
+            {/* Pin Modal for Create/Edit - positioned within map container */}
+            <PinModal
+              isOpen={isPinModalOpen}
+              onClose={() => {
+                setIsPinModalOpen(false);
+                setPinModalPrefill(undefined);
+                setEditingPin(undefined);
+              }}
+              onSave={handleSavePin}
+              mode={pinModalMode}
+              existingPin={editingPin}
+              prefillData={pinModalPrefill}
+            />
                     </div>
                   </div>
                   </div>
-
-      {/* Pin Modal for Create/Edit */}
-      <PinModal
-        isOpen={isPinModalOpen}
-        onClose={() => {
-          setIsPinModalOpen(false);
-          setPinModalPrefill(undefined);
-          setEditingPin(undefined);
-        }}
-        onSave={handleSavePin}
-        mode={pinModalMode}
-        existingPin={editingPin}
-        prefillData={pinModalPrefill}
-      />
-
-      {/* Map Click Popup */}
-      <Dialog open={isMapClickPopupOpen} onOpenChange={handleCloseMapClickPopup}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <MapPin className="h-5 w-5 text-blue-500" />
-              Add Pin at This Location?
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="bg-gray-50 p-3 rounded-lg">
-              <p className="text-sm text-gray-600 mb-1">
-                <strong>Location:</strong> {mapClickLocation?.locationName}
-              </p>
-              <p className="text-xs text-gray-500">
-                <strong>Coordinates:</strong> {mapClickLocation?.lat.toFixed(6)}, {mapClickLocation?.lng.toFixed(6)}
-              </p>
-            </div>
-            <p className="text-sm text-gray-600">
-              Click "Add Pin" to open the pin creation form with this location pre-filled.
-            </p>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={handleCloseMapClickPopup}>
-              Cancel
-            </Button>
-            <Button onClick={handleAddPinFromPopup} className="bg-blue-500 hover:bg-blue-600">
-              <MapPin className="h-4 w-4 mr-2" />
-              Add Pin
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
@@ -752,6 +673,25 @@ export function RiskMapPage() {
           </SheetHeader>
           
           <div className="mt-6 space-y-6">
+                  {/* Heatmap Toggle */}
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium">Map Display</Label>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <Layers className="h-4 w-4 text-gray-600" />
+                        <Label htmlFor="heatmap-toggle" className="text-sm font-normal">
+                          Show Heatmap
+                        </Label>
+                      </div>
+                      <Switch
+                        id="heatmap-toggle"
+                        checked={showHeatmap}
+                        onCheckedChange={(checked) => setShowHeatmap(checked)}
+                        aria-label="Toggle heatmap"
+                      />
+                    </div>
+                  </div>
+
                   {/* Timeline */}
                   <div className="space-y-3">
                     <Label className="text-sm font-medium">Timeline</Label>
@@ -863,29 +803,6 @@ export function RiskMapPage() {
                               onCheckedChange={() => handleFacilityFilterChange(key as keyof typeof facilityFilters)}
                             />
                       <Label htmlFor={`sheet-facility-${key}`} className="text-sm font-normal flex items-center">
-                              <Icon className="h-4 w-4 mr-2" />
-                              {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-                            </Label>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Location Filters */}
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium">Location Filters</Label>
-                    <div className="space-y-2">
-                      {Object.entries(locationFilters).map(([key, checked]) => {
-                        const Icon = locationIcons[key] || MapPin;
-                        return (
-                          <div key={key} className="flex items-center space-x-2">
-                            <Checkbox
-                        id={`sheet-location-${key}`}
-                              checked={checked}
-                              onCheckedChange={() => handleLocationFilterChange(key as keyof typeof locationFilters)}
-                            />
-                      <Label htmlFor={`sheet-location-${key}`} className="text-sm font-normal flex items-center">
                               <Icon className="h-4 w-4 mr-2" />
                               {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
                             </Label>

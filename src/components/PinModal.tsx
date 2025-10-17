@@ -1,23 +1,27 @@
 /**
  * PinModal Component
  * 
- * A reusable modal for creating and editing map pins.
+ * A reusable overlay for creating and editing map pins.
  * Supports three modes:
  * - Create: Add new pin manually
  * - Edit: Update existing pin
  * - FromReport: Create pin from emergency report
+ * 
+ * Displays as:
+ * - Fixed right-side overlay on desktop
+ * - Bottom sheet on mobile
  */
 
 import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, X } from "lucide-react";
+import { MapPin, X, RotateCcw } from "lucide-react";
 import { Pin, PinType } from "@/types/pin";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 // Pin type icons mapping (for the select dropdown)
 import { Car, Flame, Ambulance, Waves, Mountain, CircleAlert, Users, ShieldAlert, Activity, Building, Building2 } from "lucide-react";
@@ -146,6 +150,18 @@ export function PinModal({
     }
   };
 
+  const handleReset = () => {
+    setFormData({
+      type: "",
+      title: "",
+      latitude: null,
+      longitude: null,
+      locationName: "",
+      reportId: undefined
+    });
+    setIsWaitingForMapClick(true);
+  };
+
   const handleChangeLocation = () => {
     setIsWaitingForMapClick(true);
     if (onMapClick) {
@@ -157,36 +173,91 @@ export function PinModal({
     return (
       formData.type &&
       formData.title.trim() &&
+      formData.locationName.trim() &&
       formData.latitude !== null &&
       formData.longitude !== null
     );
   };
 
   const isFromReport = !!prefillData?.reportId;
+  const isMobile = useIsMobile();
+
+  if (!isOpen) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex items-center justify-between">
-            <DialogTitle className="flex items-center gap-2">
+    <>
+      {/* Mobile Backdrop - only show on mobile */}
+      {isMobile && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 transition-opacity"
+          onClick={onClose}
+        />
+      )}
+
+      {/* Overlay Panel */}
+      <div 
+        className={cn(
+          "bg-white shadow-2xl transition-transform duration-300 ease-in-out",
+          // Desktop: Right side overlay within map container
+          "md:absolute md:right-0 md:top-0 md:h-full md:w-[450px] md:z-50",
+          // Mobile: Bottom sheet (fixed for mobile)
+          "fixed bottom-0 left-0 right-0 max-h-[85vh] rounded-t-2xl z-50",
+          "md:rounded-none"
+        )}
+        style={{
+          // Ensure it stays within bounds on desktop
+          ...(isMobile ? {} : { 
+            position: 'absolute',
+            right: 0,
+            top: 0,
+            height: '100%',
+            width: '450px',
+            zIndex: 50
+          })
+        }}
+      >
+        {/* Mobile Drag Handle */}
+        {isMobile && (
+          <div className="flex justify-center pt-3 pb-2">
+            <div className="w-12 h-1.5 bg-gray-300 rounded-full" />
+          </div>
+        )}
+
+        {/* Header */}
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 z-10">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
               <MapPin className="h-5 w-5 text-[#FF4F0B]" />
-              {mode === "create" ? "Add New Pin" : "Edit Pin"}
-            </DialogTitle>
-            {isFromReport && (
-              <Badge variant="secondary" className="ml-2">
-                From Report
-              </Badge>
-            )}
+              <h2 className="text-lg font-semibold">
+                {mode === "create" ? "Add New Pin" : "Edit Pin"}
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              {isFromReport && (
+                <Badge variant="secondary">
+                  From Report
+                </Badge>
+              )}
+              <Button 
+                variant="ghost" 
+                size="icon"
+                onClick={onClose}
+                className="h-8 w-8"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
           {mode === "create" && !isFromReport && (
-            <p className="text-sm text-gray-600 mt-2">
+            <p className="text-sm text-gray-600">
               Location has been set from your map click. Fill out the details below to complete the pin.
             </p>
           )}
-        </DialogHeader>
+        </div>
 
-        <div className="space-y-4 mt-4">
+        {/* Scrollable Content */}
+        <div className="overflow-y-auto px-6 py-4" style={{ maxHeight: isMobile ? 'calc(85vh - 160px)' : 'calc(100vh - 140px)' }}>
+          <div className="space-y-4">
           {/* Pin Type */}
           <div className="space-y-2">
             <Label htmlFor="pin-type">Pin Type *</Label>
@@ -260,82 +331,98 @@ export function PinModal({
             </div>
           </div>
 
-          {/* Location Section */}
-          <div className="p-4 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-            {formData.latitude !== null && formData.longitude !== null ? (
-              <>
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="h-4 w-4 text-green-600" />
-                    <span className="text-sm font-medium text-gray-900">Location Set</span>
-                  </div>
-                  {!isFromReport && (
-                    <Button 
-                      size="sm" 
-                      variant="ghost"
-                      onClick={handleChangeLocation}
-                      className="h-7 text-xs"
-                    >
-                      Change
-                    </Button>
-                  )}
-                </div>
-                <p className="text-sm text-gray-700 mb-1">{formData.locationName || "Unknown Location"}</p>
-                <p className="text-xs text-gray-500 font-mono">
-                  {formData.latitude.toFixed(6)}, {formData.longitude.toFixed(6)}
-                </p>
-              </>
-            ) : (
-              <div className="text-center py-3">
-                <MapPin className="h-10 w-10 mx-auto mb-2 text-gray-400 animate-pulse" />
-                <p className="text-sm font-medium text-gray-700 mb-1">
-                  {isWaitingForMapClick ? "Click on the map" : "Location set"}
-                </p>
-                <p className="text-xs text-gray-500">
-                  {isWaitingForMapClick ? "to set the pin location" : "Click 'Change' to update location"}
-                </p>
-              </div>
-            )}
+          {/* Location Name */}
+          <div className="space-y-2">
+            <Label htmlFor="location-name">Location Name *</Label>
+            <Input
+              id="location-name"
+              placeholder="Enter location name"
+              value={formData.locationName}
+              onChange={(e) => setFormData({ ...formData, locationName: e.target.value })}
+            />
           </div>
 
-          {/* Report ID (if from report) */}
-          {formData.reportId && (
+          {/* Coordinates */}
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>Linked Report</Label>
-              <div className="p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-900">
-                Report ID: {formData.reportId}
+              <Label htmlFor="latitude">Latitude *</Label>
+              <Input
+                id="latitude"
+                type="number"
+                step="any"
+                placeholder="0.000000"
+                value={formData.latitude || ''}
+                onChange={(e) => setFormData({ ...formData, latitude: parseFloat(e.target.value) || null })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="longitude">Longitude *</Label>
+              <Input
+                id="longitude"
+                type="number"
+                step="any"
+                placeholder="0.000000"
+                value={formData.longitude || ''}
+                onChange={(e) => setFormData({ ...formData, longitude: parseFloat(e.target.value) || null })}
+              />
+            </div>
+          </div>
+
+          {/* Map Click Helper */}
+          {isWaitingForMapClick && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center gap-2">
+                <MapPin className="h-4 w-4 text-blue-600" />
+                <p className="text-sm text-blue-800">
+                  Click on the map to set coordinates automatically
+                </p>
               </div>
             </div>
           )}
+
+            {/* Report ID (if from report) */}
+            {formData.reportId && (
+              <div className="space-y-2">
+                <Label>Linked Report</Label>
+                <div className="p-2 bg-blue-50 border border-blue-200 rounded text-sm text-blue-900">
+                  Report ID: {formData.reportId}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex gap-2 pt-4 border-t mt-6">
-          <Button 
-            variant="outline" 
-            onClick={onClose} 
-            className="flex-1"
-            disabled={isSaving}
-          >
-            Cancel
-          </Button>
-          <Button 
-            onClick={handleSave} 
-            className="flex-1 bg-[#FF4F0B] hover:bg-[#FF4F0B]/90"
-            disabled={!isValid() || isSaving}
-          >
-            {isSaving ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                Saving...
-              </>
-            ) : (
-              mode === "create" ? "Add Pin" : "Save Changes"
-            )}
-          </Button>
+        {/* Action Buttons - Sticky Footer */}
+        <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-4">
+          <div className="flex gap-3">
+            <Button 
+              variant="outline" 
+              size="icon"
+              onClick={handleReset} 
+              className="h-10 w-10"
+              disabled={isSaving}
+              title="Clear form"
+            >
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+            <Button 
+              onClick={handleSave} 
+              className="flex-1 bg-[#FF4F0B] hover:bg-[#FF4F0B]/90"
+              disabled={!isValid() || isSaving}
+            >
+              {isSaving ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                  Saving...
+                </>
+              ) : (
+                mode === "create" ? "Add Pin" : "Save Changes"
+              )}
+            </Button>
+          </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </>
   );
 }
 
