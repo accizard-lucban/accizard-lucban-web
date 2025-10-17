@@ -10,16 +10,20 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Plus, MapPin, Layers, CalendarIcon, Search, Building2, Ambulance, Waves, Mountain, Building, CircleAlert, Users, ShieldAlert, Activity, Flame, Car, Siren, Home, Navigation, RotateCcw, HelpCircle } from "lucide-react";
+import { Plus, MapPin, Layers, CalendarIcon, Search, Building2, Ambulance, Waves, Mountain, Building, CircleAlert, Users, ShieldAlert, Activity, Flame, Car, Siren, Home, Navigation, RotateCcw, HelpCircle, Info } from "lucide-react";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Layout } from "./Layout";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { DateRange } from "react-day-picker";
 import { MapboxMap } from "./MapboxMap";
 import { usePins } from "@/hooks/usePins";
 import { Pin, PinType } from "@/types/pin";
 import { toast } from "@/components/ui/sonner";
+import { PinModal, PinFormData } from "./PinModal";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Filter } from "lucide-react";
 
 // Pin type icons mapping
 const pinTypeIcons: Record<string, any> = {
@@ -57,20 +61,29 @@ const locationIcons: Record<string, any> = {
 export function RiskMapPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { createPin, subscribeToPins, deletePin, loading: pinLoading } = usePins();
+  const { createPin, updatePin, subscribeToPins, deletePin, loading: pinLoading } = usePins();
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [date, setDate] = useState<DateRange | undefined>();
   const [searchQuery, setSearchQuery] = useState("");
   const [isFromReport, setIsFromReport] = useState(false); // Track if data came from a report
   const [pins, setPins] = useState<Pin[]>([]); // Store pins from database
-  const [newPin, setNewPin] = useState({
-    type: "",
-    title: "",
-    latitude: "",
-    longitude: "",
-    locationName: "",
-    reportId: ""
-  });
+  
+  // Pin Modal State
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [pinModalMode, setPinModalMode] = useState<"create" | "edit">("create");
+  const [editingPin, setEditingPin] = useState<Pin | undefined>(undefined);
+  const [pinModalPrefill, setPinModalPrefill] = useState<Partial<PinFormData> | undefined>(undefined);
+  
+  // Map Click Popup State
+  const [isMapClickPopupOpen, setIsMapClickPopupOpen] = useState(false);
+  const [mapClickLocation, setMapClickLocation] = useState<{ lng: number; lat: number; locationName: string } | null>(null);
+  
+  // Delete Confirmation State
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [pinToDelete, setPinToDelete] = useState<string | null>(null);
+  
+  // Filters Panel State
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
 
   const [accidentFilters, setAccidentFilters] = useState({
     roadCrash: false,
@@ -147,134 +160,30 @@ export function RiskMapPage() {
     }
   };
 
-  // Effect to populate form when navigating from a report
+  // Effect to populate modal when navigating from a report
   useEffect(() => {
     const state = location.state as any;
     console.log("Location state changed:", state);
     if (state && state.report) {
       const report = state.report;
-      console.log("Loading report data:", report);
-      setNewPin({
+      console.log("Loading report data from Manage Reports:", report);
+      
+      // Open the modal with pre-filled data
+      setPinModalMode("create");
+      setPinModalPrefill({
         type: report.type || "",
         title: "", // Keep title empty for admin to customize
-        latitude: report.latitude?.toString() || "",
-        longitude: report.longitude?.toString() || "",
+        latitude: report.latitude || null,
+        longitude: report.longitude || null,
         locationName: report.location || "",
         reportId: report.id || ""
       });
-      setIsFromReport(true);
-      console.log("isFromReport set to true");
+      setIsPinModalOpen(true);
       
       // Clear the location state to prevent it from persisting on refresh
       navigate("/risk-map", { replace: true, state: {} });
     }
   }, [location.state, navigate]);
-
-  // Debug effect to track isFromReport changes
-  useEffect(() => {
-    console.log("isFromReport changed to:", isFromReport);
-  }, [isFromReport]);
-
-  // Effect to reverse geocode when latitude/longitude changes (only if not from report)
-  useEffect(() => {
-    // Skip reverse geocoding if data came from a report
-    if (isFromReport) {
-      return;
-    }
-
-    const fetchLocationName = async () => {
-      if (newPin.latitude && newPin.longitude) {
-        setNewPin(prev => ({ ...prev, locationName: "Loading..." }));
-        const locationName = await reverseGeocode(newPin.latitude, newPin.longitude);
-        setNewPin(prev => ({ ...prev, locationName }));
-      } else {
-        setNewPin(prev => ({ ...prev, locationName: "" }));
-      }
-    };
-
-    // Debounce the geocoding call
-    const timer = setTimeout(() => {
-      fetchLocationName();
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [newPin.latitude, newPin.longitude, isFromReport]);
-
-  const handleAddPin = async () => {
-    try {
-      // Validation
-      if (!newPin.type) {
-        toast.error("Please select a pin type");
-        return;
-      }
-      if (!newPin.title || newPin.title.trim() === "") {
-        toast.error("Please enter a title for the pin");
-        return;
-      }
-      if (!newPin.latitude || !newPin.longitude) {
-        toast.error("Please select a location on the map");
-        return;
-      }
-
-      const lat = parseFloat(newPin.latitude);
-      const lng = parseFloat(newPin.longitude);
-
-      if (isNaN(lat) || isNaN(lng)) {
-        toast.error("Invalid coordinates");
-        return;
-      }
-
-      console.log("Creating pin in database:", newPin);
-
-      // Create pin in database
-      const pinId = await createPin({
-        type: newPin.type as PinType,
-        title: newPin.title,
-        latitude: lat,
-        longitude: lng,
-        locationName: newPin.locationName || 'Unknown Location',
-        reportId: newPin.reportId || undefined
-      });
-
-      console.log("Pin created successfully with ID:", pinId);
-      
-      toast.success(`Pin "${newPin.title}" added to map successfully!`);
-      
-      // Clear form
-      setNewPin({ type: "", title: "", latitude: "", longitude: "", locationName: "", reportId: "" });
-      setIsFromReport(false);
-    } catch (error: any) {
-      console.error("Error adding pin:", error);
-      toast.error(error.message || "Failed to add pin. Please try again.");
-    }
-  };
-
-  const handleClearForm = () => {
-    setNewPin({ type: "", title: "", latitude: "", longitude: "", locationName: "", reportId: "" });
-    setIsFromReport(false);
-  };
-
-  const hasFormData = () => {
-    return newPin.type || newPin.title || newPin.latitude || newPin.longitude || newPin.reportId;
-  };
-
-  const handleMapClick = useCallback((event: any) => {
-    // Don't allow map clicks to change coordinates if data came from a report
-    if (isFromReport) {
-      return;
-    }
-    
-    // Simulate getting coordinates from map click
-    const mockLat = (Math.random() * 180 - 90).toFixed(6);
-    const mockLng = (Math.random() * 360 - 180).toFixed(6);
-    
-    setNewPin(prev => ({
-      ...prev,
-      latitude: mockLat,
-      longitude: mockLng,
-      locationName: "" // Will be populated by useEffect
-    }));
-  }, [isFromReport]);
 
   const handleAccidentFilterChange = (key: keyof typeof accidentFilters) => {
     setAccidentFilters(prev => ({ ...prev, [key]: !prev[key] }));
@@ -338,6 +247,116 @@ export function RiskMapPage() {
       governmentOffices: checked
     };
     setFacilityFilters(newFilters);
+  };
+
+  // Map Click Popup Handlers
+  const handleAddPinFromPopup = () => {
+    if (!mapClickLocation) return;
+    
+    // Close the popup
+    setIsMapClickPopupOpen(false);
+    
+    // Open the modal with the clicked location
+    setPinModalMode("create");
+    setPinModalPrefill({
+      type: "",
+      title: "",
+      latitude: mapClickLocation.lat,
+      longitude: mapClickLocation.lng,
+      locationName: mapClickLocation.locationName,
+      reportId: undefined
+    });
+    setIsPinModalOpen(true);
+    
+    // Clear the popup location
+    setMapClickLocation(null);
+    
+    toast.success("Location selected! Fill in pin details.");
+  };
+
+  const handleCloseMapClickPopup = () => {
+    setIsMapClickPopupOpen(false);
+    setMapClickLocation(null);
+  };
+
+  // New Modal-based Pin Management Handlers
+  const handleEditPin = (pin: Pin) => {
+    console.log("Edit pin:", pin);
+    setPinModalMode("edit");
+    setEditingPin(pin);
+    setPinModalPrefill({
+      type: pin.type,
+      title: pin.title,
+      latitude: pin.latitude,
+      longitude: pin.longitude,
+      locationName: pin.locationName,
+      reportId: pin.reportId
+    });
+    setIsPinModalOpen(true);
+  };
+
+  const handleDeletePinClick = (pinId: string) => {
+    console.log("Delete pin:", pinId);
+    setPinToDelete(pinId);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!pinToDelete) return;
+    
+    try {
+      await deletePin(pinToDelete);
+      toast.success("Pin deleted successfully");
+      setIsDeleteDialogOpen(false);
+      setPinToDelete(null);
+    } catch (error: any) {
+      console.error("Error deleting pin:", error);
+      toast.error(error.message || "Failed to delete pin");
+    }
+  };
+
+  const handleSavePin = async (pinData: PinFormData) => {
+    try {
+      if (pinModalMode === "create") {
+        // Create new pin
+        if (!pinData.latitude || !pinData.longitude) {
+          toast.error("Please select a location on the map");
+          return;
+        }
+
+        const pinId = await createPin({
+          type: pinData.type as PinType,
+          title: pinData.title,
+          latitude: pinData.latitude,
+          longitude: pinData.longitude,
+          locationName: pinData.locationName || 'Unknown Location',
+          reportId: pinData.reportId || undefined
+        });
+
+        console.log("Pin created successfully with ID:", pinId);
+        toast.success(`Pin "${pinData.title}" added successfully!`);
+      } else if (pinModalMode === "edit" && editingPin) {
+        // Update existing pin
+        await updatePin(editingPin.id, {
+          type: pinData.type as PinType,
+          title: pinData.title,
+          latitude: pinData.latitude!,
+          longitude: pinData.longitude!,
+          locationName: pinData.locationName
+        });
+
+        console.log("Pin updated successfully");
+        toast.success(`Pin "${pinData.title}" updated successfully!`);
+      }
+
+      setIsPinModalOpen(false);
+      setPinModalPrefill(undefined);
+      setEditingPin(undefined);
+    } catch (error: any) {
+      console.error("Error saving pin:", error);
+      toast.error(error.message || "Failed to save pin");
+      throw error; // Re-throw to keep modal open
+    }
   };
 
   // Get active filters for the map
@@ -423,214 +442,316 @@ export function RiskMapPage() {
     <Layout>
       <TooltipProvider>
         <div className="flex h-[calc(100vh-4rem)]">
-          <div className="w-[350px] flex-shrink-0 p-4 border-r overflow-y-auto">
-            <Tabs defaultValue="add-pin" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="add-pin">Add Pin</TabsTrigger>
-              <TabsTrigger value="filters">Filters</TabsTrigger>
-            </TabsList>
+          {/* Map takes full width - no sidebar */}
+          <div className="flex-1 flex flex-col">
+            {/* Map Toolbar */}
+          <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500" />
+              <Input
+                type="text"
+                placeholder="Search for a location..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 pr-4 h-9 w-full border-gray-300"
+              />
+                                </div>
+
+            {/* Filters Button */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsFiltersOpen(true)}
+                  className="h-9 px-3"
+                >
+                  <Filter className="h-4 w-4 mr-2" />
+                  Filters
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Filter pins by type and date</p>
+              </TooltipContent>
+            </Tooltip>
             
-            <TabsContent value="add-pin">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center space-x-2">
-                    <Plus className="h-5 w-5" />
-                    <span>Add New Pin</span>
-                  </CardTitle>
-                  <p className="text-sm text-gray-600">
-                    {isFromReport 
-                      ? "Pin this report on the map. You can customize the marker title."
-                      : "Fill out the form below, then click on the map to place your pin."}
-                  </p>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="pin-type">Pin Type</Label>
-                    <Select value={newPin.type} onValueChange={(value) => setNewPin({ ...newPin, type: value })} disabled={isFromReport}>
-                      <SelectTrigger className={cn(isFromReport && "bg-gray-50 cursor-not-allowed")}>
-                        <SelectValue placeholder="Select pin type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectLabel className="text-xs font-semibold text-gray-600 px-2 py-1.5">Accident/Hazard Types</SelectLabel>
-                          {accidentHazardTypes.map((type) => {
-                            const Icon = pinTypeIcons[type] || MapPin;
-                            return (
-                              <SelectItem key={type} value={type}>
-                                <div className="flex items-center">
-                                  <Icon className="h-4 w-4 mr-2" />
-                                  {type}
-                                </div>
-                              </SelectItem>
-                            );
-                          })}
-                        </SelectGroup>
-                        
-                        <SelectSeparator className="my-1" />
-                        
-                        <SelectGroup>
-                          <SelectLabel className="text-xs font-semibold text-gray-600 px-2 py-1.5">Emergency Facilities</SelectLabel>
-                          {emergencyFacilityTypes.map((type) => {
-                            const Icon = pinTypeIcons[type] || MapPin;
-                            return (
-                              <SelectItem key={type} value={type}>
-                                <div className="flex items-center">
-                                  <Icon className="h-4 w-4 mr-2" />
-                                  {type}
-                                </div>
-                              </SelectItem>
-                            );
-                          })}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-1">
-                      <Label htmlFor="pin-title">Title</Label>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowHeatmap(!showHeatmap)}
+              className={cn(
+                "h-9 px-3",
+                showHeatmap && "bg-gray-800 text-white hover:bg-gray-700 hover:text-white"
+              )}
+            >
+              <Layers className="h-4 w-4 mr-2" />
+              Heatmap
+            </Button>
+            
+            {/* Map Legend Button */}
+            <Dialog>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <HelpCircle className="h-3.5 w-3.5 text-gray-400 cursor-help" />
+                  <DialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 px-3"
+                    >
+                      <Info className="h-4 w-4 mr-2" />
+                      Legend
+                    </Button>
+                  </DialogTrigger>
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p className="text-xs max-w-xs">
-                            For <span className="font-semibold">Emergency Facilities</span>: Enter the facility name (e.g., "St. Mary's Hospital", "Barangay Hall").<br/><br/>
-                            For <span className="font-semibold">Accidents/Hazards</span>: Enter a distinguishable title (e.g., "Highway Junction Crash", "Forest Fire Area").
-                          </p>
+                  <p>Show map legend</p>
                         </TooltipContent>
                       </Tooltip>
+              <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle className="text-lg font-bold">Map Legend</DialogTitle>
+                </DialogHeader>
+                <div className="py-4">
+                  {/* Accident/Hazard Types Section */}
+                  <div className="mb-6">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b">Accident/Hazard Types</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#EF4444', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                          🚗
                     </div>
-                    <div className="relative">
-                      <Input
-                        id="pin-title"
-                        placeholder="Enter marker title"
-                        value={newPin.title}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          if (value.length <= 60) {
-                            setNewPin({ ...newPin, title: value });
-                          }
-                        }}
-                        maxLength={60}
-                      />
-                      <div className="text-xs text-gray-500 mt-1 text-right">
-                        {newPin.title.length}/60 characters
+                        <span className="text-sm text-gray-700">Road Crash</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#F97316', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                          🔥
+                        </div>
+                        <span className="text-sm text-gray-700">Fire</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#EC4899', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                          🚑
+                        </div>
+                        <span className="text-sm text-gray-700">Medical Emergency</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#3B82F6', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                          🌊
+                        </div>
+                        <span className="text-sm text-gray-700">Flooding</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#F59E0B', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                          🌋
+                        </div>
+                        <span className="text-sm text-gray-700">Volcanic Activity</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#78350F', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                          ⛰️
+                        </div>
+                        <span className="text-sm text-gray-700">Landslide</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#DC2626', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                          ⚠️
+                        </div>
+                        <span className="text-sm text-gray-700">Earthquake</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#7C3AED', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                          👥
+                        </div>
+                        <span className="text-sm text-gray-700">Civil Disturbance</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#991B1B', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                          🛡️
+                        </div>
+                        <span className="text-sm text-gray-700">Armed Conflict</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#059669', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                          🦠
+                        </div>
+                        <span className="text-sm text-gray-700">Infectious Disease</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="latitude">Latitude</Label>
-                      <Input
-                        id="latitude"
-                        placeholder="0.000000"
-                        value={newPin.latitude}
-                        onChange={(e) => {
-                          if (!isFromReport) {
-                            setNewPin({ ...newPin, latitude: e.target.value });
-                          }
-                        }}
-                        disabled={isFromReport}
-                        className={cn(isFromReport && "bg-gray-50 cursor-not-allowed")}
+                  {/* Emergency Facilities Section */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b">Emergency Facilities</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#8B5CF6', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                          🏢
+                    </div>
+                        <span className="text-sm text-gray-700">Evacuation Centers</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#10B981', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                          🏥
+                        </div>
+                        <span className="text-sm text-gray-700">Health Facilities</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#3B82F6', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                          🚔
+                        </div>
+                        <span className="text-sm text-gray-700">Police Stations</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#DC2626', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                          🚒
+                        </div>
+                        <span className="text-sm text-gray-700">Fire Stations</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#6366F1', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                          🏛️
+                        </div>
+                        <span className="text-sm text-gray-700">Government Offices</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          {/* Map Container */}
+          <div className="flex-1 bg-gray-100">
+            <MapboxMap 
+              onMapClick={async (lngLat) => {
+                console.log("=== MAP CLICK EVENT ===");
+                console.log("Clicked coordinates:", lngLat);
+                
+                // Don't show popup if modal is already open
+                if (isPinModalOpen) {
+                  console.log("Modal is open - ignoring map click");
+                  return;
+                }
+                
+                // Reverse geocode to get location name
+                const locationName = await reverseGeocode(lngLat.lat.toString(), lngLat.lng.toString());
+                
+                // Show popup with Add Pin button
+                console.log("Showing map click popup");
+                setMapClickLocation({
+                  lng: lngLat.lng,
+                  lat: lngLat.lat,
+                  locationName: locationName
+                });
+                setIsMapClickPopupOpen(true);
+              }}
+              showHeatmap={showHeatmap}
+              showDirections={false}
+              pins={pins}
+              center={[121.5556, 14.1139]} // Default to Lucban, Quezon
+              zoom={13}
+              activeFilters={getActiveFilters()}
+              singleMarker={
+                // Show temporary marker when modal is open with coordinates
+                isPinModalOpen && pinModalPrefill?.latitude && pinModalPrefill?.longitude
+                  ? {
+                      id: 'temp-marker',
+                      type: pinModalPrefill.type || 'Default',
+                      title: pinModalPrefill.title || pinModalPrefill.locationName || 'New Pin Location',
+                      description: pinModalPrefill.locationName || 'Click to set location',
+                      reportId: pinModalPrefill.reportId,
+                      coordinates: [pinModalPrefill.longitude, pinModalPrefill.latitude] as [number, number],
+                      locationName: pinModalPrefill.locationName,
+                      latitude: pinModalPrefill.latitude,
+                      longitude: pinModalPrefill.longitude
+                    }
+                  : undefined
+              }
+              canEdit={true}
+              onEditPin={handleEditPin}
+              onDeletePin={handleDeletePinClick}
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="longitude">Longitude</Label>
-                      <Input
-                        id="longitude"
-                        placeholder="0.000000"
-                        value={newPin.longitude}
-                        onChange={(e) => {
-                          if (!isFromReport) {
-                            setNewPin({ ...newPin, longitude: e.target.value });
-                          }
-                        }}
-                        disabled={isFromReport}
-                        className={cn(isFromReport && "bg-gray-50 cursor-not-allowed")}
-                      />
-                    </div>
+                  </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="location-name">Location Name</Label>
-                    <Input
-                      id="location-name"
-                      placeholder="Auto-filled from coordinates"
-                      value={newPin.locationName}
-                      disabled
-                      className="bg-gray-50 cursor-not-allowed"
-                    />
-                  </div>
+      {/* Pin Modal for Create/Edit */}
+      <PinModal
+        isOpen={isPinModalOpen}
+        onClose={() => {
+          setIsPinModalOpen(false);
+          setPinModalPrefill(undefined);
+          setEditingPin(undefined);
+        }}
+        onSave={handleSavePin}
+        mode={pinModalMode}
+        existingPin={editingPin}
+        prefillData={pinModalPrefill}
+      />
 
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-1">
-                      <Label htmlFor="report-id">Report ID</Label>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <HelpCircle className="h-3.5 w-3.5 text-gray-400 cursor-help" />
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p className="text-xs max-w-xs">
-                            {isFromReport 
-                              ? "Report ID from Manage Reports. This links the pin to the emergency report." 
-                              : "Auto-filled when pinning from Manage Reports"}
-                          </p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
-                    <Input
-                      id="report-id"
-                      placeholder="Auto-filled from report"
-                      value={newPin.reportId}
-                      disabled
-                      className="bg-gray-50 cursor-not-allowed"
-                    />
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    <Button 
-                      onClick={handleAddPin} 
-                      className="flex-1 bg-[#FF4F0B] text-white hover:bg-[#FF4F0B]/80 disabled:opacity-50 disabled:cursor-not-allowed"
-                      disabled={pinLoading}
-                    >
-                      {pinLoading ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                          Adding Pin...
-                        </>
-                      ) : (
-                        <>
-                          <MapPin className="h-4 w-4 mr-2" />
-                          Add Pin to Map
-                        </>
-                      )}
-                    </Button>
-                    {hasFormData() && !pinLoading && (
-                      <Button 
-                        onClick={handleClearForm} 
-                        variant="outline"
-                        className="border-gray-300 hover:bg-gray-100"
-                        title="Clear form"
-                      >
-                        <RotateCcw className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-            
-            <TabsContent value="filters">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Map Filters</CardTitle>
-                  <p className="text-sm text-gray-600">
-                    Map updates automatically when filters are changed
-                  </p>
-                </CardHeader>
-                <CardContent className="space-y-6">
+      {/* Map Click Popup */}
+      <Dialog open={isMapClickPopupOpen} onOpenChange={handleCloseMapClickPopup}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-blue-500" />
+              Add Pin at This Location?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-gray-50 p-3 rounded-lg">
+              <p className="text-sm text-gray-600 mb-1">
+                <strong>Location:</strong> {mapClickLocation?.locationName}
+              </p>
+              <p className="text-xs text-gray-500">
+                <strong>Coordinates:</strong> {mapClickLocation?.lat.toFixed(6)}, {mapClickLocation?.lng.toFixed(6)}
+              </p>
+            </div>
+            <p className="text-sm text-gray-600">
+              Click "Add Pin" to open the pin creation form with this location pre-filled.
+            </p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={handleCloseMapClickPopup}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddPinFromPopup} className="bg-blue-500 hover:bg-blue-600">
+              <MapPin className="h-4 w-4 mr-2" />
+              Add Pin
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Pin</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this pin? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPinToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDelete} className="bg-red-500 hover:bg-red-600">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Filters Sheet */}
+      <Sheet open={isFiltersOpen} onOpenChange={setIsFiltersOpen}>
+        <SheetContent side="right" className="w-[400px] sm:w-[540px] overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>Map Filters</SheetTitle>
+            <SheetDescription>
+              Filter pins by type, date range, and location. Map updates automatically when filters are changed.
+            </SheetDescription>
+          </SheetHeader>
+          
+          <div className="mt-6 space-y-6">
                   {/* Timeline */}
                   <div className="space-y-3">
                     <Label className="text-sm font-medium">Timeline</Label>
@@ -704,11 +825,11 @@ export function RiskMapPage() {
                         return (
                           <div key={key} className="flex items-center space-x-2">
                             <Checkbox
-                              id={key}
+                        id={`sheet-${key}`}
                               checked={checked}
                               onCheckedChange={() => handleAccidentFilterChange(key as keyof typeof accidentFilters)}
                             />
-                            <Label htmlFor={key} className="text-sm font-normal flex items-center">
+                      <Label htmlFor={`sheet-${key}`} className="text-sm font-normal flex items-center">
                               <Icon className="h-4 w-4 mr-2" />
                               {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
                             </Label>
@@ -724,11 +845,11 @@ export function RiskMapPage() {
                     <div className="space-y-2">
                       <div className="flex items-center space-x-2">
                         <Checkbox
-                          id="all-facilities"
+                    id="all-facilities-sheet"
                           checked={Object.values(facilityFilters).every(Boolean)}
                           onCheckedChange={(checked) => handleSelectAllFacilities(checked as boolean)}
                         />
-                        <Label htmlFor="all-facilities" className="text-sm font-normal">
+                  <Label htmlFor="all-facilities-sheet" className="text-sm font-normal">
                           All
                         </Label>
                       </div>
@@ -737,11 +858,11 @@ export function RiskMapPage() {
                         return (
                           <div key={key} className="flex items-center space-x-2">
                             <Checkbox
-                              id={key}
+                        id={`sheet-facility-${key}`}
                               checked={checked}
                               onCheckedChange={() => handleFacilityFilterChange(key as keyof typeof facilityFilters)}
                             />
-                            <Label htmlFor={key} className="text-sm font-normal flex items-center">
+                      <Label htmlFor={`sheet-facility-${key}`} className="text-sm font-normal flex items-center">
                               <Icon className="h-4 w-4 mr-2" />
                               {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
                             </Label>
@@ -760,11 +881,11 @@ export function RiskMapPage() {
                         return (
                           <div key={key} className="flex items-center space-x-2">
                             <Checkbox
-                              id={key}
+                        id={`sheet-location-${key}`}
                               checked={checked}
                               onCheckedChange={() => handleLocationFilterChange(key as keyof typeof locationFilters)}
                             />
-                            <Label htmlFor={key} className="text-sm font-normal flex items-center">
+                      <Label htmlFor={`sheet-location-${key}`} className="text-sm font-normal flex items-center">
                               <Icon className="h-4 w-4 mr-2" />
                               {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
                             </Label>
@@ -773,135 +894,10 @@ export function RiskMapPage() {
                       })}
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
         </div>
+        </SheetContent>
+      </Sheet>
 
-        <div className="flex-1 flex flex-col">
-          {/* Map Toolbar */}
-          <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500" />
-              <Input
-                type="text"
-                placeholder="Search for a location..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 pr-4 h-9 w-full border-gray-300"
-              />
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowHeatmap(!showHeatmap)}
-              className={cn(
-                "h-9 px-3",
-                showHeatmap && "bg-gray-800 text-white hover:bg-gray-700 hover:text-white"
-              )}
-            >
-              <Layers className="h-4 w-4 mr-2" />
-              Heatmap
-            </Button>
-          </div>
-
-          {/* Map Container */}
-          <div className="flex-1 bg-gray-100">
-            <MapboxMap 
-              onMapClick={(lngLat) => {
-                console.log("=== MAP CLICK EVENT ===");
-                console.log("Clicked coordinates:", lngLat);
-                console.log("Latitude (raw):", lngLat.lat);
-                console.log("Longitude (raw):", lngLat.lng);
-                console.log("Current isFromReport value:", isFromReport);
-                
-                if (isFromReport) {
-                  console.log("Blocked: Cannot change coordinates from a report");
-                  return;
-                }
-                
-                const newLat = lngLat.lat.toFixed(6);
-                const newLng = lngLat.lng.toFixed(6);
-                console.log("Formatted latitude:", newLat);
-                console.log("Formatted longitude:", newLng);
-                console.log("Setting newPin state...");
-                
-                setNewPin(prev => {
-                  const updated = {
-                    ...prev,
-                    latitude: newLat,
-                    longitude: newLng
-                  };
-                  console.log("New pin state:", updated);
-                  return updated;
-                });
-              }}
-              showHeatmap={showHeatmap}
-              showDirections={false}
-              pins={pins}
-              center={
-                (() => {
-                  const lat = parseFloat(newPin.latitude);
-                  const lng = parseFloat(newPin.longitude);
-                  const hasValidCoords = newPin.latitude && newPin.longitude && !isNaN(lat) && !isNaN(lng);
-                  return hasValidCoords ? [lng, lat] : [121.5556, 14.1139]; // Lucban, Quezon coordinates
-                })()
-              }
-              zoom={
-                (() => {
-                  const lat = parseFloat(newPin.latitude);
-                  const lng = parseFloat(newPin.longitude);
-                  const hasValidCoords = newPin.latitude && newPin.longitude && !isNaN(lat) && !isNaN(lng);
-                  return hasValidCoords ? 15 : 13;
-                })()
-              }
-              activeFilters={!isFromReport && !newPin.latitude && !newPin.longitude ? getActiveFilters() : undefined}
-              singleMarker={
-                (() => {
-                  console.log('=== MARKER CREATION ===');
-                  console.log('newPin.latitude (string):', newPin.latitude, typeof newPin.latitude);
-                  console.log('newPin.longitude (string):', newPin.longitude, typeof newPin.longitude);
-                  
-                  // Validate coordinates before creating marker
-                  const lat = parseFloat(newPin.latitude);
-                  const lng = parseFloat(newPin.longitude);
-                  
-                  console.log('Parsed lat:', lat, typeof lat, 'isNaN:', isNaN(lat));
-                  console.log('Parsed lng:', lng, typeof lng, 'isNaN:', isNaN(lng));
-                  
-                  // Check if coordinates are valid numbers
-                  const hasValidCoords = newPin.latitude && newPin.longitude && !isNaN(lat) && !isNaN(lng);
-                  
-                  console.log('Has valid coords:', hasValidCoords);
-                  
-                  if (!hasValidCoords) {
-                    console.log('No valid coordinates, returning undefined (no marker)');
-                    return undefined;
-                  }
-                  
-                  const marker = {
-                    id: newPin.reportId || 'temp-marker',
-                    type: newPin.type || 'Default',
-                    title: newPin.title || newPin.locationName || 'Selected Location',
-                    description: newPin.locationName || 'Temporary marker',
-                    reportId: newPin.reportId,
-                    coordinates: [lng, lat] as [number, number],
-                    locationName: newPin.locationName,
-                    latitude: lat,
-                    longitude: lng
-                  };
-                  
-                  console.log('Created marker object:', marker);
-                  console.log('Marker coordinates array [lng, lat]:', marker.coordinates);
-                  
-                  return marker;
-                })()
-              }
-            />
-          </div>
-        </div>
-      </div>
       </TooltipProvider>
     </Layout>
   );

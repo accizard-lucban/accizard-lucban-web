@@ -8,7 +8,7 @@
  * - Click to show popups with location details
  * - Travel time and route calculation from user's location
  * - Geocoder for location search
- * - Responsive hover effects on markers
+ * - Stable marker rendering without hover effects
  * 
  * Marker Icons (Accident/Hazard Types):
  * - 🚗 Road Crash (Red)
@@ -72,6 +72,9 @@ interface MapboxMapProps {
   showGeocoder?: boolean;
   onGeocoderResult?: (result: { lat: number; lng: number; address: string }) => void;
   showDirections?: boolean; // Control whether to show routes and travel time
+  onEditPin?: (pin: Pin) => void; // Callback when edit button is clicked
+  onDeletePin?: (pinId: string) => void; // Callback when delete button is clicked
+  canEdit?: boolean; // Whether user can edit/delete pins
 }
 
 // Sample data for markers - currently empty, will be populated from database
@@ -110,7 +113,10 @@ export function MapboxMap({
   clickedLocation = null,
   showGeocoder = false,
   onGeocoderResult,
-  showDirections = true // Default to true for backward compatibility
+  showDirections = true, // Default to true for backward compatibility
+  onEditPin,
+  onDeletePin,
+  canEdit = false // Default to false for safety
 }: MapboxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -213,11 +219,16 @@ export function MapboxMap({
     const el = document.createElement('div');
     el.className = 'custom-marker';
     
-    const size = isSingleMarker ? 40 : 32;
+    // Optimal sizes: 48px for featured markers, 38px for regular markers
+    const size = isSingleMarker ? 48 : 38;
     
-    // CRITICAL: Set dimensions on the container
+    // CRITICAL: Set dimensions with min-width/min-height to prevent collapse during zoom
     el.style.width = `${size}px`;
     el.style.height = `${size}px`;
+    el.style.minWidth = `${size}px`;
+    el.style.minHeight = `${size}px`;
+    el.style.position = 'relative';
+    el.style.willChange = 'transform'; // Optimize for transform operations during zoom
     
     // Create image element for the marker icon
     const img = document.createElement('img');
@@ -227,6 +238,9 @@ export function MapboxMap({
     img.style.height = '100%';
     img.style.display = 'block';
     img.style.objectFit = 'contain';
+    img.style.position = 'absolute';
+    img.style.top = '0';
+    img.style.left = '0';
     
     // Fallback: if image fails to load, use emoji with background
     img.onerror = () => {
@@ -248,14 +262,7 @@ export function MapboxMap({
     // Add the image to the container
     el.appendChild(img);
     
-    // Add hover effect
-    el.addEventListener('mouseenter', () => {
-      el.style.transform = 'scale(1.15)';
-      el.style.transition = 'transform 0.2s ease';
-    });
-    el.addEventListener('mouseleave', () => {
-      el.style.transform = 'scale(1)';
-    });
+    // No hover effects to prevent positioning issues
     
     // Add a pulsing animation for single markers
     if (isSingleMarker) {
@@ -275,12 +282,18 @@ export function MapboxMap({
   };
 
   // Function to create popup content
-  const createPopupContent = (marker: Marker) => {
+  const createPopupContent = (marker: Marker, showActions: boolean = false) => {
     return `
-      <div class="p-3 min-w-[200px] max-w-[300px] overflow-hidden">
+      <div class="p-3 min-w-[220px] max-w-[300px] overflow-hidden">
         <h3 class="font-bold text-lg mb-2 text-gray-800 break-words leading-tight">${marker.title}</h3>
         
         <div class="space-y-2 text-sm overflow-hidden">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+              ${marker.type}
+            </span>
+          </div>
+          
           ${marker.locationName ? `
             <div class="flex items-start gap-2">
               <span class="font-medium text-gray-700 flex-shrink-0 mt-0.5">Location:</span>
@@ -296,7 +309,36 @@ export function MapboxMap({
               </span>
             </div>
           ` : ''}
+          
+          ${marker.reportId ? `
+            <div class="mt-2 pt-2 border-t border-gray-200">
+              <span class="text-xs text-gray-500">Linked to Report #${marker.reportId}</span>
+            </div>
+          ` : ''}
         </div>
+        
+        ${showActions && canEdit ? `
+          <div class="flex gap-2 pt-3 mt-3 border-t border-gray-200">
+            <button 
+              onclick="window.handleEditPin && window.handleEditPin('${marker.id}')"
+              class="flex-1 bg-blue-500 text-white px-3 py-1.5 rounded text-sm hover:bg-blue-600 flex items-center justify-center gap-1 transition-colors"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+              </svg>
+              Edit
+            </button>
+            <button 
+              onclick="window.handleDeletePin && window.handleDeletePin('${marker.id}')"
+              class="flex-1 bg-red-500 text-white px-3 py-1.5 rounded text-sm hover:bg-red-600 flex items-center justify-center gap-1 transition-colors"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+              </svg>
+              Delete
+            </button>
+          </div>
+        ` : ''}
       </div>
     `;
   };
@@ -516,6 +558,31 @@ export function MapboxMap({
       </div>
     `;
   };
+
+  // Set up global event handlers for popup actions
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).handleEditPin = (pinId: string) => {
+        const pin = pins.find(p => p.id === pinId);
+        if (pin && onEditPin) {
+          onEditPin(pin);
+        }
+      };
+
+      (window as any).handleDeletePin = (pinId: string) => {
+        if (onDeletePin) {
+          onDeletePin(pinId);
+        }
+      };
+    }
+
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete (window as any).handleEditPin;
+        delete (window as any).handleDeletePin;
+      }
+    };
+  }, [pins, onEditPin, onDeletePin]);
 
   // Get user's current location on component mount
   useEffect(() => {
@@ -831,8 +898,8 @@ export function MapboxMap({
         
         const currentLocationEl = document.createElement('div');
         currentLocationEl.className = 'current-location-marker';
-        currentLocationEl.style.width = '20px';
-        currentLocationEl.style.height = '20px';
+        currentLocationEl.style.width = '24px';
+        currentLocationEl.style.height = '24px';
         currentLocationEl.style.backgroundColor = '#3B82F6';
         currentLocationEl.style.borderRadius = '50%';
         currentLocationEl.style.border = '3px solid white';
@@ -854,8 +921,8 @@ export function MapboxMap({
       if (clickedLocation) {
         const clickedLocationEl = document.createElement('div');
         clickedLocationEl.className = 'clicked-location-marker';
-        clickedLocationEl.style.width = '24px';
-        clickedLocationEl.style.height = '24px';
+        clickedLocationEl.style.width = '28px';
+        clickedLocationEl.style.height = '28px';
         clickedLocationEl.style.backgroundColor = '#FF4F0B';
         clickedLocationEl.style.borderRadius = '50%';
         clickedLocationEl.style.border = '3px solid white';
@@ -986,10 +1053,10 @@ export function MapboxMap({
             closeButton: false,
             closeOnClick: true,
             className: 'custom-popup',
-            maxWidth: '200px'
+            maxWidth: '240px'
           })
           .setLngLat([pin.longitude, pin.latitude])
-          .setHTML(showDirections ? await createPopupContentWithTravelTime(markerData) : createPopupContent(markerData))
+          .setHTML(showDirections ? await createPopupContentWithTravelTime(markerData) : createPopupContent(markerData, true))
           .addTo(map.current!);
         });
 
@@ -1118,6 +1185,18 @@ export function MapboxMap({
             100% { transform: scale(1); opacity: 1; }
           }
           
+          /* Ensure markers maintain their position and size during zoom */
+          .custom-marker {
+            backface-visibility: hidden;
+            transform-style: preserve-3d;
+            pointer-events: auto;
+          }
+          
+          .mapboxgl-marker {
+            will-change: transform;
+            transform-origin: center center;
+          }
+          
           .mapboxgl-popup-content {
             padding: 0 !important;
             border-radius: 8px !important;
@@ -1147,131 +1226,6 @@ export function MapboxMap({
           }
         `}
       </style>
-      
-      {/* Map Legend Toggle Button */}
-      {!singleMarker && !showOnlyCurrentLocation && (
-        <Dialog>
-          <DialogTrigger asChild>
-            <Button 
-              size="icon"
-              className="absolute bottom-6 right-6 z-10 bg-white hover:bg-gray-100 text-gray-700 border-2 border-gray-300 shadow-lg rounded-full w-12 h-12"
-              title="Show Map Legend"
-            >
-              <Info className="h-5 w-5" />
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="text-lg font-bold">Map Legend</DialogTitle>
-            </DialogHeader>
-            <div className="py-4">
-              {/* Accident/Hazard Types Section */}
-              <div className="mb-6">
-                <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b">Accident/Hazard Types</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#EF4444', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                      🚗
-                    </div>
-                    <span className="text-sm text-gray-700">Road Crash</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#F97316', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                      🔥
-                    </div>
-                    <span className="text-sm text-gray-700">Fire</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#EC4899', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                      🚑
-                    </div>
-                    <span className="text-sm text-gray-700">Medical Emergency</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#3B82F6', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                      🌊
-                    </div>
-                    <span className="text-sm text-gray-700">Flooding</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#F59E0B', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                      🌋
-                    </div>
-                    <span className="text-sm text-gray-700">Volcanic Activity</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#78350F', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                      ⛰️
-                    </div>
-                    <span className="text-sm text-gray-700">Landslide</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#DC2626', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                      ⚠️
-                    </div>
-                    <span className="text-sm text-gray-700">Earthquake</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#7C3AED', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                      👥
-                    </div>
-                    <span className="text-sm text-gray-700">Civil Disturbance</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#991B1B', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                      🛡️
-                    </div>
-                    <span className="text-sm text-gray-700">Armed Conflict</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#059669', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                      🦠
-                    </div>
-                    <span className="text-sm text-gray-700">Infectious Disease</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Emergency Facilities Section */}
-              <div>
-                <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b">Emergency Facilities</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#8B5CF6', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                      🏢
-                    </div>
-                    <span className="text-sm text-gray-700">Evacuation Centers</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#10B981', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                      🏥
-                    </div>
-                    <span className="text-sm text-gray-700">Health Facilities</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#3B82F6', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                      🚔
-                    </div>
-                    <span className="text-sm text-gray-700">Police Stations</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#DC2626', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                      🚒
-                    </div>
-                    <span className="text-sm text-gray-700">Fire Stations</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#6366F1', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                      🏛️
-                    </div>
-                    <span className="text-sm text-gray-700">Government Offices</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
       
       <div 
         ref={mapContainer} 
