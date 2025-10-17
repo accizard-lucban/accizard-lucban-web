@@ -16,7 +16,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { MapPin, X, RotateCcw } from "lucide-react";
 import { Pin, PinType } from "@/types/pin";
@@ -260,7 +260,7 @@ export function PinModal({
           <div className="space-y-4">
           {/* Pin Type */}
           <div className="space-y-2">
-            <Label htmlFor="pin-type">Pin Type *</Label>
+            <Label htmlFor="pin-type">Pin Type</Label>
             <Select 
               value={formData.type} 
               onValueChange={(value) => setFormData({ ...formData, type: value })}
@@ -287,8 +287,6 @@ export function PinModal({
                   })}
                 </SelectGroup>
                 
-                <SelectSeparator className="my-1" />
-                
                 <SelectGroup>
                   <SelectLabel className="text-xs font-semibold text-gray-600 px-2 py-1.5">
                     Emergency Facilities
@@ -311,7 +309,7 @@ export function PinModal({
 
           {/* Title */}
           <div className="space-y-2">
-            <Label htmlFor="pin-title">Title *</Label>
+            <Label htmlFor="pin-title">Title</Label>
             <div className="relative">
               <Input
                 id="pin-title"
@@ -333,19 +331,20 @@ export function PinModal({
 
           {/* Location Name */}
           <div className="space-y-2">
-            <Label htmlFor="location-name">Location Name *</Label>
+            <Label htmlFor="location-name">Location Name</Label>
             <Input
               id="location-name"
-              placeholder="Enter location name"
+              placeholder="Location will be set automatically"
               value={formData.locationName}
-              onChange={(e) => setFormData({ ...formData, locationName: e.target.value })}
+              readOnly
+              className="bg-gray-50 cursor-not-allowed"
             />
           </div>
 
           {/* Coordinates */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label htmlFor="latitude">Latitude *</Label>
+              <Label htmlFor="latitude">Latitude</Label>
               <Input
                 id="latitude"
                 type="number"
@@ -356,7 +355,7 @@ export function PinModal({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="longitude">Longitude *</Label>
+              <Label htmlFor="longitude">Longitude</Label>
               <Input
                 id="longitude"
                 type="number"

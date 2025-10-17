@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
-import { Download, Printer, AlertTriangle, Users, FileText, MapPin, CloudRain, Clock, TrendingUp, PieChart as PieChartIcon, Building2, Calendar } from "lucide-react";
+import { AlertTriangle, Users, FileText, MapPin, CloudRain, Clock, TrendingUp, PieChart as PieChartIcon, Building2, Calendar } from "lucide-react";
 
 export function DashboardStats() {
   const [totalReportsFilter, setTotalReportsFilter] = useState("this-week");
@@ -326,12 +326,6 @@ export function DashboardStats() {
     minute: "2-digit"
   });
 
-  const handlePrintDashboard = () => {
-    window.print();
-  };
-  const handleDownloadReport = () => {
-    console.log("Downloading dashboard report...");
-  };
   const getTotalReports = () => {
     switch (totalReportsFilter) {
       case "this-week":
@@ -639,63 +633,63 @@ export function DashboardStats() {
         </CardContent>
       </Card>
 
-      {/* Print and Download Controls */}
-      <div className="flex justify-end space-x-2">
-        <Button variant="outline" onClick={handleDownloadReport} className="bg-[#FF4F0B] text-white">
-          <Download className="h-4 w-4 mr-2" />
-          Download Report
-        </Button>
-        <Button variant="outline" onClick={handlePrintDashboard} className="bg-[#FF4F0B] text-white">
-          <Printer className="h-4 w-4 mr-2" />
-          Print Dashboard
-        </Button>
-      </div>
-
       {/* Statistical Summary Cards with Filters */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Reports</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-2xl font-bold text-brand-orange">{getTotalReports()}</div>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Total Reports</p>
+                <p className="text-2xl font-bold text-gray-900">{getTotalReports()}</p>
+              </div>
+              <div className="h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center">
+                <FileText className="h-6 w-6 text-blue-600" />
+              </div>
             </div>
-            
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">This Week</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-brand-red">23</div>
-            <p className="text-xs text-muted-foreground">8 ongoing, 15 resolved</p>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">This Week</p>
+                <p className="text-2xl font-bold text-gray-900">23</p>
+                <p className="text-xs text-gray-500 mt-1">8 ongoing, 15 resolved</p>
+              </div>
+              <div className="h-12 w-12 bg-red-100 rounded-full flex items-center justify-center">
+                <AlertTriangle className="h-6 w-6 text-red-600" />
+              </div>
+            </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Users</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">1,240</div>
-            
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Active Users</p>
+                <p className="text-2xl font-bold text-gray-900">1,240</p>
+              </div>
+              <div className="h-12 w-12 bg-green-100 rounded-full flex items-center justify-center">
+                <Users className="h-6 w-6 text-green-600" />
+              </div>
+            </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Most Common Type</CardTitle>
-            <MapPin className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">Road Crash</div>
-            <p className="text-xs text-muted-foreground">45% of all reports</p>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Most Common Type</p>
+                <p className="text-2xl font-bold text-gray-900">Road Crash</p>
+                <p className="text-xs text-gray-500 mt-1">45% of all reports</p>
+              </div>
+              <div className="h-12 w-12 bg-orange-100 rounded-full flex items-center justify-center">
+                <MapPin className="h-6 w-6 text-orange-600" />
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>

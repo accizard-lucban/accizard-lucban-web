@@ -17,6 +17,7 @@ export type PinType =
   | 'Civil Disturbance'
   | 'Armed Conflict'
   | 'Infectious Disease'
+  | 'Others'
   // Emergency Facilities
   | 'Evacuation Centers'
   | 'Health Facilities'

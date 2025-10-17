@@ -174,6 +174,7 @@ export function MapboxMap({
       'Civil Disturbance': '#7C3AED', // Violet
       'Armed Conflict': '#991B1B', // Darker Red
       'Infectious Disease': '#059669', // Emerald
+      'Others': '#F97316', // Orange (matches default marker color)
       // Emergency Facilities
       'Evacuation Centers': '#8B5CF6', // Purple
       'Health Facilities': '#10B981', // Green
@@ -188,25 +189,25 @@ export function MapboxMap({
   // Function to get marker image URL based on type
   const getMarkerImageUrl = (type: string): string => {
     // Map each type to a custom marker image
-    // You can replace these with paths to your custom marker images
     const markerImages: Record<string, string> = {
-      // Accident/Hazard Types - you'll replace these paths with your actual marker images
+      // Accident/Hazard Types
       'Road Crash': '/markers/road-crash.svg',
       'Fire': '/markers/fire.svg',
-      'Medical Emergency': '/markers/medical.svg',
+      'Medical Emergency': '/markers/medical-emergency.svg',
       'Flooding': '/markers/flooding.svg',
       'Volcanic Activity': '/markers/volcano.svg',
       'Landslide': '/markers/landslide.svg',
       'Earthquake': '/markers/earthquake.svg',
-      'Civil Disturbance': '/markers/civil.svg',
-      'Armed Conflict': '/markers/conflict.svg',
-      'Infectious Disease': '/markers/disease.svg',
+      'Civil Disturbance': '/markers/civil-disturbance.svg',
+      'Armed Conflict': '/markers/armed-conflict.svg',
+      'Infectious Disease': '/markers/infectious-disease.svg',
+      'Others': '/markers/default.svg',
       // Emergency Facilities
-      'Evacuation Centers': '/markers/evacuation.svg',
-      'Health Facilities': '/markers/health.svg',
-      'Police Stations': '/markers/police.svg',
+      'Evacuation Centers': '/markers/evacuation-center.svg',
+      'Health Facilities': '/markers/health-facility.svg',
+      'Police Stations': '/markers/police-station.svg',
       'Fire Stations': '/markers/fire-station.svg',
-      'Government Offices': '/markers/government.svg',
+      'Government Offices': '/markers/government-office.svg',
       // Default
       'Default': '/markers/default.svg'
     };
@@ -242,19 +243,11 @@ export function MapboxMap({
     img.style.top = '0';
     img.style.left = '0';
     
-    // Fallback: if image fails to load, use emoji with background
+    // Fallback: if image fails to load, use default.svg
     img.onerror = () => {
-      console.warn(`Failed to load marker image for ${type}, using fallback`);
-      el.innerHTML = '';
-      el.style.backgroundColor = getMarkerColor(type);
-      el.style.borderRadius = '50%';
-      el.style.border = '3px solid white';
-      el.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
-      el.style.display = 'flex';
-      el.style.alignItems = 'center';
-      el.style.justifyContent = 'center';
-      el.style.fontSize = `${size * 0.5}px`;
-      el.textContent = getMarkerIcon(type);
+      console.warn(`Failed to load marker image for ${type}, using default.svg fallback`);
+      img.src = '/markers/default.svg';
+      img.onerror = null; // Prevent infinite loop if default.svg also fails
     };
     
     el.style.cursor = 'pointer';
@@ -805,9 +798,14 @@ export function MapboxMap({
       return;
     }
 
-    console.log('Setting map center to:', center, 'zoom:', zoom);
-    map.current.setCenter(center);
-    map.current.setZoom(zoom);
+    console.log('Flying to map center:', center, 'zoom:', zoom);
+    // Use flyTo for smooth animation
+    map.current.flyTo({
+      center: center,
+      zoom: zoom,
+      essential: true,
+      duration: 1500 // 1.5 second animation
+    });
   }, [center, zoom, mapLoaded, showOnlyCurrentLocation]);
 
   // Handle markers and popups
@@ -1125,54 +1123,102 @@ export function MapboxMap({
     if (!map.current || !mapLoaded) return;
 
     if (showHeatmap) {
-      if (!map.current.getSource('heatmap')) {
+      // Convert pins to GeoJSON features
+      const features = pins.map(pin => ({
+        type: 'Feature' as const,
+        properties: {
+          type: pin.type,
+          title: pin.title
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [pin.longitude, pin.latitude]
+        }
+      }));
+
+      const geojsonData = {
+        type: 'FeatureCollection' as const,
+        features: features
+      };
+
+      // Check if source already exists
+      if (map.current.getSource('heatmap')) {
+        // Update existing source with new data
+        const source = map.current.getSource('heatmap') as mapboxgl.GeoJSONSource;
+        source.setData(geojsonData);
+      } else {
+        // Add new source and layer
         map.current.addSource('heatmap', {
           type: 'geojson',
-          data: {
-            type: 'FeatureCollection',
-            features: sampleMarkers.map(marker => ({
-              type: 'Feature',
-              properties: {},
-              geometry: {
-                type: 'Point',
-                coordinates: marker.coordinates
-              }
-            }))
-          }
+          data: geojsonData
         });
 
         map.current.addLayer({
           id: 'heatmap-layer',
           type: 'heatmap',
           source: 'heatmap',
+          maxzoom: 15, // Heatmap disappears at high zoom levels
           paint: {
-            'heatmap-weight': 1,
-            'heatmap-intensity': 1,
+            // Increase weight as diameter breast height increases
+            'heatmap-weight': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              0, 1,
+              15, 1
+            ],
+            // Increase intensity as zoom level increases
+            'heatmap-intensity': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              0, 1,
+              15, 3
+            ],
+            // Color ramp for heatmap - transition from blue to red
             'heatmap-color': [
               'interpolate',
               ['linear'],
               ['heatmap-density'],
-              0, 'rgba(0, 0, 255, 0)',
-              0.2, 'royalblue',
-              0.4, 'cyan',
-              0.6, 'lime',
-              0.8, 'yellow',
-              1, 'red'
+              0, 'rgba(33,102,172,0)',
+              0.2, 'rgb(103,169,207)',
+              0.4, 'rgb(209,229,240)',
+              0.6, 'rgb(253,219,199)',
+              0.8, 'rgb(239,138,98)',
+              1, 'rgb(178,24,43)'
             ],
-            'heatmap-radius': 30,
-            'heatmap-opacity': 0.8
+            // Adjust the heatmap radius by zoom level
+            'heatmap-radius': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              0, 2,
+              15, 20
+            ],
+            // Transition from heatmap to circle layer by zoom level
+            'heatmap-opacity': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              7, 1,
+              15, 0.5
+            ]
           }
         });
+
+        console.log('Heatmap layer added with', features.length, 'points');
       }
     } else {
+      // Remove heatmap layer and source when toggled off
       if (map.current.getLayer('heatmap-layer')) {
         map.current.removeLayer('heatmap-layer');
       }
       if (map.current.getSource('heatmap')) {
         map.current.removeSource('heatmap');
       }
+      console.log('Heatmap layer removed');
     }
-  }, [showHeatmap, mapLoaded]);
+  }, [showHeatmap, mapLoaded, pins]);
 
 
   return (

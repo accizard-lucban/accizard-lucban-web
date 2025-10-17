@@ -1,4 +1,4 @@
-import { Home, FileText, Map, MessageSquare, Bell, Users, User, ChevronLeft, ClipboardList, LogOut, X } from "lucide-react";
+import { Home, FileText, Map, MessageSquare, Bell, Users, User, ChevronLeft, ClipboardList, LogOut, X, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -55,6 +55,11 @@ const otherItems = [{
   icon: User,
   path: "/profile",
   preload: () => import("@/components/ProfilePage")
+}, {
+  title: "System Logs",
+  icon: Activity,
+  path: "/system-logs",
+  preload: () => import("@/components/SystemLogsPage")
 }];
 
 export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageReportsBadge, chatSupportBadge, isMobileOpen = false, onMobileClose }: SidebarProps) {

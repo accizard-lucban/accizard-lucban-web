@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Eye, Edit, Trash2, Plus, FileText, Calendar, Clock, MapPin, Upload, FileIcon, Image, Printer, Download, X, Search } from "lucide-react";
+import { Eye, Edit, Trash2, Plus, FileText, Calendar, Clock, MapPin, Upload, FileIcon, Image, Printer, Download, X, Search, FileDown, Car, Flame, Ambulance, Waves, Mountain, CircleAlert, Users, ShieldAlert, Activity, ArrowUpRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -28,6 +28,23 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebase";
 import { auth } from "@/lib/firebase";
 import { toast } from "@/components/ui/sonner";
+
+// Helper function to get icon for report type
+const getReportTypeIcon = (type: string) => {
+  const iconMap: Record<string, any> = {
+    'Road Crash': Car,
+    'Fire': Flame,
+    'Medical Emergency': Ambulance,
+    'Flooding': Waves,
+    'Volcanic Activity': Mountain,
+    'Landslide': Mountain,
+    'Earthquake': CircleAlert,
+    'Civil Disturbance': Users,
+    'Armed Conflict': ShieldAlert,
+    'Infectious Disease': Activity,
+  };
+  return iconMap[type] || FileText;
+};
 
 export function ManageReportsPage() {
   const navigate = useNavigate();
@@ -637,6 +654,25 @@ export function ManageReportsPage() {
       toast.error("Failed to delete some reports. Please try again.");
     }
   };
+
+  // Handle status change directly from table
+  const handleStatusChange = async (reportFirestoreId: string, newStatus: string) => {
+    try {
+      console.log(`Updating report ${reportFirestoreId} status to ${newStatus}`);
+      
+      // Update in Firestore
+      await updateDoc(doc(db, "reports", reportFirestoreId), {
+        status: newStatus,
+        updatedAt: serverTimestamp(),
+        lastModifiedBy: currentUser?.id
+      });
+      
+      toast.success(`Status updated to ${newStatus}`);
+    } catch (error) {
+      console.error("Error updating status:", error);
+      toast.error("Failed to update status. Please try again.");
+    }
+  };
   const handleCheckboxChange = (reportId: string) => {
     setSelectedReports(prev => 
       prev.includes(reportId) 
@@ -657,6 +693,50 @@ export function ManageReportsPage() {
   };
   const handlePrintTable = () => {
     window.print();
+  };
+
+  const handleExportCSV = () => {
+    try {
+      // Define CSV headers
+      const headers = ['Report ID', 'Type', 'Reported By', 'Mobile Number', 'Location', 'Description', 'Date Submitted', 'Time Submitted', 'Status'];
+      
+      // Map filtered reports to CSV rows
+      const rows = filteredReports.map(report => [
+        report.id || '',
+        report.type || '',
+        report.reportedBy || '',
+        report.mobileNumber || '',
+        report.location || '',
+        (report.description || '').replace(/,/g, ';').replace(/\n/g, ' '), // Replace commas and newlines
+        report.dateSubmitted || '',
+        report.timeSubmitted || '',
+        report.status || ''
+      ]);
+      
+      // Combine headers and rows
+      const csvContent = [
+        headers.join(','),
+        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+      ].join('\n');
+      
+      // Create blob and download
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      
+      link.setAttribute('href', url);
+      link.setAttribute('download', `accizard_reports_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      toast.success(`Exported ${filteredReports.length} reports to CSV`);
+    } catch (error) {
+      console.error('Error exporting CSV:', error);
+      toast.error('Failed to export CSV. Please try again.');
+    }
   };
   const handlePrintPreview = () => {
     // Create a new window with just the preview content
@@ -1576,213 +1656,211 @@ export function ManageReportsPage() {
       <TooltipProvider>
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <Card className="border-0 shadow-lg overflow-hidden">
-            <CardContent className="p-6 bg-gradient-to-br from-amber-500 to-orange-600">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-white/90">Total Reports</p>
-                  <p className="text-2xl font-bold text-white">{totalReports}</p>
+          <Card className="border-l-4 border-l-brand-orange shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-start justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <FileText className="h-5 w-5 text-brand-orange" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-medium text-gray-800 uppercase tracking-wide">Total Reports</p>
+                    <p className="text-xs text-gray-500">All time</p>
+                  </div>
                 </div>
-                <div className="h-12 w-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center">
-                  <FileText className="h-6 w-6 text-white" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-0 shadow-lg overflow-hidden">
-            <CardContent className="p-6 bg-gradient-to-br  from-amber-500 to-orange-600">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-white/90">Reports This Week</p>
-                  <p className="text-2xl font-bold text-white">{reportsThisWeek}</p>
-                </div>
-                <div className="h-12 w-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center">
-                  <Calendar className="h-6 w-6 text-white" />
+                <div className="text-right">
+                  <p className="text-3xl font-bold text-gray-900">{totalReports}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-lg overflow-hidden">
-            <CardContent className="p-6 bg-gradient-to-br from-amber-500 to-orange-600">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-white/90">Pending Reports</p>
-                  <p className="text-2xl font-bold text-white">{pendingReports}</p>
+          <Card className="border-l-4 border-l-brand-orange shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-start justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Calendar className="h-5 w-5 text-brand-orange" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-medium text-gray-8 00 uppercase tracking-wide">Reports This Week</p>
+                    <p className="text-xs text-brand-orange font-medium">Last 7 days</p>
+                  </div>
                 </div>
-                <div className="h-12 w-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center">
-                  <Clock className="h-6 w-6 text-white" />
+                <div className="text-right">
+                  <p className="text-3xl font-bold text-gray-900">{reportsThisWeek}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-l-4 border-l-brand-orange shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-start justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Clock className="h-5 w-5 text-brand-orange" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-medium text-gray-800 uppercase tracking-wide">Pending Reports</p>
+                    <p className="text-xs text-brand-orange font-medium">Needs attention</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-3xl font-bold text-gray-900">{pendingReports}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Search and Filters */}
-        <Card className="mb-6 border-0 shadow-lg overflow-hidden">
-          <CardHeader className="bg-orange-500 text-white">
-            <CardTitle className="text-white">Search and Filter</CardTitle>
-          </CardHeader>
-          <CardContent className="bg-gradient-to-br from-orange-50 to-red-50 pt-6">
-            <div className="space-y-4">
+        {/* Reports Table */}
+        <Card>
+          {/* Table Toolbar */}
+          <div className="border-b border-gray-200 px-6 py-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Add New Report Button */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button onClick={() => setShowAddModal(true)} size="sm" className="bg-brand-orange hover:bg-brand-orange-400 text-white">
+                    <Plus className="h-4 w-4 mr-2" />
+                    New
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Create a new emergency report manually</p>
+                </TooltipContent>
+              </Tooltip>
+
               {/* Search Bar */}
-              <div className="w-full relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+              <div className="flex-1 min-w-[200px] relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input 
                   placeholder="Search reports..." 
                   value={searchTerm} 
                   onChange={e => setSearchTerm(e.target.value)} 
-                  className="w-full pl-10 bg-white border-gray-300 focus:ring-orange-500 focus:border-orange-500 hover:border-orange-400 transition-colors" 
+                  className="w-full pl-9" 
                 />
               </div>
 
-              {/* Filters */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Date Range */}
-                <div>
-                  <Label className="text-sm font-medium text-gray-800">Date Range</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "w-full justify-start text-left font-normal bg-white border-gray-300 hover:border-orange-400 hover:bg-orange-50 transition-colors",
-                          !date && "text-muted-foreground"
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {date?.from ? (
-                          date.to ? (
-                            <>
-                              {format(date.from, "LLL dd, y")} -{" "}
-                              {format(date.to, "LLL dd, y")}
-                            </>
-                          ) : (
-                            format(date.from, "LLL dd, y")
-                          )
-                        ) : (
-                          <span>Pick a date range</span>
-                        )}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <CalendarComponent
-                        initialFocus
-                        mode="range"
-                        defaultMonth={date?.from}
-                        selected={date}
-                        onSelect={setDate}
-                        numberOfMonths={2}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
+              {/* Date Range Filter */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn(
+                      "justify-start text-left font-normal w-auto",
+                      !date && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {date?.from ? (
+                      date.to ? (
+                        <>
+                          {format(date.from, "MMM dd")} - {format(date.to, "MMM dd")}
+                        </>
+                      ) : (
+                        format(date.from, "MMM dd, y")
+                      )
+                    ) : (
+                      <span>Date Range</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarComponent
+                    initialFocus
+                    mode="range"
+                    defaultMonth={date?.from}
+                    selected={date}
+                    onSelect={setDate}
+                    numberOfMonths={2}
+                  />
+                </PopoverContent>
+              </Popover>
 
-                <div>
-                  <Label className="text-sm font-medium text-gray-800">Report Type</Label>
-                  <Select value={typeFilter} onValueChange={setTypeFilter}>
-                    <SelectTrigger className="bg-white border-gray-300 hover:border-orange-400 hover:bg-orange-50 transition-colors">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Types</SelectItem>
-                      <SelectItem value="road-crash">Road Crash</SelectItem>
-                      <SelectItem value="medical-emergency">Medical Emergency</SelectItem>
-                      <SelectItem value="flooding">Flooding</SelectItem>
-                      <SelectItem value="volcanic-activity">Volcanic Activity</SelectItem>
-                      <SelectItem value="landslide">Landslide</SelectItem>
-                      <SelectItem value="earthquake">Earthquake</SelectItem>
-                      <SelectItem value="civil-disturbance">Civil Disturbance</SelectItem>
-                      <SelectItem value="armed-conflict">Armed Conflict</SelectItem>
-                      <SelectItem value="infectious-disease">Infectious Disease</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+              {/* Type Filter */}
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="w-auto">
+                  <SelectValue placeholder="All Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="road-crash">Road Crash</SelectItem>
+                  <SelectItem value="medical-emergency">Medical Emergency</SelectItem>
+                  <SelectItem value="flooding">Flooding</SelectItem>
+                  <SelectItem value="volcanic-activity">Volcanic Activity</SelectItem>
+                  <SelectItem value="landslide">Landslide</SelectItem>
+                  <SelectItem value="earthquake">Earthquake</SelectItem>
+                  <SelectItem value="civil-disturbance">Civil Disturbance</SelectItem>
+                  <SelectItem value="armed-conflict">Armed Conflict</SelectItem>
+                  <SelectItem value="infectious-disease">Infectious Disease</SelectItem>
+                </SelectContent>
+              </Select>
 
-                <div>
-                  <Label className="text-sm font-medium text-gray-800">Status</Label>
-                  <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="bg-white border-gray-300 hover:border-orange-400 hover:bg-orange-50 transition-colors">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Status</SelectItem>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="ongoing">Ongoing</SelectItem>
-                      <SelectItem value="not-responded">Not Responded</SelectItem>
-                      <SelectItem value="responded">Responded</SelectItem>
-                      <SelectItem value="false-report">False Report</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+              {/* Status Filter */}
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-auto">
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="ongoing">Ongoing</SelectItem>
+                  <SelectItem value="not-responded">Not Responded</SelectItem>
+                  <SelectItem value="responded">Responded</SelectItem>
+                  <SelectItem value="false-report">False Report</SelectItem>
+                  <SelectItem value="redundant">Redundant</SelectItem>
+                </SelectContent>
+              </Select>
 
-        <div className="flex items-end gap-4 mb-6">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button onClick={() => setShowAddModal(true)} className="bg-brand-orange hover:bg-brand-orange-400 text-white">
-                <Plus className="h-4 w-4 mr-2" />
-                Add New Report
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Create a new emergency report manually</p>
-            </TooltipContent>
-          </Tooltip>
-          
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button onClick={handlePrintTable} className="bg-brand-orange hover:bg-brand-orange-400 text-white">
-                <Printer className="h-4 w-4 mr-2" />
-                Print Table
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Print the reports table</p>
-            </TooltipContent>
-          </Tooltip>
-          
-          {selectedReports.length > 0 && (
-            <>
+              {/* Action Buttons */}
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button onClick={handleBatchDelete} variant="destructive" className="bg-brand-red hover:bg-brand-red-700 text-white ml-auto">
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Delete Selected
+                  <Button onClick={handleExportCSV} size="sm" variant="outline" className="ml-auto">
+                    <FileDown className="h-4 w-4 mr-2" />
+                    Export
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Delete {selectedReports.length} selected report(s)</p>
+                  <p>Export reports to CSV</p>
                 </TooltipContent>
               </Tooltip>
-            </>
-          )}
-        </div>
 
-        {/* Reports Table */}
-        <Card className="border-0 shadow-lg overflow-hidden">
-          <CardContent className="p-0 bg-gradient-to-br from-orange-50 via-white to-red-50">
+              {selectedReports.length > 0 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button onClick={handleBatchDelete} variant="destructive" size="sm" className="bg-brand-red hover:bg-brand-red-700 text-white">
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete ({selectedReports.length})
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Delete {selectedReports.length} selected report(s)</p>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+          </div>
+
+          <CardContent className="p-0">
             <div className="overflow-x-auto">
               <Table>
-                <TableHeader className="bg-orange-500">
-                  <TableRow className="hover:bg-transparent border-none">
-                    <TableHead className="w-12 text-white">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">
                       <Checkbox
                         checked={paginatedReports.length > 0 && paginatedReports.every(report => selectedReports.includes(report.firestoreId))}
                         onCheckedChange={(checked: boolean) => handleSelectAll(checked)}
-                        className="border-white data-[state=checked]:bg-white data-[state=checked]:text-gray-800 hover:border-gray-200"
                       />
                     </TableHead>
-                    <TableHead className="text-white font-semibold">Report ID</TableHead>
-                    <TableHead className="text-white font-semibold">Type</TableHead>
-                    <TableHead className="text-white font-semibold">Reported By</TableHead>
-                    <TableHead className="text-white font-semibold">Date Submitted</TableHead>
-                    <TableHead className="text-white font-semibold">Status</TableHead>
-                    <TableHead className="text-white font-semibold">Actions</TableHead>
+                    <TableHead>Report ID</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Reported By</TableHead>
+                    <TableHead>Date Submitted</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1808,18 +1886,24 @@ export function ManageReportsPage() {
                       <TableCell className="font-medium">{report.id}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <Badge className={
-                            report.type === 'Road Crash' ? 'bg-red-100 text-red-800 hover:bg-red-50' :
-                            report.type === 'Medical Emergency' ? 'bg-green-100 text-green-800 hover:bg-green-50' :
-                            report.type === 'Flooding' ? 'bg-blue-100 text-blue-800 hover:bg-blue-50' :
-                            report.type === 'Volcanic Activity' ? 'bg-orange-100 text-orange-800 hover:bg-orange-50' :
-                            report.type === 'Landslide' ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-50' :
-                            report.type === 'Earthquake' ? 'bg-purple-100 text-purple-800 hover:bg-purple-50' :
-                            report.type === 'Civil Disturbance' ? 'bg-pink-100 text-pink-800 hover:bg-pink-50' :
-                            report.type === 'Armed Conflict' ? 'bg-red-100 text-red-800 hover:bg-red-50' :
-                            report.type === 'Infectious Disease' ? 'bg-indigo-100 text-indigo-800 hover:bg-indigo-50' :
-                            'bg-gray-100 text-gray-800 hover:bg-gray-50'
-                          }>
+                          <Badge variant="outline" className={cn(
+                            "flex items-center gap-1.5 border-0 bg-transparent",
+                            report.type === 'Road Crash' ? 'text-red-600' :
+                            report.type === 'Fire' ? 'text-orange-600' :
+                            report.type === 'Medical Emergency' ? 'text-pink-600' :
+                            report.type === 'Flooding' ? 'text-blue-600' :
+                            report.type === 'Volcanic Activity' ? 'text-amber-600' :
+                            report.type === 'Landslide' ? 'text-yellow-800' :
+                            report.type === 'Earthquake' ? 'text-red-800' :
+                            report.type === 'Civil Disturbance' ? 'text-violet-600' :
+                            report.type === 'Armed Conflict' ? 'text-red-800' :
+                            report.type === 'Infectious Disease' ? 'text-emerald-600' :
+                            'text-gray-600'
+                          )}>
+                            {(() => {
+                              const Icon = getReportTypeIcon(report.type);
+                              return <Icon className="h-3.5 w-3.5" />;
+                            })()}
                             {report.type}
                           </Badge>
                           {isNewReport(report) && (
@@ -1833,11 +1917,12 @@ export function ManageReportsPage() {
                         {report.reportedBy ? (
                           <button
                             type="button"
-                            className="text-brand-orange hover:underline focus:outline-none"
+                            className="text-gray-900 hover:underline focus:outline-none flex items-center gap-1"
                             onClick={() => navigate("/manage-users", { state: { tab: "residents", search: report.reportedBy } })}
                             title="View Resident Account"
                           >
                             {report.reportedBy}
+                            <ArrowUpRight className="h-3 w-3" />
                           </button>
                         ) : (
                           <span className="text-gray-400 italic">Not specified</span>
@@ -1849,21 +1934,30 @@ export function ManageReportsPage() {
                         <span className="text-xs text-gray-500">{report.timeSubmitted}</span>
                       </TableCell>
                       <TableCell>
-                        <Badge className={
-                          report.status === 'Pending'
-                            ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-50'
-                            : report.status === 'Ongoing'
-                            ? 'bg-blue-100 text-blue-800 hover:bg-blue-50'
-                            : report.status === 'Not Responded'
-                            ? 'bg-red-100 text-red-800 hover:bg-red-50'
-                            : report.status === 'Responded'
-                            ? 'bg-green-100 text-green-800 hover:bg-green-50'
-                            : report.status === 'False Report'
-                            ? 'bg-gray-100 text-gray-800 hover:bg-gray-50'
-                            : 'bg-gray-100 text-gray-800 hover:bg-gray-50'
-                        }>
-                          {report.status}
-                        </Badge>
+                        <Select 
+                          value={report.status} 
+                          onValueChange={(newStatus) => handleStatusChange(report.firestoreId, newStatus)}
+                        >
+                          <SelectTrigger className={cn(
+                            "w-auto border-0 bg-transparent font-medium focus:ring-1 focus:ring-brand-orange",
+                            report.status === 'Pending' && 'text-orange-600',
+                            report.status === 'Ongoing' && 'text-blue-600',
+                            report.status === 'Not Responded' && 'text-red-600',
+                            report.status === 'Responded' && 'text-green-600',
+                            report.status === 'False Report' && 'text-gray-600',
+                            report.status === 'Redundant' && 'text-purple-600'
+                          )}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Pending">Pending</SelectItem>
+                            <SelectItem value="Ongoing">Ongoing</SelectItem>
+                            <SelectItem value="Not Responded">Not Responded</SelectItem>
+                            <SelectItem value="Responded">Responded</SelectItem>
+                            <SelectItem value="False Report">False Report</SelectItem>
+                            <SelectItem value="Redundant">Redundant</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -1943,6 +2037,28 @@ export function ManageReportsPage() {
                               <Button
                                 size="sm"
                                 variant="outline"
+                                onClick={() => {
+                                  setSelectedReport(report);
+                                  setShowPreviewModal(true);
+                                  setPreviewTab("details");
+                                  setTimeout(() => {
+                                    handlePrintPreview();
+                                  }, 100);
+                                }}
+                              >
+                                <Printer className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Print report</p>
+                            </TooltipContent>
+                          </Tooltip>
+                          
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
                                 onClick={() => handleDeleteReport(report.firestoreId)}
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -1961,18 +2077,18 @@ export function ManageReportsPage() {
             </div>
             
             {/* Pagination */}
-            <div className="border-t border-orange-200/50 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 bg-gradient-to-r from-orange-50 to-red-50">
+            <div className="border-t border-gray-200 px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-4">
-                <div className="text-sm text-gray-800 font-medium">
+                <div className="text-sm text-gray-700">
                   Showing {filteredReports.length > 0 ? startIndex + 1 : 0} to {Math.min(endIndex, filteredReports.length)} of {filteredReports.length} results
                 </div>
                 <div className="flex items-center gap-2">
-                  <Label className="text-sm text-gray-800 font-medium">Rows per page:</Label>
+                  <Label className="text-sm text-gray-700">Rows per page:</Label>
                   <Select value={itemsPerPage.toString()} onValueChange={(value) => {
                     setItemsPerPage(Number(value));
                     setCurrentPage(1);
                   }}>
-                    <SelectTrigger className="w-[70px] bg-white border-gray-300">
+                    <SelectTrigger className="w-[70px]">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1991,7 +2107,6 @@ export function ManageReportsPage() {
                   size="sm" 
                   onClick={handlePreviousPage}
                   disabled={currentPage === 1}
-                  className="bg-white border-gray-300"
                 >
                   Previous
                 </Button>
@@ -2016,7 +2131,6 @@ export function ManageReportsPage() {
                         variant={currentPage === pageNum ? "default" : "outline"}
                         size="sm"
                         onClick={() => handlePageChange(pageNum)}
-                        className={currentPage === pageNum ? "bg-orange-500 hover:bg-orange-400 text-white" : "bg-white border-gray-300"}
                       >
                         {pageNum}
                       </Button>
@@ -2024,12 +2138,11 @@ export function ManageReportsPage() {
                   })}
                   {totalPages > 5 && currentPage < totalPages - 2 && (
                     <>
-                      <span className="px-2 text-gray-700">...</span>
+                      <span className="px-2 text-gray-500">...</span>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => handlePageChange(totalPages)}
-                        className="bg-white border-gray-300"
                       >
                         {totalPages}
                       </Button>
@@ -2042,7 +2155,6 @@ export function ManageReportsPage() {
                   size="sm" 
                   onClick={handleNextPage}
                   disabled={currentPage === totalPages || totalPages === 0}
-                  className="bg-white border-gray-300"
                 >
                   Next
                 </Button>
@@ -2429,16 +2541,18 @@ export function ManageReportsPage() {
                                 <SelectItem value="Not Responded">Not Responded</SelectItem>
                                 <SelectItem value="Responded">Responded</SelectItem>
                                 <SelectItem value="False Report">False Report</SelectItem>
+                                <SelectItem value="Redundant">Redundant</SelectItem>
                               </SelectContent>
                             </Select>
                           ) : (
-                            <Badge className={cn(
-                              "capitalize",
-                              selectedReport?.status === "Pending" && "bg-yellow-100 text-yellow-800 hover:bg-yellow-50",
-                              selectedReport?.status === "Ongoing" && "bg-blue-100 text-blue-800 hover:bg-blue-50",
-                              selectedReport?.status === "Not Responded" && "bg-red-100 text-red-800 hover:bg-red-50",
-                              selectedReport?.status === "Responded" && "bg-green-100 text-green-800 hover:bg-green-50",
-                              selectedReport?.status === "False Report" && "bg-gray-100 text-gray-800 hover:bg-gray-50"
+                            <Badge variant="outline" className={cn(
+                              "capitalize border-0 bg-transparent",
+                              selectedReport?.status === "Pending" && "text-orange-600",
+                              selectedReport?.status === "Ongoing" && "text-blue-600",
+                              selectedReport?.status === "Not Responded" && "text-red-600",
+                              selectedReport?.status === "Responded" && "text-green-600",
+                              selectedReport?.status === "False Report" && "text-gray-600",
+                              selectedReport?.status === "Redundant" && "text-purple-600"
                             )}>
                               {selectedReport?.status}
                             </Badge>
@@ -2464,18 +2578,24 @@ export function ManageReportsPage() {
                             </SelectContent>
                           </Select>
                         ) : (
-                          <Badge className={
-                            selectedReport?.type === 'Road Crash' ? 'bg-red-100 text-red-800 hover:bg-red-50' :
-                            selectedReport?.type === 'Medical Emergency' ? 'bg-green-100 text-green-800 hover:bg-green-50' :
-                            selectedReport?.type === 'Flooding' ? 'bg-blue-100 text-blue-800 hover:bg-blue-50' :
-                            selectedReport?.type === 'Volcanic Activity' ? 'bg-orange-100 text-orange-800 hover:bg-orange-50' :
-                            selectedReport?.type === 'Landslide' ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-50' :
-                            selectedReport?.type === 'Earthquake' ? 'bg-purple-100 text-purple-800 hover:bg-purple-50' :
-                            selectedReport?.type === 'Civil Disturbance' ? 'bg-pink-100 text-pink-800 hover:bg-pink-50' :
-                            selectedReport?.type === 'Armed Conflict' ? 'bg-red-100 text-red-800 hover:bg-red-50' :
-                            selectedReport?.type === 'Infectious Disease' ? 'bg-indigo-100 text-indigo-800 hover:bg-indigo-50' :
-                            'bg-gray-100 text-gray-800 hover:bg-gray-50'
-                          }>
+                          <Badge variant="outline" className={cn(
+                            "flex items-center gap-1.5 border-0 bg-transparent",
+                            selectedReport?.type === 'Road Crash' ? 'text-red-600' :
+                            selectedReport?.type === 'Fire' ? 'text-orange-600' :
+                            selectedReport?.type === 'Medical Emergency' ? 'text-pink-600' :
+                            selectedReport?.type === 'Flooding' ? 'text-blue-600' :
+                            selectedReport?.type === 'Volcanic Activity' ? 'text-amber-600' :
+                            selectedReport?.type === 'Landslide' ? 'text-yellow-800' :
+                            selectedReport?.type === 'Earthquake' ? 'text-red-800' :
+                            selectedReport?.type === 'Civil Disturbance' ? 'text-violet-600' :
+                            selectedReport?.type === 'Armed Conflict' ? 'text-red-800' :
+                            selectedReport?.type === 'Infectious Disease' ? 'text-emerald-600' :
+                            'text-gray-600'
+                          )}>
+                            {(() => {
+                              const Icon = getReportTypeIcon(selectedReport?.type || '');
+                              return <Icon className="h-3.5 w-3.5" />;
+                            })()}
                             {selectedReport?.type}
                           </Badge>
                         )}
@@ -2488,14 +2608,15 @@ export function ManageReportsPage() {
                           <Input value={previewEditData?.reportedBy} onChange={e => setPreviewEditData((d: any) => ({ ...d, reportedBy: e.target.value }))} />
                         ) : (
                           selectedReport?.reportedBy ? (
-                            <Button
-                              variant="link"
-                              className="p-0 h-auto text-brand-red hover:text-brand-red-700"
+                            <button
+                              type="button"
+                              className="text-gray-900 hover:underline focus:outline-none flex items-center gap-1"
                               onClick={() => navigate("/manage-users", { state: { tab: "residents", search: selectedReport?.reportedBy } })}
                               title="View Resident Account"
                             >
                               {selectedReport?.reportedBy}
-                            </Button>
+                              <ArrowUpRight className="h-3 w-3" />
+                            </button>
                           ) : (
                             <span className="text-gray-400 italic">Not specified</span>
                           )

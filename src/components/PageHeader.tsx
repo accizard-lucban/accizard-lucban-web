@@ -92,7 +92,7 @@ export function PageHeader({
   }, []);
 
   return (
-    <div className="bg-white px-8 py-4">
+    <div className="bg-white px-8 py-4 border-b border-gray-200 shadow-sm">
       <div className="flex justify-between items-center">
         <div className="flex items-center space-x-3">
           {icon && <div className="w-8 h-8 flex items-center justify-center text-orange-600">

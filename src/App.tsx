@@ -65,6 +65,7 @@ const ManageReportsPage = lazy(() => import("./components/ManageReportsPage").th
 const RiskMapPage = lazy(() => import("./components/RiskMapPage").then(module => ({ default: module.RiskMapPage })));
 const AnnouncementsPage = lazy(() => import("./components/AnnouncementsPage").then(module => ({ default: module.AnnouncementsPage })));
 const ChatSupportPage = lazy(() => import("./components/ChatSupportPage").then(module => ({ default: module.ChatSupportPage })));
+const SystemLogsPage = lazy(() => import("./components/SystemLogsPage").then(module => ({ default: module.SystemLogsPage })));
 
 // Auth context and provider
 const AuthContext = createContext<{ user: User | null, loading: boolean }>({ user: null, loading: true });
@@ -101,16 +102,26 @@ function SpinnerOverlay({ fullScreen = true }: { fullScreen?: boolean }) {
       width: fullScreen ? '100vw' : '100%',
       height: fullScreen ? '100vh' : '100%',
       minHeight: fullScreen ? 'auto' : '400px',
-      background: fullScreen ? 'rgba(255,255,255,0.4)' : 'transparent',
+      background: '#f97316',
       zIndex: fullScreen ? 9999 : 1,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
     }}>
-      <svg className="animate-spin" width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="24" cy="24" r="20" stroke="#FF4F0B" strokeWidth="6" opacity="0.2" />
-        <path d="M44 24c0-11.046-8.954-20-20-20" stroke="#FF4F0B" strokeWidth="6" strokeLinecap="round" />
-      </svg>
+      <div className="text-center">
+        <div className="animate-pulse">
+          <img 
+            src="/accizard-uploads/accizard-logotype-vertical.svg" 
+            alt="AcciZard Logo" 
+            style={{ 
+              width: '192px',
+              height: 'auto',
+              filter: 'brightness(0) invert(1)',
+              margin: '0 auto'
+            }}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -118,13 +129,16 @@ function SpinnerOverlay({ fullScreen = true }: { fullScreen?: boolean }) {
 // Loading fallback for route code splitting
 function RouteLoader() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="min-h-screen flex items-center justify-center bg-brand-orange">
       <div className="text-center">
-        <svg className="animate-spin mx-auto mb-4" width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="24" cy="24" r="20" stroke="#FF4F0B" strokeWidth="6" opacity="0.2" />
-          <path d="M44 24c0-11.046-8.954-20-20-20" stroke="#FF4F0B" strokeWidth="6" strokeLinecap="round" />
-        </svg>
-        <p className="text-sm text-gray-600">Loading...</p>
+        <div className="animate-pulse">
+          <img 
+            src="/accizard-uploads/accizard-logotype-vertical.svg" 
+            alt="AcciZard Logo" 
+            className="mx-auto w-48 h-auto"
+            style={{ filter: 'brightness(0) invert(1)' }}
+          />
+        </div>
       </div>
     </div>
   );
@@ -160,6 +174,7 @@ const App = () => (
                   <Route path="/risk-map" element={<RiskMapPage />} />
                   <Route path="/announcements" element={<AnnouncementsPage />} />
                   <Route path="/chat-support" element={<ChatSupportPage />} />
+                  <Route path="/system-logs" element={<SystemLogsPage />} />
                 </Route>
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
@@ -173,3 +188,4 @@ const App = () => (
 );
 
 export default App;
+

@@ -13,11 +13,12 @@ import { Layout } from "./Layout";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { db, deleteResidentUserFunction } from "@/lib/firebase";
-import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, onSnapshot, query, orderBy } from "firebase/firestore";
+import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc } from "firebase/firestore";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/components/ui/use-toast";
 import { useLocation } from "react-router-dom";
 import { useUserRole } from "@/hooks/useUserRole";
+import { cn } from "@/lib/utils";
 
 // Add this helper at the top (after imports):
 function formatTimeNoSeconds(time: string | number | null | undefined) {
@@ -42,8 +43,6 @@ export function ManageUsersPage() {
   const [permissionFilter, setPermissionFilter] = useState("all");
   const [barangayFilter, setBarangayFilter] = useState("all");
   const [verificationFilter, setVerificationFilter] = useState("all");
-  const [actionTypeFilter, setActionTypeFilter] = useState("all");
-  const [userFilter, setUserFilter] = useState("all");
   const [isAddAdminOpen, setIsAddAdminOpen] = useState(false);
   const [editingAdmin, setEditingAdmin] = useState<any>(null);
   const [isEditResidentOpen, setIsEditResidentOpen] = useState(false);
@@ -67,7 +66,6 @@ export function ManageUsersPage() {
   });
   const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [residents, setResidents] = useState<any[]>([]);
-  const [activityLogs, setActivityLogs] = useState([]);
 
   // Add new state for account status modal
   const [accountStatusModal, setAccountStatusModal] = useState<{ open: boolean, resident: any | null }>({ open: false, resident: null });
@@ -114,50 +112,15 @@ export function ManageUsersPage() {
   // Add pagination state
   const [adminPage, setAdminPage] = useState(1);
   const [residentPage, setResidentPage] = useState(1);
-  const [activityPage, setActivityPage] = useState(1);
   const PAGE_SIZE = 20;
 
   // Add rows per page state
   const [adminRowsPerPage, setAdminRowsPerPage] = useState(20);
   const [residentRowsPerPage, setResidentRowsPerPage] = useState(20);
-  const [activityRowsPerPage, setActivityRowsPerPage] = useState(20);
   const ROWS_OPTIONS = [10, 20, 50, 100];
 
   // Add state to force re-render after resetting badge counts
   const [badgeResetKey, setBadgeResetKey] = useState(0);
-
-  // Add after other sort states:
-  const [activitySortDirection, setActivitySortDirection] = useState<'asc' | 'desc'>('desc');
-
-  // Add handler:
-  const handleActivitySort = () => {
-    setActivitySortDirection(activitySortDirection === 'asc' ? 'desc' : 'asc');
-  };
-
-  // Filter activity logs based on search and filters
-  const filteredActivityLogs = activityLogs.filter(log => {
-    const search = searchTerm.toLowerCase();
-    const matchesSearch = 
-      log.action?.toLowerCase().includes(search) ||
-      log.admin?.toLowerCase().includes(search) ||
-      log.actor?.toLowerCase().includes(search) ||
-      log.actionType?.toLowerCase().includes(search);
-    const matchesUser = userFilter === "all" || log.admin === userFilter || log.actor === userFilter;
-    const matchesActionType = actionTypeFilter === "all" || log.actionType === actionTypeFilter;
-    return matchesSearch && matchesUser && matchesActionType;
-  });
-  
-  // Add sortedActivityLogs before pagedActivityLogs:
-  const sortedActivityLogs = [...filteredActivityLogs].sort((a, b) => {
-    const aTime = typeof a.timestamp === 'number' ? a.timestamp : Date.parse(a.timestamp);
-    const bTime = typeof b.timestamp === 'number' ? b.timestamp : Date.parse(b.timestamp);
-    if (activitySortDirection === 'asc') {
-      return aTime - bTime;
-    } else {
-      return bTime - aTime;
-    }
-  });
-  const pagedActivityLogs = sortedActivityLogs.slice((activityPage - 1) * activityRowsPerPage, activityPage * activityRowsPerPage);
 
   useEffect(() => {
     async function fetchAdmins() {
@@ -391,26 +354,6 @@ export function ManageUsersPage() {
         username: "",
         password: ""
       });
-      // Helper to log activity
-      const logActivity = async ({ adminId, actor, role, actionType, action }) => {
-        await addDoc(collection(db, "activityLogs"), {
-          adminId,
-          actor,
-          role,
-          actionType,
-          action,
-          timestamp: new Date().toLocaleString(),
-        });
-      };
-      // Placeholder: get current admin info from your auth provider or context
-      const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
-      await logActivity({
-        adminId: currentAdmin.userId,
-        actor: currentAdmin.name,
-        role: currentAdmin.position || currentAdmin.role,
-        actionType: 'create',
-        action: `Added new admin: ${newAdmin.name}`,
-      });
       toast({
         title: 'Success',
         description: 'Admin account added successfully!'
@@ -443,26 +386,6 @@ export function ManageUsersPage() {
       });
       setAdminUsers(adminUsers.map(a => a.id === editingAdmin.id ? editingAdmin : a));
       setEditingAdmin(null);
-      // Helper to log activity
-      const logActivity = async ({ adminId, actor, role, actionType, action }) => {
-        await addDoc(collection(db, "activityLogs"), {
-          adminId,
-          actor,
-          role,
-          actionType,
-          action,
-          timestamp: new Date().toLocaleString(),
-        });
-      };
-      // Placeholder: get current admin info from your auth provider or context
-      const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
-      await logActivity({
-        adminId: currentAdmin.userId,
-        actor: currentAdmin.name,
-        role: currentAdmin.position || currentAdmin.role,
-        actionType: 'edit',
-        action: `Edited admin: ${editingAdmin.name}`,
-      });
     } catch (error) {
       console.error("Error updating admin:", error);
     }
@@ -482,26 +405,6 @@ export function ManageUsersPage() {
         hasEditPermission: !admin.hasEditPermission
       } : admin));
       setConfirmPermissionChange(null);
-      // Helper to log activity
-      const logActivity = async ({ adminId, actor, role, actionType, action }) => {
-        await addDoc(collection(db, "activityLogs"), {
-          adminId,
-          actor,
-          role,
-          actionType,
-          action,
-          timestamp: new Date().toLocaleString(),
-        });
-      };
-      // Placeholder: get current admin info from your auth provider or context
-      const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
-      await logActivity({
-        adminId: currentAdmin.userId,
-        actor: currentAdmin.name,
-        role: currentAdmin.position || currentAdmin.role,
-        actionType: 'permission',
-        action: `${confirmPermissionChange.hasEditPermission ? 'Revoked' : 'Granted'} edit permission for: ${confirmPermissionChange.name}`,
-      });
     } catch (error) {
       console.error("Error updating permission:", error);
     }
@@ -516,26 +419,6 @@ export function ManageUsersPage() {
       await deleteDoc(doc(db, "admins", adminId));
       setAdminUsers(adminUsers.filter(a => a.id !== adminId));
       
-      // Helper to log activity
-      const logActivity = async ({ adminId, actor, role, actionType, action }) => {
-        await addDoc(collection(db, "activityLogs"), {
-          adminId,
-          actor,
-          role,
-          actionType,
-          action,
-          timestamp: new Date().toLocaleString(),
-        });
-      };
-      // Placeholder: get current admin info from your auth provider or context
-      const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
-      await logActivity({
-        adminId: currentAdmin.userId,
-        actor: currentAdmin.name,
-        role: currentAdmin.position || currentAdmin.role,
-        actionType: 'delete',
-        action: `Deleted admin: ${adminToDelete?.name || adminId}`,
-      });
       
       toast({
         title: 'Success',
@@ -586,26 +469,6 @@ export function ManageUsersPage() {
       setResidents(residents.map(r => r.id === selectedResident.id ? selectedResident : r));
       setIsEditResidentOpen(false);
       setSelectedResident(null);
-      // Helper to log activity
-      const logActivity = async ({ adminId, actor, role, actionType, action }) => {
-        await addDoc(collection(db, "activityLogs"), {
-          adminId,
-          actor,
-          role,
-          actionType,
-          action,
-          timestamp: new Date().toLocaleString(),
-        });
-      };
-      // Placeholder: get current admin info from your auth provider or context
-      const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
-      await logActivity({
-        adminId: currentAdmin.userId,
-        actor: currentAdmin.name,
-        role: currentAdmin.position || currentAdmin.role,
-        actionType: 'edit',
-        action: `Edited resident: ${selectedResident.fullName}`,
-      });
     } catch (error) {
       console.error("Error updating resident:", error);
     }
@@ -637,26 +500,6 @@ export function ManageUsersPage() {
       
       setResidents(residents.filter(r => r.id !== residentId));
       
-      // Helper to log activity
-      const logActivity = async ({ adminId, actor, role, actionType, action }) => {
-        await addDoc(collection(db, "activityLogs"), {
-          adminId,
-          actor,
-          role,
-          actionType,
-          action,
-          timestamp: new Date().toLocaleString(),
-        });
-      };
-      // Placeholder: get current admin info from your auth provider or context
-      const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
-      await logActivity({
-        adminId: currentAdmin.userId,
-        actor: currentAdmin.name,
-        role: currentAdmin.position || currentAdmin.role,
-        actionType: 'delete',
-        action: `Deleted resident: ${residentToDelete?.fullName || residentId}`,
-      });
       
       toast({
         title: 'Success',
@@ -685,26 +528,6 @@ export function ManageUsersPage() {
           ...resident,
           verified: !resident.verified
         } : resident));
-        // Helper to log activity
-        const logActivity = async ({ adminId, actor, role, actionType, action }) => {
-          await addDoc(collection(db, "activityLogs"), {
-            adminId,
-            actor,
-            role,
-            actionType,
-            action,
-            timestamp: new Date().toLocaleString(),
-          });
-        };
-        // Placeholder: get current admin info from your auth provider or context
-        const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
-        await logActivity({
-          adminId: currentAdmin.userId,
-          actor: currentAdmin.name,
-          role: currentAdmin.position || currentAdmin.role,
-          actionType: 'verification',
-          action: `Toggled verification for resident: ${residentId}`,
-        });
       }
     } catch (error) {
       console.error("Error updating verification:", error);
@@ -837,26 +660,6 @@ export function ManageUsersPage() {
           setSelectedResidents([]);
           break;
       }
-      // Helper to log activity
-      const logActivity = async ({ adminId, actor, role, actionType, action }) => {
-        await addDoc(collection(db, "activityLogs"), {
-          adminId,
-          actor,
-          role,
-          actionType,
-          action,
-          timestamp: new Date().toLocaleString(),
-        });
-      };
-      // Placeholder: get current admin info from your auth provider or context
-      const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
-      await logActivity({
-        adminId: currentAdmin.userId,
-        actor: currentAdmin.name,
-        role: currentAdmin.position || currentAdmin.role,
-        actionType: type,
-        action: `${value ? 'Granted' : 'Revoked'} ${type === 'delete' ? 'admin' : type === 'permission' ? 'permissions' : 'verification'} for ${items.length} ${items === selectedAdmins ? 'admin' : 'resident'} accounts`,
-      });
       
       toast({
         title: 'Success',
@@ -914,26 +717,6 @@ export function ManageUsersPage() {
           createdTime: now.getTime()
         }
       ]);
-      // Helper to log activity
-      const logActivity = async ({ adminId, actor, role, actionType, action }) => {
-        await addDoc(collection(db, "activityLogs"), {
-          adminId,
-          actor,
-          role,
-          actionType,
-          action,
-          timestamp: new Date().toLocaleString(),
-        });
-      };
-      // Placeholder: get current admin info from your auth provider or context
-      const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
-      await logActivity({
-        adminId: currentAdmin.userId,
-        actor: currentAdmin.name,
-        role: currentAdmin.position || currentAdmin.role,
-        actionType: 'create',
-        action: `Added new resident: ${newResident.fullName}`,
-      });
     } catch (error) {
       console.error("Error adding resident:", error);
       toast({
@@ -964,26 +747,6 @@ export function ManageUsersPage() {
       await updateDoc(doc(db, "users", residentId), updates);
       setResidents(residents.map(r => r.id === residentId ? { ...r, ...updates } : r));
       closeAccountStatusModal();
-      // Helper to log activity
-      const logActivity = async ({ adminId, actor, role, actionType, action }) => {
-        await addDoc(collection(db, "activityLogs"), {
-          adminId,
-          actor,
-          role,
-          actionType,
-          action,
-          timestamp: new Date().toLocaleString(),
-        });
-      };
-      // Placeholder: get current admin info from your auth provider or context
-      const currentAdmin = adminUsers[0] || { userId: 'AID-0', name: 'Unknown', position: 'Unknown' }; // TODO: Replace with real current admin
-      await logActivity({
-        adminId: currentAdmin.userId,
-        actor: currentAdmin.name,
-        role: currentAdmin.position || currentAdmin.role,
-        actionType: status,
-        action: `Account status changed to '${status}' for resident: ${accountStatusModal.resident.fullName}`,
-      });
     } catch (error) {
       console.error("Error updating account status:", error);
     }
@@ -1055,38 +818,17 @@ export function ManageUsersPage() {
   // Residents pagination
   const pagedResidents = filteredResidents.slice((residentPage - 1) * residentRowsPerPage, residentPage * residentRowsPerPage);
   const residentTotalPages = Math.ceil(filteredResidents.length / residentRowsPerPage);
-  // Activity logs pagination
-  const activityTotalPages = Math.ceil(filteredActivityLogs.length / activityRowsPerPage);
-
-  // In useEffect, add real-time listener for activity logs
-  useEffect(() => {
-    const q = query(collection(db, "activityLogs"), orderBy("timestamp", "desc"));
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const logs = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setActivityLogs(logs);
-    });
-    return () => unsubscribe();
-  }, []);
 
   // Tab click handlers to update last seen timestamps
   const handleResidentsTabClick = () => {
     localStorage.setItem('lastSeenResidentsTab', Date.now().toString());
     setBadgeResetKey(k => k + 1); // force re-render
   };
-  const handleActivityTabClick = () => {
-    localStorage.setItem('lastSeenActivityTab', Date.now().toString());
-    setBadgeResetKey(k => k + 1); // force re-render
-  };
 
   // Calculate badge counts (depend on badgeResetKey)
   const lastSeenResidents = Number(localStorage.getItem('lastSeenResidentsTab') || 0);
-  const lastSeenActivity = Number(localStorage.getItem('lastSeenActivityTab') || 0);
   const newResidentsCount = useMemo(() => residents.filter(r => Number(r.createdTime) > lastSeenResidents).length, [residents, lastSeenResidents, badgeResetKey]);
-  const newLogsCount = useMemo(() => activityLogs.filter(log => {
-    const t = typeof log.timestamp === 'number' ? log.timestamp : Date.parse(log.timestamp);
-    return t > lastSeenActivity;
-  }).length, [activityLogs, lastSeenActivity, badgeResetKey]);
-  const manageUsersBadge = newResidentsCount + newLogsCount;
+  const manageUsersBadge = newResidentsCount;
 
   const handleChatUser = (user: any) => {
     console.log('Chat with user:', user);
@@ -1122,12 +864,6 @@ export function ManageUsersPage() {
               Residents
               {newResidentsCount > 0 && (
                 <Badge className="ml-2 text-brand-orange text-xs border-0 bg-slate-50">{newResidentsCount}</Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="activity" onClick={handleActivityTabClick}>
-              System Activity Logs
-              {newLogsCount > 0 && (
-                <Badge className="ml-2 text-brand-orange text-xs border-0 bg-slate-50">{newLogsCount}</Badge>
               )}
             </TabsTrigger>
           </TabsList>
@@ -1999,15 +1735,56 @@ export function ManageUsersPage() {
                               <span className="text-xs text-gray-500">{formatTimeNoSeconds(resident.createdTime)}</span>
                             </TableCell>
                             <TableCell>
-                              <Badge
-                                className={
-                                  resident.suspended ? 'bg-red-100 text-red-800' :
-                                  resident.verified ? 'bg-green-100 text-green-800' : 
-                                  'bg-yellow-100 text-yellow-800'
-                                }
+                              <Select 
+                                value={
+                                  resident.suspended ? 'Suspended' : 
+                                  resident.verified ? 'Verified' : 
+                                  'Pending'
+                                } 
+                                onValueChange={async (newStatus) => {
+                                  try {
+                                    const updates: any = {};
+                                    if (newStatus === 'Verified') {
+                                      updates.verified = true;
+                                      updates.suspended = false;
+                                    } else if (newStatus === 'Pending') {
+                                      updates.verified = false;
+                                      updates.suspended = false;
+                                    } else if (newStatus === 'Suspended') {
+                                      updates.suspended = true;
+                                      updates.verified = false;
+                                    }
+                                    
+                                    await updateDoc(doc(db, "users", resident.id), updates);
+                                    setResidents(residents.map(r => r.id === resident.id ? { ...r, ...updates } : r));
+                                    toast({
+                                      title: 'Success',
+                                      description: `Status updated to ${newStatus}`
+                                    });
+                                  } catch (error) {
+                                    console.error("Error updating resident status:", error);
+                                    toast({
+                                      title: 'Error',
+                                      description: 'Failed to update status. Please try again.',
+                                      variant: 'destructive'
+                                    });
+                                  }
+                                }}
                               >
-                                {resident.suspended ? 'Suspended' : resident.verified ? 'Verified' : 'Pending'}
-                              </Badge>
+                                <SelectTrigger className={cn(
+                                  "w-[140px] border-0 font-medium focus:ring-1",
+                                  resident.suspended && 'bg-red-100 text-red-800 hover:bg-red-50 focus:ring-red-400',
+                                  resident.verified && 'bg-green-100 text-green-800 hover:bg-green-50 focus:ring-green-400',
+                                  !resident.verified && !resident.suspended && 'bg-yellow-100 text-yellow-800 hover:bg-yellow-50 focus:ring-yellow-400'
+                                )}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Verified">Verified</SelectItem>
+                                  <SelectItem value="Pending">Pending</SelectItem>
+                                  <SelectItem value="Suspended">Suspended</SelectItem>
+                                </SelectContent>
+                              </Select>
                             </TableCell>
                                                         <TableCell>
                               <div className="flex items-center gap-2">
@@ -2260,172 +2037,6 @@ export function ManageUsersPage() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="activity">
-            
-            <Card className="mb-6">
-              <CardHeader>
-                <CardTitle>Search and Filter</CardTitle>
-              </CardHeader>
-              <CardContent>
-              <Input
-                    placeholder="Search logs..."
-                    value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value)}
-                  />
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
-                  <Select value={userFilter} onValueChange={setUserFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Filter by user" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Users</SelectItem>
-                      {adminUsers.map(admin => (
-                        <SelectItem key={admin.id} value={admin.name}>
-                          {admin.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  <Select value={actionTypeFilter} onValueChange={setActionTypeFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Filter by action type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Actions</SelectItem>
-                      <SelectItem value="login">Login</SelectItem>
-                      <SelectItem value="edit">Edit</SelectItem>
-                      <SelectItem value="delete">Delete</SelectItem>
-                      <SelectItem value="create">Create</SelectItem>
-                    </SelectContent>
-                  </Select>
-
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Admin ID</TableHead>
-                      <TableHead>Role</TableHead>
-                      <TableHead>Actor</TableHead>
-                      <TableHead className="cursor-pointer hover:bg-gray-50" onClick={handleActivitySort}>
-                        <div className="flex items-center gap-1">
-                          Created Date
-                          {activitySortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                        </div>
-                      </TableHead>
-                      <TableHead>Action Type</TableHead>
-                      <TableHead>Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {pagedActivityLogs.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={6} className="text-center text-gray-500 py-8">
-                          No activity logs found.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      pagedActivityLogs.map(log => {
-                        // Try to find the admin user by name
-                        const admin = adminUsers.find(a => a.name === log.admin);
-                        return (
-                          <TableRow key={log.id}>
-                            <TableCell className="font-medium">{admin ? admin.userId : "-"}</TableCell>
-                            <TableCell>{admin ? admin.position || admin.role || "-" : "-"}</TableCell>
-                            <TableCell>{log.admin || (admin ? admin.name : "-")}</TableCell>
-                            <TableCell>
-                              {log.timestamp ? (
-                                <>
-                                  <span>{new Date(log.timestamp).toLocaleDateString()}</span>
-                                  <br />
-                                  <span className="text-xs text-gray-500">{formatTimeNoSeconds(log.timestamp)}</span>
-                                </>
-                              ) : "-"}
-                            </TableCell>
-                            <TableCell>{log.actionType || '-'}</TableCell>
-                            <TableCell>{log.action}</TableCell>
-                          </TableRow>
-                        );
-                      })
-                    )}
-                  </TableBody>
-                </Table>
-
-                {/* Pagination */}
-                <div className="border-t border-gray-200 px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div className="flex items-center gap-4">
-                    <div className="text-sm text-gray-700">
-                      Showing {filteredActivityLogs.length > 0 ? ((activityPage - 1) * activityRowsPerPage + 1) : 0} to {Math.min(activityPage * activityRowsPerPage, filteredActivityLogs.length)} of {filteredActivityLogs.length} results
-                    </div>
-                    <label className="text-sm text-gray-700 flex items-center gap-1">
-                      Rows per page:
-                      <select
-                        className="border rounded px-2 py-1 text-sm"
-                        value={activityRowsPerPage}
-                        onChange={e => { setActivityRowsPerPage(Number(e.target.value)); setActivityPage(1); }}
-                      >
-                        {ROWS_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                      </select>
-                    </label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setActivityPage(p => Math.max(1, p - 1))} disabled={activityPage === 1}>
-                      Previous
-                    </Button>
-                    
-                    {/* Page Numbers */}
-                    <div className="flex items-center gap-1">
-                      {Array.from({ length: Math.min(5, activityTotalPages) }, (_, i) => {
-                        let pageNum;
-                        if (activityTotalPages <= 5) {
-                          pageNum = i + 1;
-                        } else if (activityPage <= 3) {
-                          pageNum = i + 1;
-                        } else if (activityPage >= activityTotalPages - 2) {
-                          pageNum = activityTotalPages - 4 + i;
-                        } else {
-                          pageNum = activityPage - 2 + i;
-                        }
-                        
-                        return (
-                          <Button
-                            key={pageNum}
-                            variant={activityPage === pageNum ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => setActivityPage(pageNum)}
-                            className={activityPage === pageNum ? "bg-brand-orange hover:bg-brand-orange-400 text-white" : ""}
-                          >
-                            {pageNum}
-                          </Button>
-                        );
-                      })}
-                      {activityTotalPages > 5 && activityPage < activityTotalPages - 2 && (
-                        <>
-                          <span className="px-2 text-gray-500">...</span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setActivityPage(activityTotalPages)}
-                          >
-                            {activityTotalPages}
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                    
-                    <Button variant="outline" size="sm" onClick={() => setActivityPage(p => Math.min(activityTotalPages, p + 1))} disabled={activityPage === activityTotalPages || activityTotalPages === 0}>
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
         </Tabs>
 
         {/* Permission Change Confirmation Dialog */}

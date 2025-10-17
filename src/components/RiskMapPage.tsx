@@ -25,6 +25,8 @@ import { toast } from "@/components/ui/sonner";
 import { PinModal, PinFormData } from "./PinModal";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Badge } from "@/components/ui/badge";
 import { Filter } from "lucide-react";
 
 // Pin type icons mapping
@@ -39,6 +41,7 @@ const pinTypeIcons: Record<string, any> = {
   "Civil Disturbance": Users,
   "Armed Conflict": ShieldAlert,
   "Infectious Disease": Activity,
+  "Others": HelpCircle,
   "Evacuation Centers": Building,
   "Health Facilities": Building2,
   "Police Stations": ShieldAlert,
@@ -62,7 +65,12 @@ export function RiskMapPage() {
   const { createPin, updatePin, subscribeToPins, deletePin, loading: pinLoading } = usePins();
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [date, setDate] = useState<DateRange | undefined>();
+  const [quickDateFilter, setQuickDateFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchSuggestions, setSearchSuggestions] = useState<any[]>([]);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [mapCenter, setMapCenter] = useState<[number, number]>([121.5556, 14.1139]);
+  const [mapZoom, setMapZoom] = useState(13);
   const [isFromReport, setIsFromReport] = useState(false); // Track if data came from a report
   const [pins, setPins] = useState<Pin[]>([]); // Store pins from database
   
@@ -90,7 +98,8 @@ export function RiskMapPage() {
     earthquake: false,
     civilDisturbance: false,
     armedConflict: false,
-    infectiousDisease: false
+    infectiousDisease: false,
+    others: false
   });
 
   const [facilityFilters, setFacilityFilters] = useState({
@@ -105,7 +114,7 @@ export function RiskMapPage() {
   // Accident/Hazard types
   const accidentHazardTypes = [
     "Road Crash", "Fire", "Medical Emergency", "Flooding", "Volcanic Activity",
-    "Landslide", "Earthquake", "Civil Disturbance", "Armed Conflict", "Infectious Disease"
+    "Landslide", "Earthquake", "Civil Disturbance", "Armed Conflict", "Infectious Disease", "Others"
   ];
 
   // Emergency facility types
@@ -152,6 +161,66 @@ export function RiskMapPage() {
     }
   };
 
+  // Geocoding search with Mapbox API
+  const handleGeocodingSearch = useCallback(async (query: string) => {
+    if (query.length < 3) {
+      setSearchSuggestions([]);
+      setIsSearchOpen(false);
+      return;
+    }
+
+    try {
+      const accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+      if (!accessToken) {
+        console.error('Mapbox access token not found');
+        return;
+      }
+
+      // Add proximity bias to Lucban, Quezon for better local results
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${accessToken}&limit=5&proximity=121.5556,14.1139&country=PH`;
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error('Geocoding API error');
+      }
+
+      const data = await response.json();
+      setSearchSuggestions(data.features || []);
+      setIsSearchOpen(data.features && data.features.length > 0);
+    } catch (error) {
+      console.error('Error fetching geocoding results:', error);
+      setSearchSuggestions([]);
+      setIsSearchOpen(false);
+    }
+  }, []);
+
+  // Debounce geocoding search
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      handleGeocodingSearch(searchQuery);
+    }, 300); // 300ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery, handleGeocodingSearch]);
+
+  // Handle selecting a search result
+  const handleSelectSearchResult = (feature: any) => {
+    const [lng, lat] = feature.geometry.coordinates;
+    const placeName = feature.place_name || feature.text || 'Selected location';
+    
+    // Update map center and zoom
+    setMapCenter([lng, lat]);
+    setMapZoom(15); // Zoom in to show the location
+    
+    // Update search query with selected location
+    setSearchQuery(placeName);
+    
+    // Close dropdown
+    setIsSearchOpen(false);
+    
+    toast.success(`Navigated to ${placeName}`);
+  };
+
   // Effect to populate modal when navigating from a report
   useEffect(() => {
     const state = location.state as any;
@@ -178,15 +247,55 @@ export function RiskMapPage() {
   }, [location.state, navigate]);
 
   const handleAccidentFilterChange = (key: keyof typeof accidentFilters) => {
-    setAccidentFilters(prev => ({ ...prev, [key]: !prev[key] }));
+    const isCurrentlyChecked = accidentFilters[key];
+    
+    // If unchecking, allow it
+    if (isCurrentlyChecked) {
+      setAccidentFilters(prev => ({ ...prev, [key]: false }));
+      return;
+    }
+    
+    // If checking, count total active filters
+    const totalActive = Object.values(accidentFilters).filter(Boolean).length + 
+                        Object.values(facilityFilters).filter(Boolean).length;
+    
+    if (totalActive >= 10) {
+      toast.error('Maximum 10 filter types can be selected at once');
+      return;
+    }
+    
+    setAccidentFilters(prev => ({ ...prev, [key]: true }));
   };
 
   const handleFacilityFilterChange = (key: keyof typeof facilityFilters) => {
-    setFacilityFilters(prev => ({ ...prev, [key]: !prev[key] }));
+    const isCurrentlyChecked = facilityFilters[key];
+    
+    // If unchecking, allow it
+    if (isCurrentlyChecked) {
+      setFacilityFilters(prev => ({ ...prev, [key]: false }));
+      return;
+    }
+    
+    // If checking, count total active filters
+    const totalActive = Object.values(accidentFilters).filter(Boolean).length + 
+                        Object.values(facilityFilters).filter(Boolean).length;
+    
+    if (totalActive >= 10) {
+      toast.error('Maximum 10 filter types can be selected at once');
+      return;
+    }
+    
+    setFacilityFilters(prev => ({ ...prev, [key]: true }));
   };
 
 
-  const handleQuickDateFilter = (period: 'week' | 'month' | 'year') => {
+  const handleQuickDateFilter = (period: 'all' | 'week' | 'month' | 'year') => {
+    setQuickDateFilter(period);
+    if (period === 'all') {
+      setDate(undefined);
+      return;
+    }
+    
     const today = new Date();
     let start: Date;
     let end: Date;
@@ -210,6 +319,18 @@ export function RiskMapPage() {
   };
 
   const handleSelectAllAccidents = (checked: boolean) => {
+    if (checked) {
+      // Count total if we select all accidents
+      const accidentCount = Object.keys(accidentFilters).length;
+      const facilityActiveCount = Object.values(facilityFilters).filter(Boolean).length;
+      const totalWouldBe = accidentCount + facilityActiveCount;
+      
+      if (totalWouldBe > 10) {
+        toast.error('Cannot select all: Maximum 10 filter types allowed. Please unselect some facility filters first.');
+        return;
+      }
+    }
+    
     const newFilters = {
       roadCrash: checked,
       fire: checked,
@@ -220,12 +341,25 @@ export function RiskMapPage() {
       earthquake: checked,
       civilDisturbance: checked,
       armedConflict: checked,
-      infectiousDisease: checked
+      infectiousDisease: checked,
+      others: checked
     };
     setAccidentFilters(newFilters);
   };
 
   const handleSelectAllFacilities = (checked: boolean) => {
+    if (checked) {
+      // Count total if we select all facilities
+      const facilityCount = Object.keys(facilityFilters).length;
+      const accidentActiveCount = Object.values(accidentFilters).filter(Boolean).length;
+      const totalWouldBe = facilityCount + accidentActiveCount;
+      
+      if (totalWouldBe > 10) {
+        toast.error('Cannot select all: Maximum 10 filter types allowed. Please unselect some accident filters first.');
+        return;
+      }
+    }
+    
     const newFilters = {
       evacuationCenters: checked,
       healthFacilities: checked,
@@ -316,15 +450,42 @@ export function RiskMapPage() {
     }
   };
 
+  // Convert camelCase filter key to PinType display name
+  const convertFilterKeyToType = (key: string): string => {
+    // Direct mapping to ensure exact match with PinType values
+    const typeMapping: Record<string, string> = {
+      // Accident/Hazard Types
+      'roadCrash': 'Road Crash',
+      'fire': 'Fire',
+      'medicalEmergency': 'Medical Emergency',
+      'flooding': 'Flooding',
+      'volcanicActivity': 'Volcanic Activity',
+      'landslide': 'Landslide',
+      'earthquake': 'Earthquake',
+      'civilDisturbance': 'Civil Disturbance',
+      'armedConflict': 'Armed Conflict',
+      'infectiousDisease': 'Infectious Disease',
+      'others': 'Others',
+      // Emergency Facilities
+      'evacuationCenters': 'Evacuation Centers',
+      'healthFacilities': 'Health Facilities',
+      'policeStations': 'Police Stations',
+      'fireStations': 'Fire Stations',
+      'governmentOffices': 'Government Offices'
+    };
+    
+    return typeMapping[key] || key;
+  };
+
   // Get active filters for the map
   const getActiveFilters = () => {
     const activeAccidentTypes = Object.entries(accidentFilters)
       .filter(([_, isActive]) => isActive)
-      .map(([key]) => key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()));
+      .map(([key]) => convertFilterKeyToType(key));
 
     const activeFacilityTypes = Object.entries(facilityFilters)
       .filter(([_, isActive]) => isActive)
-      .map(([key]) => key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()));
+      .map(([key]) => convertFilterKeyToType(key));
 
     return {
       accidentTypes: activeAccidentTypes,
@@ -338,14 +499,14 @@ export function RiskMapPage() {
     
     Object.entries(accidentFilters).forEach(([key, isActive]) => {
       if (isActive) {
-        const type = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim() as PinType;
+        const type = convertFilterKeyToType(key) as PinType;
         activeTypes.push(type);
       }
     });
     
     Object.entries(facilityFilters).forEach(([key, isActive]) => {
       if (isActive) {
-        const type = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()).trim() as PinType;
+        const type = convertFilterKeyToType(key) as PinType;
         activeTypes.push(type);
       }
     });
@@ -362,7 +523,7 @@ export function RiskMapPage() {
       searchQuery: searchQuery
     };
 
-    // Only filter by types if at least one filter is active
+    // Since we enforce a 10-item limit, we can safely use Firestore filtering
     if (activeTypes.length > 0) {
       filters.types = activeTypes;
     }
@@ -385,7 +546,10 @@ export function RiskMapPage() {
       },
       (error) => {
         console.error('Error fetching pins:', error);
-        toast.error('Failed to fetch pins from database');
+        // Only show error toast if it's a real error, not just "no pins found"
+        if (error.message && !error.message.includes('permission-denied')) {
+          toast.error('Failed to fetch pins from database');
+        }
       }
     );
 
@@ -404,33 +568,200 @@ export function RiskMapPage() {
             {/* Map Toolbar */}
           <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
             <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500" />
-              <Input
-                type="text"
-                placeholder="Search for a location..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 pr-4 h-9 w-full border-gray-300"
-              />
+              <Popover open={isSearchOpen} onOpenChange={setIsSearchOpen}>
+                <PopoverTrigger asChild>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500 z-10" />
+                    <Input
+                      type="text"
+                      placeholder="Search for a location..."
+                      value={searchQuery}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setIsSearchOpen(true);
+                      }}
+                      onFocus={() => {
+                        if (searchSuggestions.length > 0) {
+                          setIsSearchOpen(true);
+                        }
+                      }}
+                      className="pl-9 pr-4 h-9 w-full border-gray-300"
+                    />
+                  </div>
+                </PopoverTrigger>
+                {searchSuggestions.length > 0 && (
+                  <PopoverContent className="w-[400px] p-0" align="start">
+                    <div className="max-h-[300px] overflow-y-auto">
+                      {searchSuggestions.map((suggestion, index) => (
+                        <button
+                          key={index}
+                          className="w-full text-left px-4 py-3 hover:bg-gray-100 border-b border-gray-100 last:border-b-0 transition-colors"
+                          onClick={() => handleSelectSearchResult(suggestion)}
+                        >
+                          <div className="flex items-start gap-2">
+                            <MapPin className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">
+                                {suggestion.text}
+                              </p>
+                              <p className="text-xs text-gray-500 truncate">
+                                {suggestion.place_name}
+                              </p>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                )}
+              </Popover>
                                 </div>
 
             {/* Filters Button */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsFiltersOpen(true)}
-                  className="h-9 px-3"
-                >
-                  <Filter className="h-4 w-4 mr-2" />
-                  Filters
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Filter pins by type and date</p>
-              </TooltipContent>
-            </Tooltip>
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 px-3"
+                    >
+                      <Filter className="h-4 w-4 mr-2" />
+                      Filters
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Filter pins by type and date</p>
+                </TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent className="w-[400px] max-h-[600px] overflow-y-auto p-4" align="end">
+                <div className="space-y-6">
+                  {/* Heatmap Toggle */}
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium">Map Display</Label>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <Layers className="h-4 w-4 text-gray-600" />
+                        <Label htmlFor="heatmap-toggle-dropdown" className="text-sm font-normal">
+                          Show Heatmap
+                        </Label>
+                      </div>
+                      <Switch
+                        id="heatmap-toggle-dropdown"
+                        checked={showHeatmap}
+                        onCheckedChange={(checked) => setShowHeatmap(checked)}
+                        aria-label="Toggle heatmap"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Timeline */}
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium">Timeline</Label>
+                    <div className="flex flex-col space-y-2">
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className={cn(
+                              "w-full justify-start text-left font-normal",
+                              !date?.from && "text-muted-foreground"
+                            )}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {date?.from ? (
+                              date.to ? (
+                                <>
+                                  {format(date.from, "LLL dd, y")} -{" "}
+                                  {format(date.to, "LLL dd, y")}
+                                </>
+                              ) : (
+                                format(date.from, "LLL dd, y")
+                              )
+                            ) : (
+                              <span>Pick a date range</span>
+                            )}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <Calendar
+                            initialFocus
+                            mode="range"
+                            defaultMonth={date?.from}
+                            selected={date}
+                            onSelect={setDate}
+                            numberOfMonths={2}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <Select value={quickDateFilter} onValueChange={handleQuickDateFilter}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Quick filters" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Time</SelectItem>
+                          <SelectItem value="week">This Week</SelectItem>
+                          <SelectItem value="month">This Month</SelectItem>
+                          <SelectItem value="year">This Year</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* Accident/Hazard Types */}
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium">Accident/Hazard Types</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(accidentFilters).map(([key, checked]) => {
+                        const displayName = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                        const Icon = pinTypeIcons[displayName] || MapPin;
+                        return (
+                          <Badge
+                            key={key}
+                            variant={checked ? "default" : "outline"}
+                            className={cn(
+                              "cursor-pointer hover:bg-primary/90 transition-colors",
+                              checked ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                            )}
+                            onClick={() => handleAccidentFilterChange(key as keyof typeof accidentFilters)}
+                          >
+                            <Icon className="h-3 w-3 mr-1" />
+                            {displayName}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Emergency Support Facilities */}
+                  <div className="space-y-3">
+                    <Label className="text-sm font-medium">Emergency Support Facilities</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(facilityFilters).map(([key, checked]) => {
+                        const displayName = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                        const Icon = facilityIcons[key] || MapPin;
+                        return (
+                          <Badge
+                            key={key}
+                            variant={checked ? "default" : "outline"}
+                            className={cn(
+                              "cursor-pointer hover:bg-primary/90 transition-colors",
+                              checked ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                            )}
+                            onClick={() => handleFacilityFilterChange(key as keyof typeof facilityFilters)}
+                          >
+                            <Icon className="h-3 w-3 mr-1" />
+                            {displayName}
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
             
             {/* Map Legend Button */}
             <Dialog>
@@ -603,8 +934,8 @@ export function RiskMapPage() {
               showHeatmap={showHeatmap}
               showDirections={false}
               pins={pins}
-              center={[121.5556, 14.1139]} // Default to Lucban, Quezon
-              zoom={13}
+              center={mapCenter}
+              zoom={mapZoom}
               activeFilters={getActiveFilters()}
               singleMarker={
                 // Show temporary marker when modal is open with coordinates

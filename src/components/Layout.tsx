@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Sidebar } from "./Sidebar";
 import { PageHeader } from "./PageHeader";
 import { useLocation } from "react-router-dom";
-import { Home, ClipboardList, BarChart3, MessageSquare, Bell, Users, User, LucideIcon, Menu } from "lucide-react";
+import { Home, ClipboardList, BarChart3, MessageSquare, Bell, Users, User, LucideIcon, Menu, Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { db } from "@/lib/firebase";
 import { collection, onSnapshot, query, orderBy, where } from "firebase/firestore";
@@ -53,6 +53,11 @@ const pageConfig: Record<string, PageConfig> = {
     title: "My Profile",
     icon: User,
     subtitle: "Manage your account settings"
+  },
+  "/system-logs": {
+    title: "System Logs",
+    icon: Activity,
+    subtitle: "View system activity and logs"
   },
   "/dashboard": {
     title: "Dashboard",

@@ -149,37 +149,17 @@ export function ProfilePageLoader() {
  */
 export function PageLoader() {
   return (
-    <div className="flex items-center justify-center min-h-[400px]">
-      <div className="text-center space-y-4">
-        <div className="relative">
-          <svg 
-            className="animate-spin mx-auto" 
-            width="48" 
-            height="48" 
-            viewBox="0 0 48 48" 
-            fill="none" 
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <circle 
-              cx="24" 
-              cy="24" 
-              r="20" 
-              stroke="#FF4F0B" 
-              strokeWidth="6" 
-              opacity="0.2" 
-            />
-            <path 
-              d="M44 24c0-11.046-8.954-20-20-20" 
-              stroke="#FF4F0B" 
-              strokeWidth="6" 
-              strokeLinecap="round" 
-            />
-          </svg>
+    <div className="flex items-center justify-center min-h-[400px] bg-#f97316">
+      <div className="text-center">
+        <div className="animate-pulse">
+          <img 
+            src="/accizard-uploads/accizard-logotype-vertical.svg" 
+            alt="AcciZard Logo" 
+            className="mx-auto mb-4 w-48 h-auto"
+            style={{ filter: 'brightness(0) invert(1)' }}
+          />
         </div>
-        <div className="space-y-2">
-          <Skeleton className="h-4 w-32 mx-auto" />
-          <Skeleton className="h-3 w-48 mx-auto" />
-        </div>
+        <p className="text-sm text-white">Loading...</p>
       </div>
     </div>
   );
