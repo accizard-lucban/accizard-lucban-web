@@ -1,4 +1,4 @@
-import { Home, FileText, Map, MessageSquare, Bell, Users, User, ChevronLeft, ClipboardList, LogOut, X, Activity } from "lucide-react";
+import { Home, FileText, Map, MessageSquare, Bell, Users, User, ChevronLeft, ClipboardList, LogOut, X, Activity, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,7 @@ import { AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader,
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { preloadRoute } from "@/utils/routePreloader";
+import { useUserRole } from "@/hooks/useUserRole";
 
 interface SidebarProps {
   isCollapsed: boolean;
@@ -66,6 +67,8 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
   const navigate = useNavigate();
   const location = useLocation();
   const [showSignOut, setShowSignOut] = useState(false);
+  const [manageUsersExpanded, setManageUsersExpanded] = useState(false);
+  const { canManageAdmins } = useUserRole();
 
   const handleMenuClick = (item: typeof menuItems[0]) => {
     navigate(item.path);
@@ -147,33 +150,116 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
               MENU
             </div>}
           <nav className="space-y-2">
-            {menuItems.map(item => <button 
-                key={item.title} 
-                onClick={() => handleMenuClick(item)}
-                onMouseEnter={() => preloadRoute(item.preload, item.title)}
-                onFocus={() => preloadRoute(item.preload, item.title)}
-                onTouchStart={() => preloadRoute(item.preload, item.title)}
-                className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "justify-between px-4 py-3", isActive(item.path) ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white")}>
-                <div className={cn("flex items-center", (isCollapsed && !isMobileOpen) && "justify-center")}>
-                  <item.icon className={cn("h-5 w-5 flex-shrink-0", (!isCollapsed || isMobileOpen) && "mr-3")} />
-                  {(!isCollapsed || isMobileOpen) && <span>{item.title}</span>}
-                </div>
-                {(!isCollapsed || isMobileOpen) && item.title === "Manage Reports" && (manageReportsBadge ?? 0) > 0 && (
-                  <Badge className="bg-orange-500 hover:bg-orange-400 text-white text-xs border-0 font-semibold animate-pulse">
-                    {manageReportsBadge}
-                  </Badge>
-                )}
-                {(!isCollapsed || isMobileOpen) && item.title === "Chat Support" && (chatSupportBadge ?? 0) > 0 && (
-                  <Badge className="bg-orange-500 hover:bg-orange-400 text-white text-xs border-0 font-semibold">
-                    {chatSupportBadge}
-                  </Badge>
-                )}
-                {(!isCollapsed || isMobileOpen) && item.title === "Manage Users" && (manageUsersBadge ?? 0) > 0 && (
-                  <Badge className="bg-orange-500 hover:bg-orange-400 text-white text-xs border-0 font-semibold">
-                    {manageUsersBadge}
-                  </Badge>
-                )}
-              </button>)}
+            {menuItems.map(item => {
+              // Special handling for "Manage Users" with dropdown
+              if (item.title === "Manage Users") {
+                return (
+                  <div key={item.title}>
+                    <button 
+                      onClick={() => {
+                        if (isCollapsed && !isMobileOpen) {
+                          // If collapsed, navigate directly
+                          handleMenuClick(item);
+                        } else {
+                          // If expanded, toggle dropdown
+                          setManageUsersExpanded(!manageUsersExpanded);
+                        }
+                      }}
+                      onMouseEnter={() => preloadRoute(item.preload, item.title)}
+                      onFocus={() => preloadRoute(item.preload, item.title)}
+                      onTouchStart={() => preloadRoute(item.preload, item.title)}
+                      className={cn(
+                        "w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", 
+                        (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "justify-between px-4 py-3", 
+                        (isActive(item.path) || location.pathname.startsWith('/manage-users')) ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white"
+                      )}
+                    >
+                      <div className={cn("flex items-center", (isCollapsed && !isMobileOpen) && "justify-center")}>
+                        <item.icon className={cn("h-5 w-5 flex-shrink-0", (!isCollapsed || isMobileOpen) && "mr-3")} />
+                        {(!isCollapsed || isMobileOpen) && <span>{item.title}</span>}
+                      </div>
+                      {(!isCollapsed || isMobileOpen) && (
+                        <div className="flex items-center gap-2">
+                          {(manageUsersBadge ?? 0) > 0 && (
+                            <Badge className="bg-orange-500 hover:bg-orange-400 text-white text-xs border-0 font-semibold">
+                              {manageUsersBadge}
+                            </Badge>
+                          )}
+                          <ChevronDown className={cn("h-4 w-4 transition-transform", manageUsersExpanded && "rotate-180")} />
+                        </div>
+                      )}
+                    </button>
+                    
+                    {/* Dropdown submenu */}
+                    {manageUsersExpanded && (!isCollapsed || isMobileOpen) && (
+                      <div className="ml-4 mt-2 space-y-1">
+                        {canManageAdmins() && (
+                          <button
+                            onClick={() => {
+                              navigate("/manage-users", { state: { tab: "admins" } });
+                              if (onMobileClose) onMobileClose();
+                            }}
+                            className={cn(
+                              "w-full flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
+                              location.pathname === "/manage-users" && location.state?.tab === "admins"
+                                ? "bg-orange-400/30 text-white"
+                                : "text-orange-100 hover:bg-orange-400/20 hover:text-white"
+                            )}
+                          >
+                            Admin Accounts
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            navigate("/manage-users", { state: { tab: "residents" } });
+                            if (onMobileClose) onMobileClose();
+                          }}
+                          className={cn(
+                            "w-full flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
+                            location.pathname === "/manage-users" && location.state?.tab === "residents"
+                              ? "bg-orange-400/30 text-white"
+                              : "text-orange-100 hover:bg-orange-400/20 hover:text-white"
+                          )}
+                        >
+                          Residents
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+              
+              // Regular menu items
+              return (
+                <button 
+                  key={item.title} 
+                  onClick={() => handleMenuClick(item)}
+                  onMouseEnter={() => preloadRoute(item.preload, item.title)}
+                  onFocus={() => preloadRoute(item.preload, item.title)}
+                  onTouchStart={() => preloadRoute(item.preload, item.title)}
+                  className={cn(
+                    "w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", 
+                    (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "justify-between px-4 py-3", 
+                    isActive(item.path) ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white"
+                  )}
+                >
+                  <div className={cn("flex items-center", (isCollapsed && !isMobileOpen) && "justify-center")}>
+                    <item.icon className={cn("h-5 w-5 flex-shrink-0", (!isCollapsed || isMobileOpen) && "mr-3")} />
+                    {(!isCollapsed || isMobileOpen) && <span>{item.title}</span>}
+                  </div>
+                  {(!isCollapsed || isMobileOpen) && item.title === "Manage Reports" && (manageReportsBadge ?? 0) > 0 && (
+                    <Badge className="bg-orange-500 hover:bg-orange-400 text-white text-xs border-0 font-semibold animate-pulse">
+                      {manageReportsBadge}
+                    </Badge>
+                  )}
+                  {(!isCollapsed || isMobileOpen) && item.title === "Chat Support" && (chatSupportBadge ?? 0) > 0 && (
+                    <Badge className="bg-orange-500 hover:bg-orange-400 text-white text-xs border-0 font-semibold">
+                      {chatSupportBadge}
+                    </Badge>
+                  )}
+                </button>
+              );
+            })}
           </nav>
         </div>
 

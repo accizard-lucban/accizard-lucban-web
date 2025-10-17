@@ -2,32 +2,27 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { User, LogOut, Camera } from "lucide-react";
+import { User, Camera, Check, X, Briefcase, Building, MapPin, Hash, AtSign, Plus, Trash2, Edit3, StickyNote } from "lucide-react";
 import { Layout } from "./Layout";
-import { PageHeader } from "./PageHeader";
 import { useNavigate } from "react-router-dom";
 import { db, auth, storage } from "@/lib/firebase";
 import { updateProfile, updateEmail } from "firebase/auth";
-import { collection, query, where, getDocs, doc, updateDoc, orderBy, limit } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, updateDoc, addDoc, deleteDoc, orderBy, limit, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { toast } from "@/components/ui/sonner";
 import { useUserRole } from "@/hooks/useUserRole";
 import { SUPER_ADMIN_EMAIL } from "@/lib/utils";
-import {
-  AlertDialog,
-  AlertDialogTrigger,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogAction,
-  AlertDialogCancel
-} from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 export function ProfilePage() {
   const navigate = useNavigate();
@@ -38,17 +33,42 @@ export function ProfilePage() {
     idNumber: "",
     username: "",
     email: "",
-    profilePicture: ""
+    profilePicture: "",
+    coverImage: ""
   });
-  const [showConfirm, setShowConfirm] = useState(false);
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [tempValue, setTempValue] = useState("");
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [notes, setNotes] = useState<any[]>([]);
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [showNoteDialog, setShowNoteDialog] = useState(false);
+  const [editingNote, setEditingNote] = useState<any>(null);
+  const [noteForm, setNoteForm] = useState({
+    title: "",
+    description: ""
+  });
 
-  const handleSaveProfile = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    setShowConfirm(false);
+  // Handle field editing
+  const startEditing = (field: string, currentValue: string) => {
+    setEditingField(field);
+    setTempValue(currentValue);
+  };
+
+  const cancelEditing = () => {
+    setEditingField(null);
+    setTempValue("");
+  };
+
+  const saveField = async (field: string) => {
+    if (tempValue === profile[field as keyof typeof profile]) {
+      cancelEditing();
+      return;
+    }
+
     setSaving(true);
     try {
       const adminLoggedIn = localStorage.getItem("adminLoggedIn") === "true";
@@ -61,14 +81,10 @@ export function ProfilePage() {
           if (!querySnapshot.empty) {
             const docRef = doc(db, "admins", querySnapshot.docs[0].id);
             await updateDoc(docRef, {
-              name: profile.name,
-              position: profile.position,
-              idNumber: profile.idNumber,
-              username: profile.username,
-              email: profile.email,
-              profilePicture: profile.profilePicture
+              [field]: tempValue
             });
-            toast.success("Profile updated successfully!");
+            setProfile(prev => ({ ...prev, [field]: tempValue }));
+            toast.success(`${field.charAt(0).toUpperCase() + field.slice(1)} updated successfully!`);
           }
         }
       } else {
@@ -81,45 +97,43 @@ export function ProfilePage() {
             const querySnapshot = await getDocs(q);
             if (!querySnapshot.empty) {
               const docRef = doc(db, "superAdmin", querySnapshot.docs[0].id);
-              await updateDoc(docRef, {
-                fullName: profile.name,
-                position: profile.position,
-                idNumber: profile.idNumber,
-                username: profile.username,
-                email: profile.email,
-                profilePicture: profile.profilePicture
-              });
-              toast.success("Profile updated successfully!");
+              const updateData: any = {};
+              if (field === 'name') updateData.fullName = tempValue;
+              else updateData[field] = tempValue;
+              
+              await updateDoc(docRef, updateData);
+              setProfile(prev => ({ ...prev, [field]: tempValue }));
+              toast.success(`${field.charAt(0).toUpperCase() + field.slice(1)} updated successfully!`);
             }
           } else {
-            // For other super-admins, update Firebase Auth profile (displayName, photoURL)
-            await updateProfile(user, {
-              displayName: profile.name,
-              photoURL: profile.profilePicture
-            });
-            // Optionally update email
-            if (profile.email && profile.email !== user.email) {
-              await updateEmail(user, profile.email);
+            // For other super-admins, update Firebase Auth profile
+            if (field === 'name') {
+              await updateProfile(user, { displayName: tempValue });
+            } else if (field === 'email' && tempValue !== user.email) {
+              await updateEmail(user, tempValue);
             }
-            toast.success("Profile updated successfully!");
+            setProfile(prev => ({ ...prev, [field]: tempValue }));
+            toast.success(`${field.charAt(0).toUpperCase() + field.slice(1)} updated successfully!`);
           }
         }
       }
+      cancelEditing();
     } catch (error) {
-      toast.error("Failed to update profile.");
-      console.error("Error updating profile:", error);
+      toast.error(`Failed to update ${field}.`);
+      console.error("Error updating field:", error);
     } finally {
       setSaving(false);
     }
   };
+
   const handleSignOut = () => {
     console.log("Signing out...");
     navigate('/login');
   };
+
   const handleProfilePictureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Check if userRole is available
       if (!userRole) {
         toast.error("User information not loaded. Please refresh the page and try again.");
         return;
@@ -127,72 +141,70 @@ export function ProfilePage() {
 
       setUploading(true);
       try {
-        console.log("Starting profile picture upload...");
-        console.log("User role:", userRole);
-        console.log("File details:", {
-          name: file.name,
-          size: file.size,
-          type: file.type
-        });
-
-        // Validate file size (max 5MB)
         if (file.size > 5 * 1024 * 1024) {
           toast.error("File size must be less than 5MB");
           return;
         }
 
-        // Validate file type
         if (!file.type.startsWith('image/')) {
           toast.error("Please select an image file");
           return;
         }
 
-        // Create a unique filename
         const timestamp = Date.now();
         const fileExtension = file.name.split('.').pop() || 'jpg';
         const filename = `profile-pictures-web/${userRole.id}-${timestamp}.${fileExtension}`;
         
-        console.log("Uploading to path:", filename);
-        console.log("Storage instance:", storage);
-
-        // Upload to Firebase Storage
         const storageRef = ref(storage, filename);
-        console.log("Storage reference created:", storageRef);
-        
         const snapshot = await uploadBytes(storageRef, file);
-        console.log("Upload completed:", snapshot);
-        
         const downloadURL = await getDownloadURL(snapshot.ref);
-        console.log("Download URL obtained:", downloadURL);
 
-        // Update profile with the download URL
-        setProfile({
-          ...profile,
-          profilePicture: downloadURL
-        });
-
+        setProfile(prev => ({ ...prev, profilePicture: downloadURL }));
         toast.success("Profile picture uploaded successfully!");
       } catch (error: any) {
-        console.error("Detailed error uploading profile picture:", error);
-        console.error("Error code:", error.code);
-        console.error("Error message:", error.message);
-        
-        // Provide more specific error messages
-        if (error.code === 'storage/unauthorized') {
-          toast.error("You don't have permission to upload files. Please contact your administrator.");
-        } else if (error.code === 'storage/canceled') {
-          toast.error("Upload was canceled. Please try again.");
-        } else if (error.code === 'storage/unknown') {
-          toast.error("An unknown error occurred. Please check your internet connection and try again.");
-        } else if (error.code === 'storage/invalid-format') {
-          toast.error("Invalid file format. Please select a valid image file.");
-        } else if (error.code === 'storage/object-not-found') {
-          toast.error("Storage bucket not found. Please contact your administrator.");
-        } else {
+        console.error("Error uploading profile picture:", error);
           toast.error(`Failed to upload profile picture: ${error.message || 'Unknown error'}`);
-        }
       } finally {
         setUploading(false);
+      }
+    }
+  };
+
+  const handleCoverImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!userRole) {
+        toast.error("User information not loaded. Please refresh the page and try again.");
+        return;
+      }
+
+      setUploadingCover(true);
+      try {
+        if (file.size > 5 * 1024 * 1024) {
+          toast.error("File size must be less than 5MB");
+          return;
+        }
+
+        if (!file.type.startsWith('image/')) {
+          toast.error("Please select an image file");
+          return;
+        }
+
+        const timestamp = Date.now();
+        const fileExtension = file.name.split('.').pop() || 'jpg';
+        const filename = `cover-images-web/${userRole.id}-${timestamp}.${fileExtension}`;
+        
+        const storageRef = ref(storage, filename);
+        const snapshot = await uploadBytes(storageRef, file);
+        const downloadURL = await getDownloadURL(snapshot.ref);
+
+        setProfile(prev => ({ ...prev, coverImage: downloadURL }));
+        toast.success("Cover image uploaded successfully!");
+      } catch (error: any) {
+        console.error("Error uploading cover image:", error);
+        toast.error(`Failed to upload cover image: ${error.message || 'Unknown error'}`);
+      } finally {
+        setUploadingCover(false);
       }
     }
   };
@@ -205,7 +217,8 @@ export function ProfilePage() {
         idNumber: userRole.idNumber || "",
         username: userRole.username || "",
         email: userRole.email || "",
-        profilePicture: userRole.profilePicture || "/accizard-uploads/login-signup-cover.png"
+        profilePicture: userRole.profilePicture || "/accizard-uploads/login-signup-cover.png",
+        coverImage: ""
       });
     }
   }, [userRole, roleLoading]);
@@ -219,35 +232,216 @@ export function ProfilePage() {
         collection(db, "activityLogs"),
         where("username", "==", profile.username),
         orderBy("timestamp", "desc"),
-        limit(10)
+        limit(15)
       );
       const snap = await getDocs(q);
-      setActivityLogs(snap.docs.map(doc => doc.data()));
+      setActivityLogs(snap.docs.map(doc => ({ ...doc.data(), id: doc.id })));
       setLogsLoading(false);
     }
     fetchLogs();
   }, [profile.username]);
 
-  return <Layout>
-        
-      <div className="max-w-4xl mx-auto">
+  // Fetch personal notes
+  useEffect(() => {
+    async function fetchNotes() {
+      if (!profile.username) return;
+      setNotesLoading(true);
+      const q = query(
+        collection(db, "personalNotes"),
+        where("username", "==", profile.username),
+        orderBy("createdAt", "desc")
+      );
+      const snap = await getDocs(q);
+      setNotes(snap.docs.map(doc => ({ ...doc.data(), id: doc.id })));
+      setNotesLoading(false);
+    }
+    fetchNotes();
+  }, [profile.username]);
 
-        <Tabs defaultValue="profile" className="w-full">
+  // Notes CRUD operations
+  const handleSaveNote = async () => {
+    if (!noteForm.title.trim() || !noteForm.description.trim()) {
+      toast.error("Please fill in both title and description");
+      return;
+    }
+
+    try {
+      if (editingNote) {
+        // Update existing note
+        await updateDoc(doc(db, "personalNotes", editingNote.id), {
+          title: noteForm.title,
+          description: noteForm.description,
+          updatedAt: serverTimestamp()
+        });
+        toast.success("Note updated successfully!");
+      } else {
+        // Create new note
+        await addDoc(collection(db, "personalNotes"), {
+          title: noteForm.title,
+          description: noteForm.description,
+          username: profile.username,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        toast.success("Note created successfully!");
+      }
+      
+      // Refresh notes
+      const q = query(
+        collection(db, "personalNotes"),
+        where("username", "==", profile.username),
+        orderBy("createdAt", "desc")
+      );
+      const snap = await getDocs(q);
+      setNotes(snap.docs.map(doc => ({ ...doc.data(), id: doc.id })));
+      
+      // Reset form
+      setNoteForm({ title: "", description: "" });
+      setEditingNote(null);
+      setShowNoteDialog(false);
+    } catch (error) {
+      console.error("Error saving note:", error);
+      toast.error("Failed to save note. Please try again.");
+    }
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    try {
+      await deleteDoc(doc(db, "personalNotes", noteId));
+      setNotes(notes.filter(note => note.id !== noteId));
+      toast.success("Note deleted successfully!");
+    } catch (error) {
+      console.error("Error deleting note:", error);
+      toast.error("Failed to delete note. Please try again.");
+    }
+  };
+
+  const handleEditNote = (note: any) => {
+    setEditingNote(note);
+    setNoteForm({
+      title: note.title,
+      description: note.description
+    });
+    setShowNoteDialog(true);
+  };
+
+  const handleNewNote = () => {
+    setEditingNote(null);
+    setNoteForm({ title: "", description: "" });
+    setShowNoteDialog(true);
+  };
+
+  const EditableField = ({ field, label, icon: Icon, value, type = "text" }: {
+    field: string;
+    label: string;
+    icon: any;
+    value: string;
+    type?: string;
+  }) => {
+    const isEditing = editingField === field;
+    
+    return (
+      <div className="space-y-1">
+        <div className="flex items-center space-x-2">
+          <Icon className="h-3 w-3 text-gray-400 flex-shrink-0" />
+          <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</span>
+        </div>
+        <div className="flex items-center space-x-3 py-1">
+          <div className="flex-1">
+            {isEditing ? (
+              <div className="flex items-center space-x-2">
+                <Input
+                  type={type}
+                  value={tempValue}
+                  onChange={(e) => setTempValue(e.target.value)}
+                  className="h-8 text-sm"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveField(field);
+                    if (e.key === 'Escape') cancelEditing();
+                  }}
+                />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => saveField(field)}
+                  disabled={saving}
+                  className="h-8 w-8 p-0 text-green-600 hover:text-green-700 hover:bg-green-50"
+                >
+                  <Check className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={cancelEditing}
+                  disabled={saving}
+                  className="h-8 w-8 p-0 text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <div
+                className="text-sm text-gray-700 cursor-pointer hover:text-gray-900 hover:bg-gray-50 px-2 py-1 rounded transition-colors"
+                onClick={() => startEditing(field, value)}
+              >
+                {value || `Add ${label.toLowerCase()}`}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <Layout>
+      <div className="max-w-6xl mx-auto p-6">
+        {/* Cover Image Section */}
+        <div className="relative mb-6">
+          <div className="h-48 bg-gray-200 rounded-lg overflow-hidden">
+            {profile.coverImage ? (
+              <img 
+                src={profile.coverImage} 
+                alt="Cover" 
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-r from-gray-200 to-gray-300 flex items-center justify-center">
+                <Button
+                  variant="outline"
+                  onClick={() => document.getElementById('cover-image')?.click()}
+                  disabled={uploadingCover}
+                  className="bg-white/80 hover:bg-white"
+                >
+                  <Camera className="h-4 w-4 mr-2" />
+                  {uploadingCover ? "Uploading..." : "Add cover image"}
+                </Button>
+                <input
+                  id="cover-image"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleCoverImageUpload}
+                  className="hidden"
+                  disabled={uploadingCover}
+                />
+              </div>
+            )}
+          </div>
           
-          <TabsContent value="profile">
-            <Card>
-              <CardContent className="p-6">
-                <form onSubmit={e => { e.preventDefault(); setShowConfirm(true); }} className="space-y-6">
-                  {/* Profile Picture Section */}
-                  <div className="flex items-center space-x-6">
+          {/* Profile Picture */}
+          <div className="absolute -bottom-8 left-6">
                     <div className="relative">
-                      <Avatar className="w-24 h-24">
+              <Avatar className="w-24 h-24 border-4 border-white shadow-lg">
                         <AvatarImage src={profile.profilePicture} alt={profile.name} />
-                        <AvatarFallback className="bg-slate-100 text-accizard-neutral text-lg ">
+                <AvatarFallback className="bg-gray-100 text-gray-600 text-lg">
                           {profile.name.split(' ').map(n => n[0]).join('')}
                         </AvatarFallback>
                       </Avatar>
-                      <label htmlFor="profile-picture" className={`absolute bottom-0 right-0 bg-[#FF4F0B] hover:bg-[#FF4F0B]/90 text-white p-2 rounded-full cursor-pointer ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              <label 
+                htmlFor="profile-picture" 
+                className={`absolute bottom-0 right-0 bg-brand-orange hover:bg-brand-orange/90 text-white p-2 rounded-full cursor-pointer shadow-lg ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
                         {uploading ? (
                           <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -256,107 +450,78 @@ export function ProfilePage() {
                         ) : (
                           <Camera className="h-4 w-4" />
                         )}
-                        <input id="profile-picture" type="file" accept="image/*" onChange={handleProfilePictureUpload} className="hidden" disabled={uploading} />
+                <input 
+                  id="profile-picture" 
+                  type="file" 
+                  accept="image/*" 
+                  onChange={handleProfilePictureUpload} 
+                  className="hidden" 
+                  disabled={uploading} 
+                />
                       </label>
                     </div>
-                    <div>
-                      <h3 className="text-xl font-semibold text-accizard-neutral">{profile.name}</h3>
-                      <p className="text-accizard-neutral/70">{profile.position}</p>
-                      <p className="text-sm text-accizard-neutral/60">ID: {profile.idNumber}</p>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="name" className="text-accizard-neutral">Full Name</Label>
-                      <Input id="name" value={profile.name} onChange={e => setProfile({
-                      ...profile,
-                      name: e.target.value
-                    })} className="focus:border-accizard-primary focus:ring-accizard-primary" />
+        {/* Two Column Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 mt-12">
+          {/* Left Column - Profile Info */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* User Name */}
+            <div className="mb-6">
+              <h1 className="text-2xl font-bold text-gray-900">{profile.name || "Your Name"}</h1>
+              <p className="text-gray-600">{profile.position || "Your Position"}</p>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="position" className="text-accizard-neutral">Position</Label>
-                      <Input id="position" value={profile.position} onChange={e => setProfile({
-                      ...profile,
-                      position: e.target.value
-                    })} className="focus:border-accizard-primary focus:ring-accizard-primary" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="idNumber" className="text-accizard-neutral">ID Number</Label>
-                      <Input id="idNumber" value={profile.idNumber} onChange={e => setProfile({
-                      ...profile,
-                      idNumber: e.target.value
-                    })} className="focus:border-accizard-primary focus:ring-accizard-primary" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="username" className="text-accizard-neutral">Username</Label>
-                      <Input id="username" value={profile.username} onChange={e => setProfile({
-                      ...profile,
-                      username: e.target.value
-                    })} className="focus:border-accizard-primary focus:ring-accizard-primary" />
-                    </div>
+
+            {/* About Section */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold">About</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <EditableField
+                  field="name"
+                  label="Full Name"
+                  icon={User}
+                  value={profile.name}
+                />
+                <EditableField
+                  field="position"
+                  label="Position"
+                  icon={Briefcase}
+                  value={profile.position}
+                />
+                <EditableField
+                  field="idNumber"
+                  label="ID Number"
+                  icon={Hash}
+                  value={profile.idNumber}
+                />
+                <EditableField
+                  field="username"
+                  label="Username"
+                  icon={AtSign}
+                  value={profile.username}
+                />
                     {canViewEmail() && (
-                      <div className="space-y-2 col-span-2">
-                        <Label htmlFor="email" className="text-accizard-neutral">Email</Label>
-                        <Input id="email" type="email" value={profile.email} onChange={e => setProfile({
-                        ...profile,
-                        email: e.target.value
-                      })} className="focus:border-accizard-primary focus:ring-accizard-primary" />
-                      </div>
-                    )}
-                  </div>
-                  <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
-                    <AlertDialogTrigger asChild>
-                      <Button 
-                        type="submit" 
-                        disabled={saving}
-                        className="bg-accizard-primary hover:bg-accizard-primary/90 text-white bg-[FF4F0B] bg-[#ff4f0b] disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {saving ? (
-                          <div className="flex items-center">
-                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Saving...
-                          </div>
-                        ) : (
-                          "Save Changes"
-                        )}
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Confirm Save</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Are you sure you want to save these changes to your profile?
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleSaveProfile} disabled={saving}>
-                          {saving ? (
-                            <div className="flex items-center">
-                              <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                              </svg>
-                              Saving...
-                            </div>
-                          ) : (
-                            "Confirm"
-                          )}
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </form>
+                  <EditableField
+                    field="email"
+                    label="Email"
+                    icon={AtSign}
+                    value={profile.email}
+                    type="email"
+                  />
+                )}
               </CardContent>
             </Card>
-            {/* Personal Activity Log Section */}
-            <Card className="mt-8">
+          </div>
+
+          {/* Right Column - Activity Logs and Notes */}
+          <div className="lg:col-span-3 space-y-6">
+            {/* Personal Activity Log */}
+            <Card>
               <CardHeader>
-                <CardTitle>Personal Activity Log</CardTitle>
+                <CardTitle className="text-lg font-semibold">Personal Activity Log</CardTitle>
               </CardHeader>
               <CardContent>
                 {logsLoading ? (
@@ -368,17 +533,19 @@ export function ProfilePage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
+                          <TableHead>Created Date</TableHead>
+                          <TableHead>Action Type</TableHead>
                           <TableHead>Action</TableHead>
-                          <TableHead>Description</TableHead>
-                          <TableHead>Timestamp</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {activityLogs.map((log, idx) => (
                           <TableRow key={idx}>
-                            <TableCell className="font-medium">{log.action}</TableCell>
-                            <TableCell>{log.details || log.description || '-'}</TableCell>
-                            <TableCell>{log.timestamp ? new Date(log.timestamp).toLocaleString() : '-'}</TableCell>
+                            <TableCell className="text-sm">
+                              {log.timestamp ? new Date(log.timestamp).toLocaleDateString() : '-'}
+                            </TableCell>
+                            <TableCell className="text-sm font-medium">{log.action || '-'}</TableCell>
+                            <TableCell className="text-sm">{log.details || log.description || '-'}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -387,8 +554,105 @@ export function ProfilePage() {
                 )}
               </CardContent>
             </Card>
-          </TabsContent>
-        </Tabs>
+
+            {/* Personal Notes */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="text-lg font-semibold">Personal Notes</CardTitle>
+                <Dialog open={showNoteDialog} onOpenChange={setShowNoteDialog}>
+                  <DialogTrigger asChild>
+                    <Button onClick={handleNewNote} size="sm" className="bg-brand-orange hover:bg-brand-orange/90 text-white">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Note
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                      <DialogTitle>{editingNote ? 'Edit Note' : 'Add New Note'}</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="note-title">Title</Label>
+                        <Input
+                          id="note-title"
+                          value={noteForm.title}
+                          onChange={(e) => setNoteForm(prev => ({ ...prev, title: e.target.value }))}
+                          placeholder="Enter note title..."
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="note-description">Description</Label>
+                        <Textarea
+                          id="note-description"
+                          value={noteForm.description}
+                          onChange={(e) => setNoteForm(prev => ({ ...prev, description: e.target.value }))}
+                          placeholder="Enter note description..."
+                          rows={4}
+                        />
+                      </div>
+                      <div className="flex justify-end space-x-2">
+                        <Button variant="outline" onClick={() => setShowNoteDialog(false)}>
+                          Cancel
+                        </Button>
+                        <Button onClick={handleSaveNote} className="bg-brand-orange hover:bg-brand-orange/90 text-white">
+                          {editingNote ? 'Update' : 'Save'} Note
+                        </Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </CardHeader>
+              <CardContent>
+                {notesLoading ? (
+                  <div className="text-center text-gray-500 py-8">Loading notes...</div>
+                ) : notes.length === 0 ? (
+                  <div className="text-center text-gray-500 py-8">
+                    <StickyNote className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                    <p>No notes yet. Create your first note!</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {notes.map((note) => (
+                      <div key={note.id} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <h4 className="font-medium text-gray-900 mb-2">{note.title}</h4>
+                            <p className="text-sm text-gray-600 mb-2">{note.description}</p>
+                            <p className="text-xs text-gray-500">
+                              Created: {note.createdAt ? new Date(note.createdAt).toLocaleDateString() : '-'}
+                              {note.updatedAt && note.updatedAt !== note.createdAt && (
+                                <span> • Updated: {new Date(note.updatedAt).toLocaleDateString()}</span>
+                              )}
+                            </p>
+                          </div>
+                          <div className="flex space-x-2 ml-4">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleEditNote(note)}
+                              className="h-8 w-8 p-0 text-gray-500 hover:text-blue-600 hover:bg-blue-50"
+                            >
+                              <Edit3 className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleDeleteNote(note.id)}
+                              className="h-8 w-8 p-0 text-gray-500 hover:text-red-600 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </div>
-    </Layout>;
+    </Layout>
+  );
 }

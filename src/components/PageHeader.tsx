@@ -170,6 +170,8 @@ export function PageHeader({
               <DropdownMenuLabel>My Account</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem>Profile</DropdownMenuItem>
+              <DropdownMenuItem>Switch Account</DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem className="text-red-600">Sign out</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

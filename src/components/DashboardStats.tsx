@@ -1,15 +1,26 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
-import { AlertTriangle, Users, FileText, MapPin, CloudRain, Clock, TrendingUp, PieChart as PieChartIcon, Building2, Calendar } from "lucide-react";
+import { AlertTriangle, Users, FileText, MapPin, CloudRain, Clock, TrendingUp, PieChart as PieChartIcon, Building2, Calendar, Download, Maximize2, FileImage, FileType } from "lucide-react";
+import { ResponsiveBar } from '@nivo/bar';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { toast } from "@/components/ui/sonner";
 
 export function DashboardStats() {
   const [totalReportsFilter, setTotalReportsFilter] = useState("this-week");
   const [barangayReportsFilter, setBarangayReportsFilter] = useState("this-week");
+  const [usersBarangayFilter, setUsersBarangayFilter] = useState("this-week");
+  const [reportTypeFilter, setReportTypeFilter] = useState("this-week");
+  const [peakHoursFilter, setPeakHoursFilter] = useState("this-week");
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [isChartModalOpen, setIsChartModalOpen] = useState(false);
+  const [isUsersChartModalOpen, setIsUsersChartModalOpen] = useState(false);
+  const [isPieChartModalOpen, setIsPieChartModalOpen] = useState(false);
+  const [isPeakHoursModalOpen, setIsPeakHoursModalOpen] = useState(false);
   const [weatherData, setWeatherData] = useState({
     temperature: "28°C",
     condition: "Partly Cloudy",
@@ -22,6 +33,20 @@ export function DashboardStats() {
     error: null
   });
   const [weatherOutlook, setWeatherOutlook] = useState([]);
+
+  // Hazard colors using harmonious palette
+  const hazardColors = useMemo(() => ({
+    'Road Crash': '#ff6961',
+    'Fire': '#ffb480', 
+    'Medical Emergency': '#f8f38d',
+    'Flooding': '#42d6a4',
+    'Volcanic Activity': '#08cad1',
+    'Landslide': '#59adf6',
+    'Earthquake': '#9d94ff',
+    'Civil Disturbance': '#c780e8',
+    'Armed Conflict': '#ffb480',
+    'Infectious Disease': '#42d6a4'
+  }), []);
 
   // Sample data for visualizations with all 32 barangays
   const reportsPerBarangay = [
@@ -58,6 +83,42 @@ export function DashboardStats() {
     { name: "Tiawe", reports: 9 },
     { name: "Tinamnan", reports: 11 }
   ];
+
+  // Stacked data for Nivo chart - reports by type per barangay - memoized to prevent re-renders
+  const stackedReportsData = useMemo(() => [
+    { barangay: "Abang", "Road Crash": 3, "Fire": 2, "Medical Emergency": 1, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 1, "Civil Disturbance": 1 },
+    { barangay: "Aliliw", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Atulinao", "Road Crash": 4, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 1, "Civil Disturbance": 1 },
+    { barangay: "Ayuti", "Road Crash": 1, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Barangay 1", "Road Crash": 3, "Fire": 2, "Medical Emergency": 1, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Barangay 2", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Barangay 3", "Road Crash": 2, "Fire": 2, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Barangay 4", "Road Crash": 3, "Fire": 2, "Medical Emergency": 1, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Barangay 5", "Road Crash": 3, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Barangay 6", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Barangay 7", "Road Crash": 4, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Barangay 8", "Road Crash": 1, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Barangay 9", "Road Crash": 3, "Fire": 2, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Barangay 10", "Road Crash": 2, "Fire": 2, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Igang", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Kabatete", "Road Crash": 3, "Fire": 2, "Medical Emergency": 2, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Kakawit", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Kalangay", "Road Crash": 3, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Kalyaat", "Road Crash": 3, "Fire": 2, "Medical Emergency": 1, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Kilib", "Road Crash": 4, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 1, "Civil Disturbance": 1 },
+    { barangay: "Kulapi", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Mahabang Parang", "Road Crash": 3, "Fire": 2, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Malupak", "Road Crash": 2, "Fire": 2, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Manasa", "Road Crash": 3, "Fire": 2, "Medical Emergency": 2, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "May-it", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Nagsinamo", "Road Crash": 4, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Nalunao", "Road Crash": 3, "Fire": 2, "Medical Emergency": 1, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Palola", "Road Crash": 3, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Piis", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Samil", "Road Crash": 3, "Fire": 2, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Tiawe", "Road Crash": 2, "Fire": 2, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+    { barangay: "Tinamnan", "Road Crash": 3, "Fire": 2, "Medical Emergency": 2, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 }
+  ], []);
 
   const usersPerBarangay = [
     { name: "Abang", users: 120 },
@@ -338,92 +399,299 @@ export function DashboardStats() {
         return 156;
     }
   };
+
+  // Generic export function for charts
+  const exportChart = (chartId: string, fileName: string, format: 'png' | 'svg' | 'pdf') => {
+    const svgElement = document.querySelector(`${chartId} svg`);
+    if (!svgElement) {
+      toast.error('Chart not found. Please try again.');
+      return;
+    }
+    
+    const svgData = new XMLSerializer().serializeToString(svgElement);
+    
+    if (format === 'svg') {
+      const blob = new Blob([svgData], { type: 'image/svg+xml' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.download = `${fileName}.svg`;
+      link.href = url;
+      link.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+    
+    // For PNG and PDF, we need to convert SVG to canvas
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    
+    img.onload = () => {
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx?.drawImage(img, 0, 0);
+      
+      if (format === 'png') {
+        const link = document.createElement('a');
+        link.download = `${fileName}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      } else if (format === 'pdf') {
+        import('jspdf').then(({ default: jsPDF }) => {
+          const pdf = new jsPDF('landscape');
+          const imgData = canvas.toDataURL('image/png');
+          pdf.addImage(imgData, 'PNG', 10, 10, 280, 150);
+          pdf.save(`${fileName}.pdf`);
+        });
+      }
+    };
+    
+    img.src = 'data:image/svg+xml;base64,' + btoa(svgData);
+  };
+
+  // Export functions for Barangay Reports chart
+  const exportChartAsPNG = () => {
+    const chartId = isChartModalOpen ? '#nivo-chart-modal' : '#nivo-chart';
+    exportChart(chartId, 'reports-per-barangay', 'png');
+  };
+
+  const exportChartAsSVG = () => {
+    const chartId = isChartModalOpen ? '#nivo-chart-modal' : '#nivo-chart';
+    exportChart(chartId, 'reports-per-barangay', 'svg');
+  };
+
+  const exportChartAsPDF = () => {
+    const chartId = isChartModalOpen ? '#nivo-chart-modal' : '#nivo-chart';
+    exportChart(chartId, 'reports-per-barangay', 'pdf');
+  };
+
+  // Export functions for Users chart
+  const exportUsersChartAsPNG = () => {
+    const chartId = isUsersChartModalOpen ? '#users-chart-modal' : '#users-chart';
+    exportChart(chartId, 'users-per-barangay', 'png');
+  };
+
+  const exportUsersChartAsSVG = () => {
+    const chartId = isUsersChartModalOpen ? '#users-chart-modal' : '#users-chart';
+    exportChart(chartId, 'users-per-barangay', 'svg');
+  };
+
+  const exportUsersChartAsPDF = () => {
+    const chartId = isUsersChartModalOpen ? '#users-chart-modal' : '#users-chart';
+    exportChart(chartId, 'users-per-barangay', 'pdf');
+  };
+
+  // Export functions for Pie chart
+  const exportPieChartAsPNG = () => {
+    const chartId = isPieChartModalOpen ? '#pie-chart-modal' : '#pie-chart';
+    exportChart(chartId, 'report-type-distribution', 'png');
+  };
+
+  const exportPieChartAsSVG = () => {
+    const chartId = isPieChartModalOpen ? '#pie-chart-modal' : '#pie-chart';
+    exportChart(chartId, 'report-type-distribution', 'svg');
+  };
+
+  const exportPieChartAsPDF = () => {
+    const chartId = isPieChartModalOpen ? '#pie-chart-modal' : '#pie-chart';
+    exportChart(chartId, 'report-type-distribution', 'pdf');
+  };
+
+  // Export functions for Peak Hours chart
+  const exportPeakHoursChartAsPNG = () => {
+    const chartId = isPeakHoursModalOpen ? '#peak-hours-chart-modal' : '#peak-hours-chart';
+    exportChart(chartId, 'peak-reporting-hours', 'png');
+  };
+
+  const exportPeakHoursChartAsSVG = () => {
+    const chartId = isPeakHoursModalOpen ? '#peak-hours-chart-modal' : '#peak-hours-chart';
+    exportChart(chartId, 'peak-reporting-hours', 'svg');
+  };
+
+  const exportPeakHoursChartAsPDF = () => {
+    const chartId = isPeakHoursModalOpen ? '#peak-hours-chart-modal' : '#peak-hours-chart';
+    exportChart(chartId, 'peak-reporting-hours', 'pdf');
+  };
+
+  // Memoized Nivo theme to match DM Sans font
+  const nivoTheme = useMemo(() => ({
+    text: {
+      fontFamily: 'DM Sans, sans-serif',
+      fontSize: 12,
+    },
+    axis: {
+      legend: {
+        text: {
+          fontFamily: 'DM Sans, sans-serif',
+          fontSize: 13,
+          fontWeight: 500,
+        }
+      },
+      ticks: {
+        text: {
+          fontFamily: 'DM Sans, sans-serif',
+          fontSize: 11,
+        }
+      }
+    },
+    legends: {
+      text: {
+        fontFamily: 'DM Sans, sans-serif',
+        fontSize: 12,
+      }
+    },
+    labels: {
+      text: {
+        fontFamily: 'DM Sans, sans-serif',
+        fontSize: 11,
+      }
+    },
+    tooltip: {
+      container: {
+        fontFamily: 'DM Sans, sans-serif',
+        fontSize: 12,
+      }
+    }
+  }), []);
+
+  // Memoized chart keys to prevent re-renders
+  const chartKeys = useMemo(() => [
+    'Road Crash', 'Fire', 'Medical Emergency', 'Flooding', 
+    'Volcanic Activity', 'Landslide', 'Earthquake', 'Civil Disturbance'
+  ], []);
+
+  // Memoized chart margins and axis config
+  const chartMargin = useMemo(() => ({ top: 50, right: 130, bottom: 80, left: 60 }), []);
+  const axisBottomConfig = useMemo(() => ({
+    tickSize: 5,
+    tickPadding: 5,
+    tickRotation: -45,
+    legend: 'Barangay',
+    legendPosition: 'middle' as const,
+    legendOffset: 60
+  }), []);
+  const axisLeftConfig = useMemo(() => ({
+    tickSize: 5,
+    tickPadding: 5,
+    tickRotation: 0,
+    legend: 'Number of Reports',
+    legendPosition: 'middle' as const,
+    legendOffset: -50
+  }), []);
+  const legendsConfig = useMemo(() => [{
+    dataFrom: 'keys' as const,
+    anchor: 'bottom-right' as const,
+    direction: 'column' as const,
+    justify: false,
+    translateX: 120,
+    translateY: 0,
+    itemsSpacing: 2,
+    itemWidth: 100,
+    itemHeight: 20,
+    itemDirection: 'left-to-right' as const,
+    itemOpacity: 0.85,
+    symbolSize: 20,
+    effects: [
+      {
+        on: 'hover' as const,
+        style: {
+          itemOpacity: 1
+        }
+      }
+    ]
+  }], []);
+
+  // Reusable chart component - memoized to prevent unnecessary re-renders
+  const BarangayReportsChart = useMemo(() => 
+    ({ height = '400px', chartId = 'nivo-chart' }: { height?: string; chartId?: string }) => (
+      <div id={chartId} style={{ height }}>
+        <ResponsiveBar
+          data={stackedReportsData}
+          keys={chartKeys}
+          indexBy="barangay"
+          margin={chartMargin}
+          padding={0.3}
+          valueScale={{ type: 'linear' }}
+          indexScale={{ type: 'band', round: true }}
+          colors={({ id }) => hazardColors[id as keyof typeof hazardColors] || '#6B7280'}
+          borderColor={{ from: 'color', modifiers: [['darker', 1.6]] }}
+          theme={nivoTheme}
+          axisTop={null}
+          axisRight={null}
+          axisBottom={axisBottomConfig}
+          axisLeft={axisLeftConfig}
+          labelSkipWidth={12}
+          labelSkipHeight={12}
+          labelTextColor={{ from: 'color', modifiers: [['darker', 1.6]] }}
+          legends={legendsConfig}
+          animate={true}
+          tooltip={({ id, value, indexValue, color }) => (
+            <div style={{
+              background: 'white',
+              padding: '8px 10px',
+              border: '1px solid #e5e7eb',
+              borderRadius: '6px',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+              fontFamily: 'DM Sans, sans-serif',
+              minWidth: '120px'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginBottom: '4px'
+              }}>
+                <div style={{
+                  width: '10px',
+                  height: '10px',
+                  borderRadius: '2px',
+                  backgroundColor: color,
+                  flexShrink: 0
+                }} />
+                <span style={{
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  color: '#111827',
+                  lineHeight: 1
+                }}>
+                  {value}
+                </span>
+                <span style={{
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  color: '#374151',
+                  lineHeight: 1
+                }}>
+                  {id}
+                </span>
+              </div>
+              <div style={{
+                fontSize: '11px',
+                color: '#6b7280',
+                fontWeight: 400,
+                paddingLeft: '16px'
+              }}>
+                {indexValue}
+              </div>
+            </div>
+          )}
+        />
+      </div>
+    ), [stackedReportsData, chartKeys, chartMargin, axisBottomConfig, axisLeftConfig, legendsConfig, hazardColors, nivoTheme]
+  );
+
   return <div className="space-y-6">
       {/* PST & Weather Card - Uneven Layout */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
         {/* PST Card - Time and Date */}
         <Card className="md:col-span-2">
           <CardHeader className="pb-2">
-            <div className="flex items-center space-x-2">
-              <div className="p-1.5 bg-brand-orange rounded-lg">
-                <Clock className="h-4 w-4 text-white" />
-              </div>
-              <div>
-                <CardTitle className="text-sm bg-brand-orange bg-clip-text text-transparent">
-                  Time and Date
-                </CardTitle>
-                <CardDescription className="text-xs">Current time & calendar</CardDescription>
-              </div>
-            </div>
+            <CardTitle className="text-sm">Time and Date</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {/* Clock and Calendar Row */}
-              <div className="flex items-center justify-between">
-                {/* Clock Widget */}
-                <div className="relative w-12 h-12">
-                  {/* Clock Face */}
-                  <div className="absolute inset-0 rounded-full border-2 border-gray-300 bg-white shadow-sm">
-                    {/* Hour Markers */}
-                    {Array.from({ length: 12 }, (_, i) => {
-                      const angle = (i * 30) - 90; // 30 degrees per hour, start at -90 (12 o'clock)
-                      const x = 50 + 30 * Math.cos(angle * Math.PI / 180);
-                      const y = 50 + 30 * Math.sin(angle * Math.PI / 180);
-                      return (
-                        <div
-                          key={i}
-                          className="absolute w-0.5 h-0.5 bg-gray-600 rounded-full"
-                          style={{
-                            left: `${x}%`,
-                            top: `${y}%`,
-                            transform: 'translate(-50%, -50%)'
-                          }}
-                        />
-                      );
-                    })}
-                    
-                    {/* Hour Hand */}
-                    <div
-                      className="absolute w-0.5 bg-gray-800 origin-bottom"
-                      style={{
-                        height: '12px',
-                        left: '50%',
-                        top: '50%',
-                        transform: `translateX(-50%) rotate(${(currentTime.getHours() % 12) * 30 + (currentTime.getMinutes() / 60) * 30 - 90}deg)`,
-                        transformOrigin: 'bottom center'
-                      }}
-                    />
-                    
-                    {/* Minute Hand */}
-                    <div
-                      className="absolute w-0.5 bg-gray-600 origin-bottom"
-                      style={{
-                        height: '16px',
-                        left: '50%',
-                        top: '50%',
-                        transform: `translateX(-50%) rotate(${currentTime.getMinutes() * 6 - 90}deg)`,
-                        transformOrigin: 'bottom center'
-                      }}
-                    />
-                    
-                    {/* Second Hand */}
-                    <div
-                      className="absolute w-px bg-brand-orange origin-bottom"
-                      style={{
-                        height: '18px',
-                        left: '50%',
-                        top: '50%',
-                        transform: `translateX(-50%) rotate(${currentTime.getSeconds() * 6 - 90}deg)`,
-                        transformOrigin: 'bottom center'
-                      }}
-                    />
-                    
-                    {/* Center Dot */}
-                    <div className="absolute w-1 h-1 bg-gray-800 rounded-full" style={{ left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }} />
-                  </div>
-                </div>
-
                 {/* Calendar Widget */}
+              <div className="flex justify-center">
                 <div className="text-center">
                   <div className="text-xs font-medium text-gray-600 mb-1">
                     {currentTime.toLocaleDateString('en-US', { month: 'short' })}
@@ -449,17 +717,7 @@ export function DashboardStats() {
         {/* Weather Card - Larger with 5-day outlook */}
         <Card className="md:col-span-3">
           <CardHeader className="pb-2">
-            <div className="flex items-center space-x-2">
-              <div className="p-1.5 bg-gradient-to-r from-brand-orange to-brand-red rounded-lg">
-                <CloudRain className="h-4 w-4 text-white" />
-              </div>
-              <div>
-                <CardTitle className="text-sm bg-gradient-to-r from-brand-orange to-brand-red bg-clip-text text-transparent">
-                  Weather Forecast
-                </CardTitle>
-                <CardDescription className="text-xs">Current conditions & outlook</CardDescription>
-              </div>
-            </div>
+            <CardTitle className="text-sm">Weather Forecast</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -518,16 +776,89 @@ export function DashboardStats() {
         </Card>
       </div>
 
-      {/* Calendar Heatmap - Report Activity */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center space-x-2">
-            <Calendar className="h-5 w-5 text-brand-orange" />
-            <div>
-              <CardTitle>Report Activity Calendar</CardTitle>
-              <CardDescription>Daily report submissions over the past year</CardDescription>
+      {/* Statistical Summary Cards with Filters */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+        <Card className="shadow-sm hover:shadow-md transition-shadow">
+          <CardContent className="p-6">
+            <div className="flex items-start justify-between">
+              <div className="flex items-start gap-3">
+                <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <FileText className="h-5 w-5 text-brand-orange" />
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Total Reports</p>
+                  <p className="text-xs text-brand-orange font-medium">All time</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-3xl font-bold text-gray-900">{getTotalReports()}</p>
+              </div>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm hover:shadow-md transition-shadow">
+          <CardContent className="p-6">
+            <div className="flex items-start justify-between">
+              <div className="flex items-start gap-3">
+                <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+            <Calendar className="h-5 w-5 text-brand-orange" />
+            </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">This Week</p>
+                  <p className="text-xs text-brand-orange font-medium">Last 7 days</p>
           </div>
+              </div>
+              <div className="text-right">
+                <p className="text-3xl font-bold text-gray-900">23</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm hover:shadow-md transition-shadow">
+          <CardContent className="p-6">
+            <div className="flex items-start justify-between">
+              <div className="flex items-start gap-3">
+                <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Users className="h-5 w-5 text-brand-orange" />
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Active Users</p>
+                  <p className="text-xs text-brand-orange font-medium">Registered</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-3xl font-bold text-gray-900">1,240</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm hover:shadow-md transition-shadow">
+          <CardContent className="p-6">
+            <div className="flex items-start justify-between">
+              <div className="flex items-start gap-3">
+                <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <MapPin className="h-5 w-5 text-brand-orange" />
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Most Common Type</p>
+                  <p className="text-xs text-brand-orange font-medium">Road Crash - 45%</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-3xl font-bold text-gray-900">45</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Calendar Heatmap - Report Activity */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Report Activity Calendar</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -633,80 +964,211 @@ export function DashboardStats() {
         </CardContent>
       </Card>
 
-      {/* Statistical Summary Cards with Filters */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total Reports</p>
-                <p className="text-2xl font-bold text-gray-900">{getTotalReports()}</p>
-              </div>
-              <div className="h-12 w-12 bg-blue-100 rounded-full flex items-center justify-center">
-                <FileText className="h-6 w-6 text-blue-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">This Week</p>
-                <p className="text-2xl font-bold text-gray-900">23</p>
-                <p className="text-xs text-gray-500 mt-1">8 ongoing, 15 resolved</p>
-              </div>
-              <div className="h-12 w-12 bg-red-100 rounded-full flex items-center justify-center">
-                <AlertTriangle className="h-6 w-6 text-red-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Active Users</p>
-                <p className="text-2xl font-bold text-gray-900">1,240</p>
-              </div>
-              <div className="h-12 w-12 bg-green-100 rounded-full flex items-center justify-center">
-                <Users className="h-6 w-6 text-green-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Most Common Type</p>
-                <p className="text-2xl font-bold text-gray-900">Road Crash</p>
-                <p className="text-xs text-gray-500 mt-1">45% of all reports</p>
-              </div>
-              <div className="h-12 w-12 bg-orange-100 rounded-full flex items-center justify-center">
-                <MapPin className="h-6 w-6 text-orange-600" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Bar Chart - Reports per Barangay */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <Building2 className="h-5 w-5 text-brand-orange" />
-              <div>
-                <CardTitle>Reports per Barangay</CardTitle>
-                <CardDescription>Distribution of reports across barangays</CardDescription>
-              </div>
+            <CardTitle>Reports per Barangay</CardTitle>
+            <div className="flex items-center gap-2">
+              <Select value={barangayReportsFilter} onValueChange={setBarangayReportsFilter}>
+                <SelectTrigger className="w-[120px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="this-week">This Week</SelectItem>
+                  <SelectItem value="this-month">This Month</SelectItem>
+                  <SelectItem value="this-year">This Year</SelectItem>
+                </SelectContent>
+              </Select>
+              
+              {/* Export Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline">
+          <Download className="h-4 w-4 mr-2" />
+                    Export
+        </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={exportChartAsPNG}>
+                    <FileImage className="h-4 w-4 mr-2" />
+                    Export as PNG
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={exportChartAsSVG}>
+                    <FileType className="h-4 w-4 mr-2" />
+                    Export as SVG
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={exportChartAsPDF}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Export as PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Expand Button */}
+              <Button size="sm" variant="outline" onClick={() => setIsChartModalOpen(true)}>
+                <Maximize2 className="h-4 w-4" />
+        </Button>
+      </div>
+          </CardHeader>
+          <CardContent>
+            <BarangayReportsChart />
+          </CardContent>
+        </Card>
+
+        {/* Bar Chart - Users per Barangay */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Users per Barangay</CardTitle>
+            <div className="flex items-center gap-2">
+              <Select value={usersBarangayFilter} onValueChange={setUsersBarangayFilter}>
+                <SelectTrigger className="w-[120px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="this-week">This Week</SelectItem>
+                  <SelectItem value="this-month">This Month</SelectItem>
+                  <SelectItem value="this-year">This Year</SelectItem>
+                </SelectContent>
+              </Select>
+              
+              {/* Export Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <Download className="h-4 w-4 mr-2" />
+                    Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={exportUsersChartAsPNG}>
+                    <FileImage className="h-4 w-4 mr-2" />
+                    Export as PNG
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={exportUsersChartAsSVG}>
+                    <FileType className="h-4 w-4 mr-2" />
+                    Export as SVG
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={exportUsersChartAsPDF}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Export as PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Expand Button */}
+              <Button size="sm" variant="outline" onClick={() => setIsUsersChartModalOpen(true)}>
+                <Maximize2 className="h-4 w-4" />
+              </Button>
             </div>
-            <Select value={barangayReportsFilter} onValueChange={setBarangayReportsFilter}>
+          </CardHeader>
+          <CardContent>
+            <div id="users-chart" style={{ height: '300px' }}>
+              <ChartContainer config={{
+                users: {
+                  label: "Users",
+                  color: "#FF4F0B"
+                }
+              }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={usersPerBarangay}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" tick={false} />
+                    <YAxis />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Line type="monotone" dataKey="users" stroke="#FF4F0B" strokeWidth={2} dot={{ fill: "#FF4F0B" }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </ChartContainer>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts Row 2 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Pie Chart - Report Type Distribution */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Report Type Distribution</CardTitle>
+            <div className="flex items-center gap-2">
+              <Select value={reportTypeFilter} onValueChange={setReportTypeFilter}>
+                <SelectTrigger className="w-[120px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="this-week">This Week</SelectItem>
+                  <SelectItem value="this-month">This Month</SelectItem>
+                  <SelectItem value="this-year">This Year</SelectItem>
+                </SelectContent>
+              </Select>
+              
+              {/* Export Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <Download className="h-4 w-4 mr-2" />
+                    Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={exportPieChartAsPNG}>
+                    <FileImage className="h-4 w-4 mr-2" />
+                    Export as PNG
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={exportPieChartAsSVG}>
+                    <FileType className="h-4 w-4 mr-2" />
+                    Export as SVG
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={exportPieChartAsPDF}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Export as PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Expand Button */}
+              <Button size="sm" variant="outline" onClick={() => setIsPieChartModalOpen(true)}>
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div id="pie-chart" style={{ height: '300px' }}>
+              <ChartContainer config={{
+                reports: {
+                  label: "Reports",
+                  color: "#D32F2F"
+                }
+              }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={reportTypeData} cx="50%" cy="50%" innerRadius={60} outerRadius={120} paddingAngle={5} dataKey="value">
+                      {reportTypeData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                    </Pie>
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </ChartContainer>
+            </div>
+            <div className="flex flex-wrap justify-center gap-4 mt-4">
+              {reportTypeData.map(item => <div key={item.name} className="flex items-center space-x-2">
+                  <div className="w-3 h-3 rounded-full" style={{
+                    backgroundColor: item.color
+                  }}></div>
+                  <span className="text-sm">{item.name} ({item.value}%)</span>
+                </div>)}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Peak Reporting Hours - Now as Line Chart */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Peak Reporting Hours</CardTitle>
+            <div className="flex items-center gap-2">
+              <Select value={peakHoursFilter} onValueChange={setPeakHoursFilter}>
               <SelectTrigger className="w-[120px]">
                 <SelectValue />
               </SelectTrigger>
@@ -716,82 +1178,232 @@ export function DashboardStats() {
                 <SelectItem value="this-year">This Year</SelectItem>
               </SelectContent>
             </Select>
+              
+              {/* Export Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <Download className="h-4 w-4 mr-2" />
+                    Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={exportPeakHoursChartAsPNG}>
+                    <FileImage className="h-4 w-4 mr-2" />
+                    Export as PNG
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={exportPeakHoursChartAsSVG}>
+                    <FileType className="h-4 w-4 mr-2" />
+                    Export as SVG
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={exportPeakHoursChartAsPDF}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Export as PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Expand Button */}
+              <Button size="sm" variant="outline" onClick={() => setIsPeakHoursModalOpen(true)}>
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
+            <div id="peak-hours-chart" style={{ height: '300px' }}>
             <ChartContainer config={{
             reports: {
               label: "Reports",
               color: "#FF4F0B"
             }
           }}>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={reportsPerBarangay}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={peakHoursData}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" tick={false} />
+                    <XAxis dataKey="hour" />
                   <YAxis />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <Line type="monotone" dataKey="reports" stroke="#FF4F0B" strokeWidth={2} dot={{ fill: "#FF4F0B" }} />
                 </LineChart>
               </ResponsiveContainer>
             </ChartContainer>
+            </div>
           </CardContent>
         </Card>
+      </div>
 
-        {/* Bar Chart - Users per Barangay */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center space-x-2">
-              <Users className="h-5 w-5 text-brand-orange" />
-              <div>
-                <CardTitle>Users per Barangay</CardTitle>
-                <CardDescription>Distribution of users across barangays</CardDescription>
+      {/* Expanded Chart Modal */}
+      <Dialog open={isChartModalOpen} onOpenChange={setIsChartModalOpen}>
+        <DialogContent className="max-w-7xl h-[90vh] flex flex-col">
+          <DialogHeader>
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <DialogTitle>Reports per Barangay - Detailed View</DialogTitle>
+              <div className="flex items-center gap-2">
+                <Select value={barangayReportsFilter} onValueChange={setBarangayReportsFilter}>
+                  <SelectTrigger className="w-[120px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="this-week">This Week</SelectItem>
+                    <SelectItem value="this-month">This Month</SelectItem>
+                    <SelectItem value="this-year">This Year</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                {/* Export Dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <Download className="h-4 w-4 mr-2" />
+                      Export
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={exportChartAsPNG}>
+                      <FileImage className="h-4 w-4 mr-2" />
+                      Export as PNG
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={exportChartAsSVG}>
+                      <FileType className="h-4 w-4 mr-2" />
+                      Export as SVG
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={exportChartAsPDF}>
+                      <FileText className="h-4 w-4 mr-2" />
+                      Export as PDF
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
-          </CardHeader>
-          <CardContent>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 mt-4">
+            <BarangayReportsChart height="calc(90vh - 140px)" chartId="nivo-chart-modal" />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Expanded Users Chart Modal */}
+      <Dialog open={isUsersChartModalOpen} onOpenChange={setIsUsersChartModalOpen}>
+        <DialogContent className="max-w-7xl h-[90vh] flex flex-col">
+          <DialogHeader>
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <DialogTitle>Users per Barangay - Detailed View</DialogTitle>
+              <div className="flex items-center gap-2">
+                <Select value={usersBarangayFilter} onValueChange={setUsersBarangayFilter}>
+                  <SelectTrigger className="w-[120px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="this-week">This Week</SelectItem>
+                    <SelectItem value="this-month">This Month</SelectItem>
+                    <SelectItem value="this-year">This Year</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                {/* Export Dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <Download className="h-4 w-4 mr-2" />
+                      Export
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={exportUsersChartAsPNG}>
+                      <FileImage className="h-4 w-4 mr-2" />
+                      Export as PNG
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={exportUsersChartAsSVG}>
+                      <FileType className="h-4 w-4 mr-2" />
+                      Export as SVG
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={exportUsersChartAsPDF}>
+                      <FileText className="h-4 w-4 mr-2" />
+                      Export as PDF
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 mt-4">
+            <div id="users-chart-modal" style={{ height: 'calc(90vh - 140px)' }}>
             <ChartContainer config={{
             users: {
               label: "Users",
               color: "#FF4F0B"
             }
           }}>
-              <ResponsiveContainer width="100%" height={300}>
+                <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={usersPerBarangay}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" tick={false} />
+                    <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} />
                   <YAxis />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <Line type="monotone" dataKey="users" stroke="#FF4F0B" strokeWidth={2} dot={{ fill: "#FF4F0B" }} />
                 </LineChart>
               </ResponsiveContainer>
             </ChartContainer>
-          </CardContent>
-        </Card>
       </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-      {/* Charts Row 2 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pie Chart - Report Type Distribution */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center space-x-2">
-              <PieChartIcon className="h-5 w-5 text-brand-orange" />
-              <div>
-                <CardTitle>Report Type Distribution</CardTitle>
-                <CardDescription>Breakdown of incident types</CardDescription>
+      {/* Expanded Pie Chart Modal */}
+      <Dialog open={isPieChartModalOpen} onOpenChange={setIsPieChartModalOpen}>
+        <DialogContent className="max-w-7xl h-[90vh] flex flex-col">
+          <DialogHeader>
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <DialogTitle>Report Type Distribution - Detailed View</DialogTitle>
+              <div className="flex items-center gap-2">
+                <Select value={reportTypeFilter} onValueChange={setReportTypeFilter}>
+                  <SelectTrigger className="w-[120px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="this-week">This Week</SelectItem>
+                    <SelectItem value="this-month">This Month</SelectItem>
+                    <SelectItem value="this-year">This Year</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                {/* Export Dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <Download className="h-4 w-4 mr-2" />
+                      Export
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={exportPieChartAsPNG}>
+                      <FileImage className="h-4 w-4 mr-2" />
+                      Export as PNG
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={exportPieChartAsSVG}>
+                      <FileType className="h-4 w-4 mr-2" />
+                      Export as SVG
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={exportPieChartAsPDF}>
+                      <FileText className="h-4 w-4 mr-2" />
+                      Export as PDF
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
-          </CardHeader>
-          <CardContent>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 mt-4">
+            <div id="pie-chart-modal" style={{ height: 'calc(90vh - 200px)' }}>
             <ChartContainer config={{
               reports: {
                 label: "Reports",
                 color: "#D32F2F"
               }
             }}>
-              <ResponsiveContainer width="100%" height={300}>
+                <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={reportTypeData} cx="50%" cy="50%" innerRadius={60} outerRadius={120} paddingAngle={5} dataKey="value">
+                    <Pie data={reportTypeData} cx="50%" cy="50%" innerRadius={100} outerRadius={200} paddingAngle={5} dataKey="value" label>
                     {reportTypeData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                   </Pie>
                   <ChartTooltip content={<ChartTooltipContent />} />
@@ -806,39 +1418,76 @@ export function DashboardStats() {
                   <span className="text-sm">{item.name} ({item.value}%)</span>
                 </div>)}
             </div>
-          </CardContent>
-        </Card>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-        {/* Peak Reporting Hours - Now as Line Chart */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center space-x-2">
-              <TrendingUp className="h-5 w-5 text-brand-orange" />
-              <div>
-                <CardTitle>Peak Reporting Hours</CardTitle>
-                <CardDescription>When incidents are most commonly reported</CardDescription>
+      {/* Expanded Peak Hours Chart Modal */}
+      <Dialog open={isPeakHoursModalOpen} onOpenChange={setIsPeakHoursModalOpen}>
+        <DialogContent className="max-w-7xl h-[90vh] flex flex-col">
+          <DialogHeader>
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <DialogTitle>Peak Reporting Hours - Detailed View</DialogTitle>
+              <div className="flex items-center gap-2">
+                <Select value={peakHoursFilter} onValueChange={setPeakHoursFilter}>
+                  <SelectTrigger className="w-[120px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="this-week">This Week</SelectItem>
+                    <SelectItem value="this-month">This Month</SelectItem>
+                    <SelectItem value="this-year">This Year</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                {/* Export Dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <Download className="h-4 w-4 mr-2" />
+                      Export
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={exportPeakHoursChartAsPNG}>
+                      <FileImage className="h-4 w-4 mr-2" />
+                      Export as PNG
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={exportPeakHoursChartAsSVG}>
+                      <FileType className="h-4 w-4 mr-2" />
+                      Export as SVG
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={exportPeakHoursChartAsPDF}>
+                      <FileText className="h-4 w-4 mr-2" />
+                      Export as PDF
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
-          </CardHeader>
-          <CardContent>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 mt-4">
+            <div id="peak-hours-chart-modal" style={{ height: 'calc(90vh - 140px)' }}>
             <ChartContainer config={{
               reports: {
                 label: "Reports",
                 color: "#FF4F0B"
               }
             }}>
-              <ResponsiveContainer width="100%" height={300}>
+                <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={peakHoursData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="hour" />
                   <YAxis />
                   <ChartTooltip content={<ChartTooltipContent />} />
-                  <Line type="monotone" dataKey="reports" stroke="#FF4F0B" strokeWidth={2} dot={{ fill: "#FF4F0B" }} />
+                    <Line type="monotone" dataKey="reports" stroke="#FF4F0B" strokeWidth={3} dot={{ fill: "#FF4F0B", r: 6 }} />
                 </LineChart>
               </ResponsiveContainer>
             </ChartContainer>
-          </CardContent>
-        </Card>
       </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>;
 }

@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Eye, Edit, Trash2, Plus, FileText, Calendar, Clock, MapPin, Upload, FileIcon, Image, Printer, Download, X, Search, FileDown, Car, Flame, Ambulance, Waves, Mountain, CircleAlert, Users, ShieldAlert, Activity, ArrowUpRight } from "lucide-react";
+import { Eye, Edit, Trash2, Plus, FileText, Calendar, Clock, MapPin, Upload, FileIcon, Image, Printer, Download, X, Search, FileDown, Car, Flame, Ambulance, Waves, Mountain, CircleAlert, Users, ShieldAlert, Activity, ArrowUpRight, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -75,6 +75,12 @@ export function ManageReportsPage() {
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  
+  // Sort state for Date Submitted column
+  const [dateSort, setDateSort] = useState<'asc' | 'desc' | null>('desc'); // Default to descending (newest first)
+  
+  // Sort state for Report ID column
+  const [idSort, setIdSort] = useState<'asc' | 'desc' | null>(null);
   
   // Sync viewed reports to localStorage
   useEffect(() => {
@@ -542,11 +548,47 @@ export function ManageReportsPage() {
     return searchMatch && typeMatch && statusMatch && dateMatch;
   });
   
+  // Sort filtered reports by date or ID if sort is active
+  const sortedReports = [...filteredReports].sort((a, b) => {
+    // Report ID sorting takes precedence
+    if (idSort) {
+      const idA = a.id || '';
+      const idB = b.id || '';
+      const comparison = idA.localeCompare(idB, undefined, { numeric: true });
+      return idSort === 'asc' ? comparison : -comparison;
+    }
+    
+    // Date sorting
+    if (dateSort) {
+      try {
+        // Parse date format: MM/DD/YY
+        const parseDate = (dateStr: string) => {
+          const [month, day, year] = dateStr.split('/');
+          const fullYear = 2000 + parseInt(year);
+          return new Date(fullYear, parseInt(month) - 1, parseInt(day));
+        };
+        
+        const dateA = parseDate(a.dateSubmitted);
+        const dateB = parseDate(b.dateSubmitted);
+        
+        if (dateSort === 'asc') {
+          return dateA.getTime() - dateB.getTime();
+        } else {
+          return dateB.getTime() - dateA.getTime();
+        }
+      } catch (error) {
+        return 0;
+      }
+    }
+    
+    return 0;
+  });
+  
   // Calculate pagination
-  const totalPages = Math.ceil(filteredReports.length / itemsPerPage);
+  const totalPages = Math.ceil(sortedReports.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const paginatedReports = filteredReports.slice(startIndex, endIndex);
+  const paginatedReports = sortedReports.slice(startIndex, endIndex);
   
   // Reset to page 1 when filters change
   useEffect(() => {
@@ -1656,7 +1698,7 @@ export function ManageReportsPage() {
       <TooltipProvider>
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <Card className="border-l-4 border-l-brand-orange shadow-sm hover:shadow-md transition-shadow">
+          <Card className="shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
@@ -1664,8 +1706,8 @@ export function ManageReportsPage() {
                     <FileText className="h-5 w-5 text-brand-orange" />
                   </div>
                   <div className="space-y-0.5">
-                    <p className="text-xs font-medium text-gray-800 uppercase tracking-wide">Total Reports</p>
-                    <p className="text-xs text-gray-500">All time</p>
+                    <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Total Reports</p>
+                    <p className="text-xs text-brand-orange font-medium">All time</p>
                   </div>
                 </div>
                 <div className="text-right">
@@ -1675,7 +1717,7 @@ export function ManageReportsPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-l-4 border-l-brand-orange shadow-sm hover:shadow-md transition-shadow">
+          <Card className="shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
@@ -1683,7 +1725,7 @@ export function ManageReportsPage() {
                     <Calendar className="h-5 w-5 text-brand-orange" />
                   </div>
                   <div className="space-y-0.5">
-                    <p className="text-xs font-medium text-gray-8 00 uppercase tracking-wide">Reports This Week</p>
+                    <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Reports This Week</p>
                     <p className="text-xs text-brand-orange font-medium">Last 7 days</p>
                   </div>
                 </div>
@@ -1694,7 +1736,7 @@ export function ManageReportsPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-l-4 border-l-brand-orange shadow-sm hover:shadow-md transition-shadow">
+          <Card className="shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
@@ -1702,7 +1744,7 @@ export function ManageReportsPage() {
                     <Clock className="h-5 w-5 text-brand-orange" />
                   </div>
                   <div className="space-y-0.5">
-                    <p className="text-xs font-medium text-gray-800 uppercase tracking-wide">Pending Reports</p>
+                    <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Pending Reports</p>
                     <p className="text-xs text-brand-orange font-medium">Needs attention</p>
                   </div>
                 </div>
@@ -1751,7 +1793,7 @@ export function ManageReportsPage() {
                     size="sm"
                     className={cn(
                       "justify-start text-left font-normal w-auto",
-                      !date && "text-muted-foreground"
+                      !date && "text-gray-800"
                     )}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
@@ -1855,10 +1897,60 @@ export function ManageReportsPage() {
                         onCheckedChange={(checked: boolean) => handleSelectAll(checked)}
                       />
                     </TableHead>
-                    <TableHead>Report ID</TableHead>
+                    <TableHead>
+                      <button
+                        type="button"
+                        className="flex items-center gap-2 hover:text-brand-orange transition-colors"
+                        onClick={() => {
+                          // Clear date sort when sorting by ID
+                          setDateSort(null);
+                          if (idSort === 'desc') {
+                            setIdSort('asc');
+                          } else if (idSort === 'asc') {
+                            setIdSort('desc');
+                          } else {
+                            setIdSort('asc');
+                          }
+                        }}
+                      >
+                        Report ID
+                        {idSort === 'asc' ? (
+                          <ArrowUp className="h-4 w-4 text-brand-orange" />
+                        ) : idSort === 'desc' ? (
+                          <ArrowDown className="h-4 w-4 text-brand-orange" />
+                        ) : (
+                          <ArrowUpDown className="h-4 w-4" />
+                        )}
+                      </button>
+                    </TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Reported By</TableHead>
-                    <TableHead>Date Submitted</TableHead>
+                    <TableHead>
+                      <button
+                        type="button"
+                        className="flex items-center gap-2 hover:text-brand-orange transition-colors"
+                        onClick={() => {
+                          // Clear ID sort when sorting by date
+                          setIdSort(null);
+                          if (dateSort === 'desc') {
+                            setDateSort('asc');
+                          } else if (dateSort === 'asc') {
+                            setDateSort('desc');
+                          } else {
+                            setDateSort('desc');
+                          }
+                        }}
+                      >
+                        Date Submitted
+                        {dateSort === 'asc' ? (
+                          <ArrowUp className="h-4 w-4 text-brand-orange" />
+                        ) : dateSort === 'desc' ? (
+                          <ArrowDown className="h-4 w-4 text-brand-orange" />
+                        ) : (
+                          <ArrowUpDown className="h-4 w-4" />
+                        )}
+                      </button>
+                    </TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>

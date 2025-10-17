@@ -8,7 +8,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Search, Plus, Edit, Trash2, Shield, ShieldOff, ShieldCheck, ShieldX, Eye, User, FileText, Calendar, CheckSquare, Square, UserPlus, EyeOff, ChevronUp, ChevronDown, MessageCircle } from "lucide-react";
+import { Search, Plus, Edit, Trash2, Shield, ShieldOff, ShieldCheck, ShieldX, Eye, User, FileText, Calendar, CheckSquare, Square, UserPlus, EyeOff, ChevronUp, ChevronDown, MessageCircle, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { Layout } from "./Layout";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -19,6 +19,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { useLocation } from "react-router-dom";
 import { useUserRole } from "@/hooks/useUserRole";
 import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 // Add this helper at the top (after imports):
 function formatTimeNoSeconds(time: string | number | null | undefined) {
@@ -835,36 +836,37 @@ export function ManageUsersPage() {
     // You can replace this with navigation or chat modal logic
   };
 
-  // On mount, prefill search bar and tab if redirected from chat
+  // Manage active tab state
+  const [activeTab, setActiveTab] = useState(() => {
+    // Determine initial tab based on navigation state and user role
+    if (location.state && (location.state as any).tab) {
+      return (location.state as any).tab;
+    }
+    return canManageAdmins() ? "admins" : "residents";
+  });
+
+  // On mount, prefill search bar and update tab if redirected from chat or sidebar
   useEffect(() => {
     if (location.state && (location.state as any).search) {
       setSearchTerm((location.state as any).search);
     }
-    if (location.state && (location.state as any).tab === "residents") {
-      // Simulate tab switch by clicking the Residents tab trigger
-      const residentsTab = document.querySelector('[data-state="residents"]');
-      if (residentsTab) (residentsTab as HTMLElement).click();
+    if (location.state && (location.state as any).tab) {
+      setActiveTab((location.state as any).tab);
     }
-  }, []);
-
-  // Determine default tab based on navigation state and user role
-  const defaultTab = location.state && (location.state as any).tab === "residents" 
-    ? "residents" 
-    : canManageAdmins() ? "admins" : "residents";
+  }, [location.state]);
 
   return <Layout>
+      <TooltipProvider>
       <div className="">
 
-        <Tabs defaultValue={defaultTab} className="w-full">
-          <TabsList>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          {/* Hidden TabsList - tabs are now controlled via sidebar dropdown */}
+          <TabsList className="hidden">
             {canManageAdmins() && (
               <TabsTrigger value="admins">Admin Accounts</TabsTrigger>
             )}
             <TabsTrigger value="residents" onClick={handleResidentsTabClick}>
               Residents
-              {newResidentsCount > 0 && (
-                <Badge className="ml-2 text-brand-orange text-xs border-0 bg-slate-50">{newResidentsCount}</Badge>
-              )}
             </TabsTrigger>
           </TabsList>
 
@@ -875,108 +877,96 @@ export function ManageUsersPage() {
 
             {/* Admin Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-              <Card>
+              <Card className="shadow-sm hover:shadow-md transition-shadow">
                 <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Total Admins</p>
-                      <p className="text-2xl font-bold text-gray-900">{adminUsers.length}</p>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-3">
+                      <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <User className="h-5 w-5 text-brand-orange" />
                     </div>
-                    <div className="h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
-                      <User className="h-4 w-4 text-blue-600" />
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Total Admins</p>
+                        <p className="text-xs text-brand-orange font-medium">All time</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-3xl font-bold text-gray-900">{adminUsers.length}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="shadow-sm hover:shadow-md transition-shadow">
                 <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Online Admins</p>
-                      <p className="text-2xl font-bold text-gray-900">{adminUsers.filter(admin => admin.isOnline).length}</p>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-3">
+                      <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <div className="h-2.5 w-2.5 bg-brand-orange rounded-full"></div>
                     </div>
-                    <div className="h-8 w-8 bg-green-100 rounded-full flex items-center justify-center">
-                      <div className="h-2 w-2 bg-green-600 rounded-full"></div>
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Online Admins</p>
+                        <p className="text-xs text-brand-orange font-medium">Currently active</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-3xl font-bold text-gray-900">{adminUsers.filter(admin => admin.isOnline).length}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="shadow-sm hover:shadow-md transition-shadow">
                 <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">With Edit Permission</p>
-                      <p className="text-2xl font-bold text-gray-900">{adminUsers.filter(admin => admin.hasEditPermission).length}</p>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-3">
+                      <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <ShieldCheck className="h-5 w-5 text-brand-orange" />
                     </div>
-                    <div className="h-8 w-8 bg-green-100 rounded-full flex items-center justify-center">
-                      <ShieldCheck className="h-4 w-4 text-green-600" />
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">With Permission</p>
+                        <p className="text-xs text-brand-orange font-medium">Edit access</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-3xl font-bold text-gray-900">{adminUsers.filter(admin => admin.hasEditPermission).length}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="shadow-sm hover:shadow-md transition-shadow">
                 <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Without Edit Permission</p>
-                      <p className="text-2xl font-bold text-gray-900">{adminUsers.filter(admin => !admin.hasEditPermission).length}</p>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-3">
+                      <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <ShieldOff className="h-5 w-5 text-brand-orange" />
                     </div>
-                    <div className="h-8 w-8 bg-yellow-100 rounded-full flex items-center justify-center">
-                      <ShieldOff className="h-4 w-4 text-yellow-600" />
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Without Permission</p>
+                        <p className="text-xs text-brand-orange font-medium">No edit access</p>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Admin Filters */}
-            <Card className="mb-6">
-              <CardHeader>
-                <CardTitle>Search and Filter</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="w-full">
-                    <Input placeholder="Search admin accounts..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full" />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Select value={positionFilter} onValueChange={setPositionFilter}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Filter by position" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Positions</SelectItem>
-                        {positions.map(pos => (
-                          <SelectItem key={pos} value={pos}>{pos}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-
-                    <Select value={permissionFilter} onValueChange={setPermissionFilter}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Filter by permissions" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Permissions</SelectItem>
-                        <SelectItem value="has_permission">Has Edit Permission</SelectItem>
-                        <SelectItem value="no_permission">No Edit Permission</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <div className="text-right">
+                      <p className="text-3xl font-bold text-gray-900">{adminUsers.filter(admin => !admin.hasEditPermission).length}</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
+            </div>
 
+            {/* Admin Table */}
+            <Card>
+              {/* Table Toolbar */}
+              <div className="border-b border-gray-200 px-6 py-4">
+                <div className="flex items-center gap-3 flex-wrap">
             {/* Add New Admin Button */}
-            <div className="mb-6">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
               <Dialog open={isAddAdminOpen} onOpenChange={setIsAddAdminOpen}>
                 <DialogTrigger asChild>
-                  <Button className="w bg-brand-orange hover:bg-brand-orange-400 text-white">
+                          <Button size="sm" className="bg-brand-orange hover:bg-brand-orange-400 text-white">
                     <Plus className="h-4 w-4 mr-2" />
-                    Add New Admin
+                            New
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
@@ -1101,39 +1091,106 @@ export function ManageUsersPage() {
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Create a new admin account</p>
+                    </TooltipContent>
+                  </Tooltip>
+
+                  {/* Search Bar */}
+                  <div className="flex-1 min-w-[200px] relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input 
+                      placeholder="Search admin accounts..." 
+                      value={searchTerm} 
+                      onChange={e => setSearchTerm(e.target.value)} 
+                      className="w-full pl-9" 
+                    />
             </div>
 
-            {/* Batch Actions for Admins */}
-            {selectedAdmins.length > 0 && (
-              <div className="mb-4 flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleBatchDelete('admin')}
-                  className="text-red-600 border-red-600 hover:bg-red-50"
-                >
-                  Delete Selected ({selectedAdmins.length})
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleBatchPermission(true)}
-                  className="text-green-600 border-green-600 hover:bg-green-50"
-                >
-                  Grant Permission
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleBatchPermission(false)}
-                  className="text-yellow-600 border-yellow-600 hover:bg-yellow-50"
-                >
-                  Revoke Permission
-                </Button>
-              </div>
-            )}
+                  {/* Position Filter */}
+                  <Select value={positionFilter} onValueChange={setPositionFilter}>
+                    <SelectTrigger className="w-auto">
+                      <SelectValue placeholder="All Positions" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Positions</SelectItem>
+                      {positions.map(pos => (
+                        <SelectItem key={pos} value={pos}>{pos}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
 
-            <Card>
+                  {/* Permission Filter */}
+                  <Select value={permissionFilter} onValueChange={setPermissionFilter}>
+                    <SelectTrigger className="w-auto">
+                      <SelectValue placeholder="All Permissions" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Permissions</SelectItem>
+                      <SelectItem value="has_permission">Has Edit Permission</SelectItem>
+                      <SelectItem value="no_permission">No Edit Permission</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  {/* Batch Action Buttons */}
+            {selectedAdmins.length > 0 && (
+                    <>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                            onClick={() => handleBatchPermission(true)}
+                            className="ml-auto text-green-600 border-green-600 hover:bg-green-50"
+                >
+                            <ShieldCheck className="h-4 w-4 mr-2" />
+                            Grant ({selectedAdmins.length})
+                </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Grant edit permission to {selectedAdmins.length} admin(s)</p>
+                        </TooltipContent>
+                      </Tooltip>
+
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                            onClick={() => handleBatchPermission(false)}
+                            className="text-yellow-600 border-yellow-600 hover:bg-yellow-50"
+                >
+                            <ShieldOff className="h-4 w-4 mr-2" />
+                            Revoke ({selectedAdmins.length})
+                </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Revoke edit permission from {selectedAdmins.length} admin(s)</p>
+                        </TooltipContent>
+                      </Tooltip>
+
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                <Button
+                            variant="destructive"
+                  size="sm"
+                            onClick={() => handleBatchDelete('admin')}
+                            className="bg-brand-red hover:bg-brand-red-700 text-white"
+                >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete ({selectedAdmins.length})
+                </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Delete {selectedAdmins.length} selected admin(s)</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </>
+                  )}
+                </div>
+              </div>
+
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
                   <Table>
@@ -1145,71 +1202,86 @@ export function ManageUsersPage() {
                             onCheckedChange={handleSelectAllAdmins}
                           />
                         </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-gray-50"
+                        <TableHead>
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 hover:text-brand-orange transition-colors"
                           onClick={() => handleAdminSort('userId')}
                         >
-                          <div className="flex items-center gap-1">
                             User ID
-                            {adminSortField === 'userId' ? (
-                              adminSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            {adminSortField === 'userId' && adminSortDirection === 'asc' ? (
+                              <ArrowUp className="h-4 w-4 text-brand-orange" />
+                            ) : adminSortField === 'userId' && adminSortDirection === 'desc' ? (
+                              <ArrowDown className="h-4 w-4 text-brand-orange" />
                             ) : (
-                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                              <ArrowUpDown className="h-4 w-4" />
                             )}
-                          </div>
+                          </button>
                         </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-gray-50"
+                        <TableHead>
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 hover:text-brand-orange transition-colors"
                           onClick={() => handleAdminSort('name')}
                         >
-                          <div className="flex items-center gap-1">
                             Name
-                            {adminSortField === 'name' ? (
-                              adminSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            {adminSortField === 'name' && adminSortDirection === 'asc' ? (
+                              <ArrowUp className="h-4 w-4 text-brand-orange" />
+                            ) : adminSortField === 'name' && adminSortDirection === 'desc' ? (
+                              <ArrowDown className="h-4 w-4 text-brand-orange" />
                             ) : (
-                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                              <ArrowUpDown className="h-4 w-4" />
                             )}
-                          </div>
+                          </button>
                         </TableHead>
                         <TableHead>Position</TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-gray-50"
+                        <TableHead>
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 hover:text-brand-orange transition-colors"
                           onClick={() => handleAdminSort('idNumber')}
                         >
-                          <div className="flex items-center gap-1">
                             ID Number
-                            {adminSortField === 'idNumber' ? (
-                              adminSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            {adminSortField === 'idNumber' && adminSortDirection === 'asc' ? (
+                              <ArrowUp className="h-4 w-4 text-brand-orange" />
+                            ) : adminSortField === 'idNumber' && adminSortDirection === 'desc' ? (
+                              <ArrowDown className="h-4 w-4 text-brand-orange" />
                             ) : (
-                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                              <ArrowUpDown className="h-4 w-4" />
                             )}
-                          </div>
+                          </button>
                         </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-gray-50"
+                        <TableHead>
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 hover:text-brand-orange transition-colors"
                           onClick={() => handleAdminSort('username')}
                         >
-                          <div className="flex items-center gap-1">
                             Username
-                            {adminSortField === 'username' ? (
-                              adminSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            {adminSortField === 'username' && adminSortDirection === 'asc' ? (
+                              <ArrowUp className="h-4 w-4 text-brand-orange" />
+                            ) : adminSortField === 'username' && adminSortDirection === 'desc' ? (
+                              <ArrowDown className="h-4 w-4 text-brand-orange" />
                             ) : (
-                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                              <ArrowUpDown className="h-4 w-4" />
                             )}
-                          </div>
+                          </button>
                         </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-gray-50"
+                        <TableHead>
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 hover:text-brand-orange transition-colors"
                           onClick={() => handleAdminSort('createdDate')}
                         >
-                          <div className="flex items-center gap-1">
                             Created Date
-                            {adminSortField === 'createdDate' ? (
-                              adminSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            {adminSortField === 'createdDate' && adminSortDirection === 'asc' ? (
+                              <ArrowUp className="h-4 w-4 text-brand-orange" />
+                            ) : adminSortField === 'createdDate' && adminSortDirection === 'desc' ? (
+                              <ArrowDown className="h-4 w-4 text-brand-orange" />
                             ) : (
-                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                              <ArrowUpDown className="h-4 w-4" />
                             )}
-                          </div>
+                          </button>
                         </TableHead>
                         <TableHead>
                           <div className="flex items-center gap-1">
@@ -1487,56 +1559,76 @@ export function ManageUsersPage() {
             
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-              <Card>
+              <Card className="shadow-sm hover:shadow-md transition-shadow">
                 <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Total Residents</p>
-                      <p className="text-2xl font-bold text-gray-900">{residents.length}</p>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-3">
+                      <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <User className="h-5 w-5 text-brand-orange" />
                     </div>
-                    <div className="h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
-                      <User className="h-4 w-4 text-blue-600" />
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Total Residents</p>
+                        <p className="text-xs text-brand-orange font-medium">All time</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-3xl font-bold text-gray-900">{residents.length}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="shadow-sm hover:shadow-md transition-shadow">
                 <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Verified Residents</p>
-                      <p className="text-2xl font-bold text-gray-900">{residents.filter(r => r.verified).length}</p>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-3">
+                      <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <ShieldCheck className="h-5 w-5 text-brand-orange" />
                     </div>
-                    <div className="h-8 w-8 bg-green-100 rounded-full flex items-center justify-center">
-                      <ShieldCheck className="h-4 w-4 text-green-600" />
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Verified</p>
+                        <p className="text-xs text-brand-orange font-medium">Active accounts</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-3xl font-bold text-gray-900">{residents.filter(r => r.verified).length}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="shadow-sm hover:shadow-md transition-shadow">
                 <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Pending Verification</p>
-                      <p className="text-2xl font-bold text-gray-900">{residents.filter(r => !r.verified).length}</p>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-3">
+                      <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <ShieldX className="h-5 w-5 text-brand-orange" />
                     </div>
-                    <div className="h-8 w-8 bg-yellow-100 rounded-full flex items-center justify-center">
-                      <ShieldX className="h-4 w-4 text-yellow-600" />
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Pending</p>
+                        <p className="text-xs text-brand-orange font-medium">Needs verification</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-3xl font-bold text-gray-900">{residents.filter(r => !r.verified).length}</p>
                     </div>
                   </div>
                 </CardContent>                
               </Card>
-              <Card>
+              <Card className="shadow-sm hover:shadow-md transition-shadow">
                 <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-gray-600">Suspended Accounts</p>
-                      <p className="text-2xl font-bold text-gray-900">{residents.filter(r => r.suspended).length}</p>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start gap-3">
+                      <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <ShieldOff className="h-5 w-5 text-brand-orange" />
                     </div>
-                    <div className="h-8 w-8 bg-gray-200 rounded-full flex items-center justify-center">
-                      <ShieldOff className="h-4 w-4 text-gray-600" />
+                      <div className="space-y-0.5">
+                        <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Suspended</p>
+                        <p className="text-xs text-brand-orange font-medium">Inactive accounts</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-3xl font-bold text-gray-900">{residents.filter(r => r.suspended).length}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -1545,25 +1637,26 @@ export function ManageUsersPage() {
               
             </div>
 
-            {/* Resident Filters */}
-            <Card className="mb-6">
-              <CardHeader>
-                <CardTitle>Search and Filter</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="w-full">
+            {/* Residents Table */}
+            <Card>
+              {/* Table Toolbar */}
+              <div className="border-b border-gray-200 px-6 py-4">
+                <div className="flex items-center gap-3 flex-wrap">
+                  {/* Search Bar */}
+                  <div className="flex-1 min-w-[200px] relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <Input
                       placeholder="Search residents..."
                       value={searchTerm}
                       onChange={e => setSearchTerm(e.target.value)}
-                      className="w-full"
+                      className="w-full pl-9" 
                     />
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                  {/* Barangay Filter */}
                     <Select value={barangayFilter} onValueChange={setBarangayFilter}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Filter by barangay" />
+                    <SelectTrigger className="w-auto">
+                      <SelectValue placeholder="All Barangays" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Barangays</SelectItem>
@@ -1573,9 +1666,10 @@ export function ManageUsersPage() {
                       </SelectContent>
                     </Select>
 
+                  {/* Verification Filter */}
                     <Select value={verificationFilter} onValueChange={setVerificationFilter}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Filter by verification" />
+                    <SelectTrigger className="w-auto">
+                      <SelectValue placeholder="All Status" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Status</SelectItem>
@@ -1584,42 +1678,65 @@ export function ManageUsersPage() {
                         <SelectItem value="suspended">Suspended</SelectItem>
                       </SelectContent>
                     </Select>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
 
-            {/* Batch Actions for Residents */}
+                  {/* Batch Action Buttons */}
             {selectedResidents.length > 0 && (
-              <div className="mb-4 flex items-center gap-2">
+                    <>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => handleBatchDelete('resident')}
-                  className="text-red-600 border-red-600 hover:bg-red-50"
+                            onClick={() => handleBatchVerification(true)}
+                            className="ml-auto text-green-600 border-green-600 hover:bg-green-50"
                 >
-                  Delete Selected ({selectedResidents.length})
+                            <ShieldCheck className="h-4 w-4 mr-2" />
+                            Verify ({selectedResidents.length})
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleBatchVerification(true)}
-                  className="text-green-600 border-green-600 hover:bg-green-50"
-                >
-                  Verify Selected
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleBatchVerification(false)}
-                  className="text-yellow-600 border-yellow-600 hover:bg-yellow-50"
-                >
-                  Revoke Verification
-                </Button>
-              </div>
-            )}
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Verify {selectedResidents.length} selected resident(s)</p>
+                        </TooltipContent>
+                      </Tooltip>
 
-            <Card>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                            onClick={() => handleBatchVerification(false)}
+                            className="text-yellow-600 border-yellow-600 hover:bg-yellow-50"
+                >
+                            <ShieldX className="h-4 w-4 mr-2" />
+                            Revoke ({selectedResidents.length})
+                </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Revoke verification from {selectedResidents.length} resident(s)</p>
+                        </TooltipContent>
+                      </Tooltip>
+
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                <Button
+                            variant="destructive"
+                  size="sm"
+                            onClick={() => handleBatchDelete('resident')}
+                            className="bg-brand-red hover:bg-brand-red-700 text-white"
+                >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete ({selectedResidents.length})
+                </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Delete {selectedResidents.length} selected resident(s)</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </>
+                  )}
+                </div>
+              </div>
+
               <CardContent className="p-0">
                 <div className="overflow-x-auto">
                   <Table>
@@ -1631,71 +1748,86 @@ export function ManageUsersPage() {
                             onCheckedChange={handleSelectAllResidents}
                           />
                         </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-gray-50"
+                        <TableHead>
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 hover:text-brand-orange transition-colors"
                           onClick={() => handleResidentSort('userId')}
                         >
-                          <div className="flex items-center gap-1">
                             User ID
-                            {residentSortField === 'userId' ? (
-                              residentSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            {residentSortField === 'userId' && residentSortDirection === 'asc' ? (
+                              <ArrowUp className="h-4 w-4 text-brand-orange" />
+                            ) : residentSortField === 'userId' && residentSortDirection === 'desc' ? (
+                              <ArrowDown className="h-4 w-4 text-brand-orange" />
                             ) : (
-                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                              <ArrowUpDown className="h-4 w-4" />
                             )}
-                          </div>
+                          </button>
                         </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-gray-50"
+                        <TableHead>
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 hover:text-brand-orange transition-colors"
                           onClick={() => handleResidentSort('fullName')}
                         >
-                          <div className="flex items-center gap-1">
                             Full Name
-                            {residentSortField === 'fullName' ? (
-                              residentSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            {residentSortField === 'fullName' && residentSortDirection === 'asc' ? (
+                              <ArrowUp className="h-4 w-4 text-brand-orange" />
+                            ) : residentSortField === 'fullName' && residentSortDirection === 'desc' ? (
+                              <ArrowDown className="h-4 w-4 text-brand-orange" />
                             ) : (
-                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                              <ArrowUpDown className="h-4 w-4" />
                             )}
-                          </div>
+                          </button>
                         </TableHead>
                         <TableHead>Mobile Number</TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-gray-50"
+                        <TableHead>
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 hover:text-brand-orange transition-colors"
                           onClick={() => handleResidentSort('barangay')}
                         >
-                          <div className="flex items-center gap-1">
                             Barangay
-                            {residentSortField === 'barangay' ? (
-                              residentSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            {residentSortField === 'barangay' && residentSortDirection === 'asc' ? (
+                              <ArrowUp className="h-4 w-4 text-brand-orange" />
+                            ) : residentSortField === 'barangay' && residentSortDirection === 'desc' ? (
+                              <ArrowDown className="h-4 w-4 text-brand-orange" />
                             ) : (
-                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                              <ArrowUpDown className="h-4 w-4" />
                             )}
-                          </div>
+                          </button>
                         </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-gray-50"
+                        <TableHead>
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 hover:text-brand-orange transition-colors"
                           onClick={() => handleResidentSort('cityTown')}
                         >
-                          <div className="flex items-center gap-1">
                             City/Town
-                            {residentSortField === 'cityTown' ? (
-                              residentSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            {residentSortField === 'cityTown' && residentSortDirection === 'asc' ? (
+                              <ArrowUp className="h-4 w-4 text-brand-orange" />
+                            ) : residentSortField === 'cityTown' && residentSortDirection === 'desc' ? (
+                              <ArrowDown className="h-4 w-4 text-brand-orange" />
                             ) : (
-                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                              <ArrowUpDown className="h-4 w-4" />
                             )}
-                          </div>
+                          </button>
                         </TableHead>
-                        <TableHead 
-                          className="cursor-pointer hover:bg-gray-50"
+                        <TableHead>
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 hover:text-brand-orange transition-colors"
                           onClick={() => handleResidentSort('createdDate')}
                         >
-                          <div className="flex items-center gap-1">
                             Created Date
-                            {residentSortField === 'createdDate' ? (
-                              residentSortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />
+                            {residentSortField === 'createdDate' && residentSortDirection === 'asc' ? (
+                              <ArrowUp className="h-4 w-4 text-brand-orange" />
+                            ) : residentSortField === 'createdDate' && residentSortDirection === 'desc' ? (
+                              <ArrowDown className="h-4 w-4 text-brand-orange" />
                             ) : (
-                              <ChevronUp className="h-4 w-4 text-gray-300" />
+                              <ArrowUpDown className="h-4 w-4" />
                             )}
-                          </div>
+                          </button>
                         </TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Actions</TableHead>
@@ -1772,10 +1904,10 @@ export function ManageUsersPage() {
                                 }}
                               >
                                 <SelectTrigger className={cn(
-                                  "w-[140px] border-0 font-medium focus:ring-1",
-                                  resident.suspended && 'bg-red-100 text-red-800 hover:bg-red-50 focus:ring-red-400',
-                                  resident.verified && 'bg-green-100 text-green-800 hover:bg-green-50 focus:ring-green-400',
-                                  !resident.verified && !resident.suspended && 'bg-yellow-100 text-yellow-800 hover:bg-yellow-50 focus:ring-yellow-400'
+                                  "w-auto border-0 bg-transparent font-medium focus:ring-1 focus:ring-brand-orange",
+                                  resident.suspended && 'text-red-600',
+                                  resident.verified && 'text-green-600',
+                                  !resident.verified && !resident.suspended && 'text-yellow-600'
                                 )}>
                                   <SelectValue />
                                 </SelectTrigger>
@@ -2364,5 +2496,6 @@ export function ManageUsersPage() {
           </DialogContent>
         </Dialog>
       </div>
+      </TooltipProvider>
     </Layout>;
 }

@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { ChevronUp, ChevronDown, Search } from "lucide-react";
+import { ChevronUp, ChevronDown, Search, Activity, Users, Clock } from "lucide-react";
 import { Layout } from "./Layout";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { db } from "@/lib/firebase";
@@ -115,26 +115,39 @@ export function SystemLogsPage() {
       <div className="space-y-6">
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card>
+          <Card className="shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Total Logs</p>
-                  <p className="text-2xl font-bold text-gray-900">{activityLogs.length}</p>
+              <div className="flex items-start justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Activity className="h-5 w-5 text-brand-orange" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Total Logs</p>
+                    <p className="text-xs text-brand-orange font-medium">All time</p>
+                  </div>
                 </div>
-                <div className="h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
-                  <Search className="h-4 w-4 text-blue-600" />
+                <div className="text-right">
+                  <p className="text-3xl font-bold text-gray-900">{activityLogs.length}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Today's Logs</p>
-                  <p className="text-2xl font-bold text-gray-900">
+              <div className="flex items-start justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Clock className="h-5 w-5 text-brand-orange" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Today's Logs</p>
+                    <p className="text-xs text-brand-orange font-medium">Last 24 hours</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-3xl font-bold text-gray-900">
                     {activityLogs.filter(log => {
                       const logDate = typeof log.timestamp === 'number' ? new Date(log.timestamp) : new Date(log.timestamp);
                       const today = new Date();
@@ -142,79 +155,80 @@ export function SystemLogsPage() {
                     }).length}
                   </p>
                 </div>
-                <div className="h-8 w-8 bg-green-100 rounded-full flex items-center justify-center">
-                  <div className="h-2 w-2 bg-green-600 rounded-full"></div>
-                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Active Admins</p>
-                  <p className="text-2xl font-bold text-gray-900">{adminUsers.length}</p>
+              <div className="flex items-start justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Users className="h-5 w-5 text-brand-orange" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Active Admins</p>
+                    <p className="text-xs text-brand-orange font-medium">System users</p>
+                  </div>
                 </div>
-                <div className="h-8 w-8 bg-yellow-100 rounded-full flex items-center justify-center">
-                  <div className="h-2 w-2 bg-yellow-600 rounded-full"></div>
+                <div className="text-right">
+                  <p className="text-3xl font-bold text-gray-900">{adminUsers.length}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Search and Filter */}
+
+        {/* Activity Logs Table */}
         <Card>
-          <CardHeader>
-            <CardTitle>Search and Filter</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="w-full">
+          {/* Table Toolbar */}
+          <div className="border-b border-gray-200 px-6 py-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Search Bar */}
+              <div className="flex-1 min-w-[200px] relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
                   placeholder="Search logs..."
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
-                  className="w-full"
+                  className="w-full pl-9"
                 />
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Select value={userFilter} onValueChange={setUserFilter}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Filter by user" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Users</SelectItem>
-                    {adminUsers.map(admin => (
-                      <SelectItem key={admin.id} value={admin.name}>
-                        {admin.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
 
-                <Select value={actionTypeFilter} onValueChange={setActionTypeFilter}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Filter by action type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Actions</SelectItem>
-                    <SelectItem value="login">Login</SelectItem>
-                    <SelectItem value="edit">Edit</SelectItem>
-                    <SelectItem value="delete">Delete</SelectItem>
-                    <SelectItem value="create">Create</SelectItem>
-                    <SelectItem value="permission">Permission</SelectItem>
-                    <SelectItem value="verification">Verification</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* User Filter */}
+              <Select value={userFilter} onValueChange={setUserFilter}>
+                <SelectTrigger className="w-auto">
+                  <SelectValue placeholder="All Users" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Users</SelectItem>
+                  {adminUsers.map(admin => (
+                    <SelectItem key={admin.id} value={admin.name}>
+                      {admin.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* Action Type Filter */}
+              <Select value={actionTypeFilter} onValueChange={setActionTypeFilter}>
+                <SelectTrigger className="w-auto">
+                  <SelectValue placeholder="All Actions" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Actions</SelectItem>
+                  <SelectItem value="login">Login</SelectItem>
+                  <SelectItem value="edit">Edit</SelectItem>
+                  <SelectItem value="delete">Delete</SelectItem>
+                  <SelectItem value="create">Create</SelectItem>
+                  <SelectItem value="permission">Permission</SelectItem>
+                  <SelectItem value="verification">Verification</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-          </CardContent>
-        </Card>
+          </div>
 
-        {/* Activity Logs Table */}
-        <Card>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <Table>

@@ -28,7 +28,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Plus, Edit, Trash2, Calendar, AlertTriangle, Info, X, Eye, ChevronUp, ChevronDown, Check } from "lucide-react";
+import { Search, Plus, Edit, Trash2, Calendar, AlertTriangle, Info, X, Eye, ChevronUp, ChevronDown, Check, CalendarIcon } from "lucide-react";
 import { Layout } from "./Layout";
 import { DateRange } from "react-day-picker";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
@@ -36,7 +36,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { format, addYears } from "date-fns";
 import { cn } from "@/lib/utils";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore";
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/components/ui/use-toast";
@@ -275,6 +275,36 @@ export function AnnouncementsPage() {
     }
   };
 
+  // Handle priority change directly from table
+  const handlePriorityChange = async (announcementId: string, newPriority: string) => {
+    try {
+      console.log(`Updating announcement ${announcementId} priority to ${newPriority}`);
+      
+      // Update in Firestore
+      await updateDoc(doc(db, "announcements", announcementId), {
+        priority: newPriority,
+        updatedAt: serverTimestamp()
+      });
+      
+      // Update local state
+      setAnnouncements(announcements.map(a => 
+        a.id === announcementId ? { ...a, priority: newPriority } : a
+      ));
+      
+      toast({
+        title: "Priority Updated",
+        description: `Priority updated to ${newPriority}`,
+      });
+    } catch (error) {
+      console.error("Error updating priority:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update priority. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
   const handleBatchDelete = async () => {
     if (selectedAnnouncements.size === 0) return;
     
@@ -340,307 +370,169 @@ export function AnnouncementsPage() {
       <div className="">
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <Card>
+          <Card className="shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Total Announcements</p>
-                  <p className="text-2xl font-bold text-gray-900">{announcements.length}</p>
+              <div className="flex items-start justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Info className="h-5 w-5 text-brand-orange" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Total Announcements</p>
+                    <p className="text-xs text-brand-orange font-medium">All time</p>
+                  </div>
                 </div>
-                <div className="h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
-                  <Info className="h-4 w-4 text-blue-600" />
+                <div className="text-right">
+                  <p className="text-3xl font-bold text-gray-900">{announcements.length}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">High Priority</p>
-                  <p className="text-2xl font-bold text-gray-900">{announcements.filter(a => a.priority === 'high').length}</p>
+              <div className="flex items-start justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <AlertTriangle className="h-5 w-5 text-brand-orange" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">High Priority</p>
+                    <p className="text-xs text-brand-orange font-medium">Urgent alerts</p>
+                  </div>
                 </div>
-                <div className="h-8 w-8 bg-red-100 rounded-full flex items-center justify-center">
-                  <AlertTriangle className="h-4 w-4 text-red-600" />
+                <div className="text-right">
+                  <p className="text-3xl font-bold text-gray-900">{announcements.filter(a => a.priority === 'high').length}</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">This Week</p>
-                  <p className="text-2xl font-bold text-gray-900">5</p>
+              <div className="flex items-start justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Calendar className="h-5 w-5 text-brand-orange" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">This Week</p>
+                    <p className="text-xs text-brand-orange font-medium">Last 7 days</p>
+                  </div>
                 </div>
-                <div className="h-8 w-8 bg-green-100 rounded-full flex items-center justify-center">
-                  <Calendar className="h-4 w-4 text-green-600" />
+                <div className="text-right">
+                  <p className="text-3xl font-bold text-gray-900">5</p>
                 </div>
               </div>
             </CardContent>
           </Card>
-        </div>
-
-        {/* Search and Filters */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Search and Filter</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="w-full">
-                <Input placeholder="Search announcements..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full" />
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <Label className="text-sm font-medium">Date Range</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <div className="relative w-full">
-                        <Button
-                          variant="outline"
-                          className={cn(
-                            "w-full justify-start text-left font-normal",
-                            !dateRange && "text-muted-foreground"
-                          )}
-                        >
-                          <Calendar className="mr-2 h-4 w-4" />
-                          {dateRange?.from ? (
-                            dateRange.to ? (
-                              <>
-                                {format(dateRange.from, "LLL dd, y")} -{" "}
-                                {format(dateRange.to, "LLL dd, y")}
-                              </>
-                            ) : (
-                              format(dateRange.from, "LLL dd, y")
-                            )
-                          ) : (
-                            <span>Pick a date range</span>
-                          )}
-                        </Button>
-                        {dateRange?.from || dateRange?.to ? (
-                          <X
-                            className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 hover:text-gray-600 cursor-pointer"
-                            onClick={e => {
-                              e.stopPropagation();
-                              setDateRange(undefined);
-                            }}
-                          />
-                        ) : null}
-                      </div>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <div className="flex gap-8 px-4 pt-4 pb-2 items-start">
-                        {/* FROM Calendar */}
-                        <div>
-                          <div className="mb-2 text-xs font-semibold text-gray-500 text-center">From</div>
-                          <CalendarComponent
-                            month={dateRange?.from || today}
-                            selected={dateRange}
-                            onSelect={range => setDateRange(r => ({ ...r, from: range?.from }))}
-                            mode="range"
-                            numberOfMonths={1}
-                          />
-                        </div>
-                        {/* TO Calendar */}
-                        <div>
-                          <div className="mb-2 text-xs font-semibold text-gray-500 text-center">To</div>
-                          <CalendarComponent
-                            month={dateRange?.to || today}
-                            selected={dateRange}
-                            onSelect={range => setDateRange(r => ({ ...r, to: range?.to }))}
-                            mode="range"
-                            numberOfMonths={1}
-                          />
-                        </div>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-
-                <div>
-                  <Label className="text-sm font-medium">Type</Label>
-                  <Select value={typeFilter} onValueChange={setTypeFilter}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Types</SelectItem>
-                      {announcementTypes.map(type => (
-                        <SelectItem key={type} value={type}>{type}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <Label className="text-sm font-medium">Priority</Label>
-                  <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Priorities</SelectItem>
-                      <SelectItem value="high">High</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="low">Low</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Action Buttons */} 
-        <div className="mb-6 flex gap-4">
-          <Dialog open={isNewAnnouncementOpen} onOpenChange={setIsNewAnnouncementOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-brand-orange hover:bg-brand-orange-400 text-white">
-                <Plus className="h-4 w-4 mr-2" />
-                New Announcement
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create New Announcement</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="new-type">Type</Label>
-                  <Select value={newAnnouncement.type} onValueChange={value => setNewAnnouncement({
-                    ...newAnnouncement,
-                    type: value
-                  })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select announcement type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {announcementTypes.length === 0 ? (
-                        <div className="px-2 py-3 text-sm text-gray-500">No types available. Add one below.</div>
-                      ) : (
-                        announcementTypes.map(type => (
-                          <SelectItem key={type} value={type}>{type}</SelectItem>
-                        ))
-                      )}
-                      <div className="flex gap-2 p-2 border-t border-gray-100 mt-2">
-                        <Input
-                          value={newTypeInput}
-                          onChange={e => setNewTypeInput(e.target.value)}
-                          placeholder="Add new type"
-                          className="flex-1"
-                          onKeyDown={async e => {
-                            if (e.key === 'Enter' && newTypeInput.trim()) {
-                              if (!announcementTypes.includes(newTypeInput.trim())) {
-                                try {
-                                  const docRef = await addDoc(collection(db, "announcementTypes"), { name: newTypeInput.trim() });
-                                setAnnouncementTypes([...announcementTypes, newTypeInput.trim()]);
-                                setNewAnnouncement({ ...newAnnouncement, type: newTypeInput.trim() });
-                                } catch (error) {
-                                  console.error("Error adding type:", error);
-                                }
-                              }
-                              setNewTypeInput("");
-                            }
-                          }}
-                        />
-                        <Button type="button" onClick={async () => {
-                          if (newTypeInput.trim() && !announcementTypes.includes(newTypeInput.trim())) {
-                            try {
-                              const docRef = await addDoc(collection(db, "announcementTypes"), { name: newTypeInput.trim() });
-                            setAnnouncementTypes([...announcementTypes, newTypeInput.trim()]);
-                            setNewAnnouncement({ ...newAnnouncement, type: newTypeInput.trim() });
-                            } catch (error) {
-                              console.error("Error adding type:", error);
-                            }
-                          }
-                          setNewTypeInput("");
-                        }} disabled={!newTypeInput.trim()} className="bg-brand-orange hover:bg-brand-orange-400 text-white">
-                          Add
-                        </Button>
-                      </div>
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div>
-                  <Label htmlFor="new-priority">Priority</Label>
-                  <Select value={newAnnouncement.priority} onValueChange={value => setNewAnnouncement({
-                    ...newAnnouncement,
-                    priority: value
-                  })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select priority" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="high">High</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="low">Low</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div>
-                  <Label htmlFor="new-description">Description</Label>
-                  <Textarea id="new-description" value={newAnnouncement.description} onChange={e => setNewAnnouncement({
-                    ...newAnnouncement,
-                    description: e.target.value
-                  })} placeholder="Announcement description" />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button 
-                  onClick={handleAddAnnouncement} 
-                  disabled={isAddingAnnouncement}
-                  className="bg-brand-orange hover:bg-brand-orange-400 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isAddingAnnouncement ? (
-                    <div className="flex items-center">
-                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Creating...
-                    </div>
-                  ) : (
-                    "Create Announcement"
-                  )}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          {/* Batch Delete Button */}
-          {selectedAnnouncements.size > 0 && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="destructive" className="bg-red-600 hover:bg-red-700">
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete Selected ({selectedAnnouncements.size})
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete Selected Announcements</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Are you sure you want to delete {selectedAnnouncements.size} selected announcement(s)? This action cannot be undone.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleBatchDelete} className="bg-red-600 hover:bg-red-700">
-                    Delete {selectedAnnouncements.size} Announcement(s)
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
         </div>
 
         <Card>
+          {/* Table Toolbar */}
+          <div className="border-b border-gray-200 px-6 py-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Add New Announcement Button */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button onClick={() => setIsNewAnnouncementOpen(true)} size="sm" className="bg-brand-orange hover:bg-brand-orange-400 text-white">
+                    <Plus className="h-4 w-4 mr-2" />
+                    New
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Create a new announcement</p>
+                </TooltipContent>
+              </Tooltip>
+
+              {/* Search Bar */}
+              <div className="flex-1 min-w-[200px] relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input 
+                  placeholder="Search announcements..." 
+                  value={searchTerm} 
+                  onChange={e => setSearchTerm(e.target.value)} 
+                  className="w-full pl-9" 
+                />
+              </div>
+
+              {/* Date Range Filter */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={cn(
+                      "justify-start text-left font-normal w-auto",
+                      !dateRange && "text-gray-800"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateRange?.from ? (
+                      dateRange.to ? (
+                        <>
+                          {format(dateRange.from, "MMM dd")} - {format(dateRange.to, "MMM dd")}
+                        </>
+                      ) : (
+                        format(dateRange.from, "MMM dd, y")
+                      )
+                    ) : (
+                      <span>Date Range</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <CalendarComponent
+                    initialFocus
+                    mode="range"
+                    defaultMonth={dateRange?.from}
+                    selected={dateRange}
+                    onSelect={setDateRange}
+                    numberOfMonths={2}
+                  />
+                </PopoverContent>
+              </Popover>
+
+              {/* Type Filter */}
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="w-auto">
+                  <SelectValue placeholder="All Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  {announcementTypes.map(type => (
+                    <SelectItem key={type} value={type}>{type}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* Priority Filter */}
+              <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+                <SelectTrigger className="w-auto">
+                  <SelectValue placeholder="All Priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Priority</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Delete Selected Button */}
+              {selectedAnnouncements.size > 0 && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleBatchDelete}
+                  className="ml-auto"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete ({selectedAnnouncements.size})
+                </Button>
+              )}
+            </div>
+          </div>
           
           <CardContent className="p-0">
             <div className="overflow-x-auto">
@@ -699,9 +591,24 @@ export function AnnouncementsPage() {
                           <div className="max-w-xs">{truncateDescription(announcement.description)}</div>
                         </TableCell>
                         <TableCell>
-                          <Badge className={`${getPriorityColor(announcement.priority)} text-white`}>
-                            {announcement.priority}
-                          </Badge>
+                          <Select 
+                            value={announcement.priority} 
+                            onValueChange={(newPriority) => handlePriorityChange(announcement.id, newPriority)}
+                          >
+                            <SelectTrigger className={cn(
+                              "w-auto border-0 bg-transparent font-medium focus:ring-1 focus:ring-brand-orange",
+                              announcement.priority === 'high' && 'text-red-600',
+                              announcement.priority === 'medium' && 'text-yellow-600',
+                              announcement.priority === 'low' && 'text-green-600'
+                            )}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="high">High</SelectItem>
+                              <SelectItem value="medium">Medium</SelectItem>
+                              <SelectItem value="low">Low</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </TableCell>
                         <TableCell>
                           <span>{announcement.date}</span>
@@ -960,6 +867,116 @@ export function AnnouncementsPage() {
                 </Table>
               </div>
             )}
+          </DialogContent>
+        </Dialog>
+
+        {/* New Announcement Dialog */}
+        <Dialog open={isNewAnnouncementOpen} onOpenChange={setIsNewAnnouncementOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create New Announcement</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="new-type">Type</Label>
+                <Select value={newAnnouncement.type} onValueChange={value => setNewAnnouncement({
+                  ...newAnnouncement,
+                  type: value
+                })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select announcement type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {announcementTypes.length === 0 ? (
+                      <div className="px-2 py-3 text-sm text-gray-500">No types available. Add one below.</div>
+                    ) : (
+                      announcementTypes.map(type => (
+                        <SelectItem key={type} value={type}>{type}</SelectItem>
+                      ))
+                    )}
+                    <div className="flex gap-2 p-2 border-t border-gray-100 mt-2">
+                      <Input
+                        value={newTypeInput}
+                        onChange={e => setNewTypeInput(e.target.value)}
+                        placeholder="Add new type"
+                        className="flex-1"
+                        onKeyDown={async e => {
+                          if (e.key === 'Enter' && newTypeInput.trim()) {
+                            if (!announcementTypes.includes(newTypeInput.trim())) {
+                              try {
+                                const docRef = await addDoc(collection(db, "announcementTypes"), { name: newTypeInput.trim() });
+                                setAnnouncementTypes([...announcementTypes, newTypeInput.trim()]);
+                                setNewAnnouncement({ ...newAnnouncement, type: newTypeInput.trim() });
+                              } catch (error) {
+                                console.error("Error adding type:", error);
+                              }
+                            }
+                            setNewTypeInput("");
+                          }
+                        }}
+                      />
+                      <Button type="button" onClick={async () => {
+                        if (newTypeInput.trim() && !announcementTypes.includes(newTypeInput.trim())) {
+                          try {
+                            const docRef = await addDoc(collection(db, "announcementTypes"), { name: newTypeInput.trim() });
+                            setAnnouncementTypes([...announcementTypes, newTypeInput.trim()]);
+                            setNewAnnouncement({ ...newAnnouncement, type: newTypeInput.trim() });
+                          } catch (error) {
+                            console.error("Error adding type:", error);
+                          }
+                        }
+                        setNewTypeInput("");
+                      }} disabled={!newTypeInput.trim()} className="bg-brand-orange hover:bg-brand-orange-400 text-white">
+                        Add
+                      </Button>
+                    </div>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div>
+                <Label htmlFor="new-priority">Priority</Label>
+                <Select value={newAnnouncement.priority} onValueChange={value => setNewAnnouncement({
+                  ...newAnnouncement,
+                  priority: value
+                })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select priority" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div>
+                <Label htmlFor="new-description">Description</Label>
+                <Textarea
+                  id="new-description"
+                  value={newAnnouncement.description}
+                  onChange={e => setNewAnnouncement({
+                    ...newAnnouncement,
+                    description: e.target.value
+                  })}
+                  placeholder="Enter announcement description..."
+                  rows={4}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsNewAnnouncementOpen(false)}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleAddAnnouncement}
+                disabled={!newAnnouncement.type || !newAnnouncement.priority || !newAnnouncement.description.trim()}
+                className="bg-brand-orange hover:bg-brand-orange-400 text-white"
+              >
+                Create Announcement
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
