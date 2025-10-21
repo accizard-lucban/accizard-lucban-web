@@ -9,6 +9,7 @@ import { ResponsiveBar } from '@nivo/bar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/sonner";
+import { ensureOk, getHttpStatusMessage } from "@/lib/utils";
 
 export function DashboardStats() {
   const [totalReportsFilter, setTotalReportsFilter] = useState("this-week");
@@ -34,18 +35,18 @@ export function DashboardStats() {
   });
   const [weatherOutlook, setWeatherOutlook] = useState([]);
 
-  // Hazard colors using harmonious palette
+  // Hazard colors using brand-orange and brand-red shades
   const hazardColors = useMemo(() => ({
-    'Road Crash': '#ff6961',
-    'Fire': '#ffb480', 
-    'Medical Emergency': '#f8f38d',
-    'Flooding': '#42d6a4',
-    'Volcanic Activity': '#08cad1',
-    'Landslide': '#59adf6',
-    'Earthquake': '#9d94ff',
-    'Civil Disturbance': '#c780e8',
-    'Armed Conflict': '#ffb480',
-    'Infectious Disease': '#42d6a4'
+    'Road Crash': '#f97316',      // brand-orange (primary)
+    'Fire': '#fb923c',            // brand-orange-400 (lighter)
+    'Medical Emergency': '#ea580c', // brand-orange-600 (darker)
+    'Flooding': '#991b1b',        // brand-red (primary)
+    'Volcanic Activity': '#b91c1c', // brand-red-700 (lighter)
+    'Landslide': '#7f1d1d',      // brand-red-900 (darker)
+    'Earthquake': '#dc2626',     // red-600 (medium red)
+    'Civil Disturbance': '#ef4444', // red-500 (bright red)
+    'Armed Conflict': '#c2410c',  // orange-700 (dark orange)
+    'Infectious Disease': '#fed7aa' // orange-200 (very light orange)
   }), []);
 
   // Sample data for visualizations with all 32 barangays
@@ -242,26 +243,18 @@ export function DashboardStats() {
       }
 
       // Fetch current weather
-      const currentWeatherResponse = await fetch(
-        `https://api.openweathermap.org/data/2.5/weather?q=${CITY}&appid=${API_KEY}&units=metric`
-      );
-      
-      if (!currentWeatherResponse.ok) {
-        throw new Error(`Weather API error: ${currentWeatherResponse.status}`);
-      }
-      
-      const currentWeather = await currentWeatherResponse.json();
+      const currentWeather = await ensureOk(
+        await fetch(
+          `https://api.openweathermap.org/data/2.5/weather?q=${CITY}&appid=${API_KEY}&units=metric`
+        )
+      ).then(r => r.json());
       
       // Fetch 5-day forecast
-      const forecastResponse = await fetch(
-        `https://api.openweathermap.org/data/2.5/forecast?q=${CITY}&appid=${API_KEY}&units=metric`
-      );
-      
-      if (!forecastResponse.ok) {
-        throw new Error(`Forecast API error: ${forecastResponse.status}`);
-      }
-      
-      const forecast = await forecastResponse.json();
+      const forecast = await ensureOk(
+        await fetch(
+          `https://api.openweathermap.org/data/2.5/forecast?q=${CITY}&appid=${API_KEY}&units=metric`
+        )
+      ).then(r => r.json());
       
       // Helper function to convert wind direction from degrees to compass direction
       const getWindDirection = (degrees) => {
@@ -321,12 +314,14 @@ export function DashboardStats() {
       setWeatherData(processedWeatherData);
       setWeatherOutlook(processedForecast);
       
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching weather data:", error);
+      const message = error?.status ? getHttpStatusMessage(error.status) : (error?.message || "Weather unavailable");
+      toast.error(message);
       setWeatherData(prev => ({
         ...prev,
         loading: false,
-        error: error.message,
+        error: message,
         precipitation: "0mm",
         windSpeed: "0 km/h",
         windDirection: "N"

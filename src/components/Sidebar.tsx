@@ -8,6 +8,8 @@ import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { preloadRoute } from "@/utils/routePreloader";
 import { useUserRole } from "@/hooks/useUserRole";
+import { SessionManager } from "@/lib/sessionManager";
+import { toast } from "@/components/ui/sonner";
 
 interface SidebarProps {
   isCollapsed: boolean;
@@ -80,12 +82,17 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
 
   const handleSignOut = async () => {
     try {
-      localStorage.removeItem("adminLoggedIn");
+      // Clear session using SessionManager
+      SessionManager.clearSession();
+      
+      // Sign out from Firebase Auth (for super admins)
       await signOut(auth);
+      
+      toast.success("You have been logged out successfully");
       navigate("/login");
     } catch (error) {
-      // Optionally handle error
       console.error("Sign out error:", error);
+      toast.error("Error during logout. Please try again.");
     }
   };
 

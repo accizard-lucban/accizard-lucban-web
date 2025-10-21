@@ -14,7 +14,7 @@ import { useNavigate } from "react-router-dom";
 import { DateRange } from "react-day-picker";
 import { format } from "date-fns";
 import { Calendar as CalendarIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, ensureOk, getHttpStatusMessage } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -632,6 +632,57 @@ export function ManageReportsPage() {
   }, [reports]);
   
   const pendingReports = reports.filter(report => report.status === 'Pending').length;
+  
+  const averageResponseTime = useMemo(() => {
+    // Filter reports that have both dispatch and arrival times
+    const reportsWithResponseTime = reports.filter(report => {
+      try {
+        // Check if report has dispatch data with both times
+        const hasDispatchData = report.dispatchInfo?.timeOfDispatch && report.dispatchInfo?.timeOfArrival;
+        return hasDispatchData;
+      } catch (error) {
+        return false;
+      }
+    });
+
+    if (reportsWithResponseTime.length === 0) {
+      return null;
+    }
+
+    // Calculate total response time in minutes
+    const totalMinutes = reportsWithResponseTime.reduce((total, report) => {
+      try {
+        const dispatchTime = report.dispatchInfo.timeOfDispatch;
+        const arrivalTime = report.dispatchInfo.timeOfArrival;
+        
+        const [dispatchHours, dispatchMinutes] = dispatchTime.split(':').map(Number);
+        const [arrivalHours, arrivalMinutes] = arrivalTime.split(':').map(Number);
+        
+        const dispatchTotalMinutes = dispatchHours * 60 + dispatchMinutes;
+        const arrivalTotalMinutes = arrivalHours * 60 + arrivalMinutes;
+        
+        let diffMinutes = arrivalTotalMinutes - dispatchTotalMinutes;
+        
+        if (diffMinutes < 0) {
+          diffMinutes += 24 * 60;
+        }
+        
+        return total + diffMinutes;
+      } catch (error) {
+        return total;
+      }
+    }, 0);
+
+    const avgMinutes = Math.round(totalMinutes / reportsWithResponseTime.length);
+    const hours = Math.floor(avgMinutes / 60);
+    const minutes = avgMinutes % 60;
+
+    return {
+      avgMinutes,
+      formatted: hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`,
+      count: reportsWithResponseTime.length
+    };
+  }, [reports]);
   
   const handlePreviousPage = () => {
     setCurrentPage(prev => Math.max(prev - 1, 1));
@@ -1551,7 +1602,7 @@ export function ManageReportsPage() {
   // Function to download image
   const handleDownloadImage = async (imageUrl: string, imageName: string) => {
     try {
-      const response = await fetch(imageUrl);
+      const response = await ensureOk(await fetch(imageUrl));
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -1562,9 +1613,9 @@ export function ManageReportsPage() {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
       toast.success('Image downloaded successfully!');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error downloading image:', error);
-      toast.error('Failed to download image. Please try again.');
+      toast.error(error?.status ? getHttpStatusMessage(error.status) : 'Failed to download image. Please try again.');
     }
   };
 
@@ -1619,13 +1670,7 @@ export function ManageReportsPage() {
       }
 
       const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${accessToken}&types=address,poi,place,locality,neighborhood`;
-      
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Geocoding API error: ${response.status}`);
-      }
-
-      const data = await response.json();
+      const data = await ensureOk(await fetch(url)).then(r => r.json());
       
       if (data.features && data.features.length > 0) {
         const feature = data.features[0];
@@ -1633,8 +1678,9 @@ export function ManageReportsPage() {
       } else {
         return 'Unknown Location';
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error reverse geocoding:', error);
+      toast.error(error?.status ? getHttpStatusMessage(error.status) : 'Failed to reverse geocode location.');
       return 'Unknown Location';
     }
   };
@@ -1697,7 +1743,7 @@ export function ManageReportsPage() {
     <Layout>
       <TooltipProvider>
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
           <Card className="shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
@@ -1750,6 +1796,29 @@ export function ManageReportsPage() {
                 </div>
                 <div className="text-right">
                   <p className="text-3xl font-bold text-gray-900">{pendingReports}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-start justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Activity className="h-5 w-5 text-brand-orange" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Avg Response Time</p>
+                    <p className="text-xs text-brand-orange font-medium">
+                      {averageResponseTime ? `Based on ${averageResponseTime.count} reports` : 'No data'}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-3xl font-bold text-gray-900">
+                    {averageResponseTime ? averageResponseTime.formatted : 'N/A'}
+                  </p>
                 </div>
               </div>
             </CardContent>

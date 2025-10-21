@@ -38,6 +38,7 @@ import '@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Info } from 'lucide-react';
+import { ensureOk } from '@/lib/utils';
 import { Pin } from '@/types/pin';
 
 // Use environment variable for Mapbox access token
@@ -373,12 +374,7 @@ export function MapboxMap({
 
       const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?access_token=${accessToken}&geometries=geojson&overview=full&steps=true&annotations=duration,distance`;
       
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Directions API error: ${response.status}`);
-      }
-
-      const data = await response.json();
+      const data = await ensureOk(await fetch(url)).then(r => r.json());
       
       if (data.routes && data.routes.length > 0) {
         const route = data.routes[0];
@@ -403,7 +399,7 @@ export function MapboxMap({
       } else {
         throw new Error('No routes found');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error calculating travel time:', error);
       return null;
     }
@@ -419,12 +415,7 @@ export function MapboxMap({
 
       const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${accessToken}&types=address,poi,place,locality,neighborhood`;
       
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Geocoding API error: ${response.status}`);
-      }
-
-      const data = await response.json();
+      const data = await ensureOk(await fetch(url)).then(r => r.json());
       
       if (data.features && data.features.length > 0) {
         // Try to get the most specific address first, then fall back to place names
@@ -434,7 +425,7 @@ export function MapboxMap({
       } else {
         return 'Unknown Location';
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error reverse geocoding:', error);
       return 'Unknown Location';
     }

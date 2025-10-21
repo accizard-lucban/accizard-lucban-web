@@ -12,6 +12,7 @@ import { collection, getDocs, query, where } from "firebase/firestore";
 import { Eye, EyeOff, HelpCircle, Shield, User } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SessionManager } from "@/lib/sessionManager";
 
 export function LoginForm() {
   const [email, setEmail] = useState("");
@@ -73,9 +74,18 @@ export function LoginForm() {
             console.log("ℹ️ Admin can still access Firestore, but Storage may be limited");
           }
           
-          // Step 3: Complete login (works even if Firebase Auth failed)
-          localStorage.setItem("adminLoggedIn", "true");
-          toast.success("Admin login successful!");
+          // Step 3: Complete login with new session manager
+          const adminData = querySnapshot.docs[0].data();
+          SessionManager.setSession({
+            isLoggedIn: true,
+            userType: 'admin',
+            username: username,
+            userId: querySnapshot.docs[0].id,
+            name: adminData.name || adminData.fullName || username,
+            email: adminData.email
+          });
+          
+          toast.success(`Welcome back, ${adminData.name || username}!`);
           navigate("/dashboard");
         } else {
           setError("Invalid username or password.");
@@ -120,9 +130,19 @@ export function LoginForm() {
         return;
       }
       
-      // User is in superAdmin collection, allow access
+      // User is in superAdmin collection, set up session
+      const superAdminData = superadminSnapshot.docs[0].data();
+      SessionManager.setSession({
+        isLoggedIn: true,
+        userType: 'superadmin',
+        username: superAdminData.username || user.email?.split('@')[0] || 'Super Admin',
+        userId: user.uid,
+        name: superAdminData.fullName || superAdminData.name || 'Super Admin',
+        email: user.email || ''
+      });
+      
       console.log("Login successful! Navigating to dashboard...");
-      toast.success("Login successful!");
+      toast.success(`Welcome back, ${superAdminData.fullName || 'Super Admin'}!`);
       navigate("/dashboard");
     } catch (err: any) {
       console.error("Login error:", err);

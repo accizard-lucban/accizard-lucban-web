@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { createContext, useContext, useEffect, useState, lazy, Suspense, Component, ReactNode } from "react";
+import { SessionManager } from "@/lib/sessionManager";
 
 // Error Boundary for catching chunk load errors
 class ErrorBoundary extends Component<
@@ -82,6 +83,17 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
+  // Initialize session management
+  useEffect(() => {
+    // Migrate old session data on first load
+    SessionManager.migrateOldSession();
+    
+    // Initialize session monitoring
+    const cleanup = SessionManager.initializeSessionMonitoring();
+    
+    return cleanup;
+  }, []);
+
   return (
     <AuthContext.Provider value={{ user, loading }}>
       {children}
@@ -146,9 +158,10 @@ function RouteLoader() {
 
 function PrivateRoute() {
   const { user, loading } = useAuth();
-  const adminLoggedIn = localStorage.getItem("adminLoggedIn") === "true";
+  const isAuthenticated = SessionManager.isAuthenticated();
+  
   if (loading) return <SpinnerOverlay />;
-  return user || adminLoggedIn ? <Outlet /> : <Navigate to="/login" replace />;
+  return user || isAuthenticated ? <Outlet /> : <Navigate to="/login" replace />;
 }
 
 const queryClient = new QueryClient();

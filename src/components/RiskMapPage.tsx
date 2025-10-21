@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGr
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Plus, MapPin, Layers, CalendarIcon, Search, Building2, Ambulance, Waves, Mountain, Building, CircleAlert, Users, ShieldAlert, Activity, Flame, Car, Siren, Home, Navigation, RotateCcw, HelpCircle, Info } from "lucide-react";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from "date-fns";
-import { cn } from "@/lib/utils";
+import { cn, ensureOk } from "@/lib/utils";
 import { Layout } from "./Layout";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { DateRange } from "react-day-picker";
@@ -142,12 +142,7 @@ export function RiskMapPage() {
 
       const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${accessToken}&types=address,poi,place,locality,neighborhood`;
       
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Geocoding API error: ${response.status}`);
-      }
-
-      const data = await response.json();
+      const data = await ensureOk(await fetch(url)).then(r => r.json());
       
       if (data.features && data.features.length > 0) {
         const feature = data.features[0];
@@ -155,7 +150,7 @@ export function RiskMapPage() {
       } else {
         return 'Unknown Location';
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error reverse geocoding:', error);
       return 'Geocoding failed';
     }
@@ -179,15 +174,10 @@ export function RiskMapPage() {
       // Add proximity bias to Lucban, Quezon for better local results
       const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${accessToken}&limit=5&proximity=121.5556,14.1139&country=PH`;
       
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error('Geocoding API error');
-      }
-
-      const data = await response.json();
+      const data = await ensureOk(await fetch(url)).then(r => r.json());
       setSearchSuggestions(data.features || []);
       setIsSearchOpen(data.features && data.features.length > 0);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching geocoding results:', error);
       setSearchSuggestions([]);
       setIsSearchOpen(false);
