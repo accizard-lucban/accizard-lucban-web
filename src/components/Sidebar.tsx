@@ -21,6 +21,7 @@ interface SidebarProps {
   onMobileClose?: () => void;
 }
 
+
 const menuItems = [{
   title: "Dashboard",
   icon: Home,
@@ -70,6 +71,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
   const location = useLocation();
   const [showSignOut, setShowSignOut] = useState(false);
   const [manageUsersExpanded, setManageUsersExpanded] = useState(false);
+  const [chatSupportExpanded, setChatSupportExpanded] = useState(false);
   const { canManageAdmins } = useUserRole();
 
   const handleMenuClick = (item: typeof menuItems[0]) => {
@@ -158,6 +160,83 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
             </div>}
           <nav className="space-y-2">
             {menuItems.map(item => {
+              // Special handling for "Chat Support" with dropdown
+              if (item.title === "Chat Support") {
+                return (
+                  <div key={item.title}>
+                    <button 
+                      onClick={() => {
+                        if (isCollapsed && !isMobileOpen) {
+                          // If collapsed, navigate to resident support
+                          navigate("/chat-support");
+                          if (onMobileClose) onMobileClose();
+                        } else {
+                          // If expanded, toggle dropdown
+                          setChatSupportExpanded(!chatSupportExpanded);
+                        }
+                      }}
+                      onMouseEnter={() => preloadRoute(item.preload, item.title)}
+                      onFocus={() => preloadRoute(item.preload, item.title)}
+                      onTouchStart={() => preloadRoute(item.preload, item.title)}
+                      className={cn(
+                        "w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", 
+                        (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "justify-between px-4 py-3", 
+                        (location.pathname === '/chat-support' || location.pathname === '/admin-chat') ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white"
+                      )}
+                    >
+                      <div className={cn("flex items-center", (isCollapsed && !isMobileOpen) && "justify-center")}>
+                        <item.icon className={cn("h-5 w-5 flex-shrink-0", (!isCollapsed || isMobileOpen) && "mr-3")} />
+                        {(!isCollapsed || isMobileOpen) && <span>{item.title}</span>}
+                      </div>
+                      {(!isCollapsed || isMobileOpen) && (
+                        <div className="flex items-center gap-2">
+                          {(chatSupportBadge ?? 0) > 0 && (
+                            <Badge className="bg-orange-500 hover:bg-orange-400 text-white text-xs border-0 font-semibold">
+                              {chatSupportBadge}
+                            </Badge>
+                          )}
+                          <ChevronDown className={cn("h-4 w-4 transition-transform", chatSupportExpanded && "rotate-180")} />
+                        </div>
+                      )}
+                    </button>
+                    
+                    {/* Dropdown submenu */}
+                    {chatSupportExpanded && (!isCollapsed || isMobileOpen) && (
+                      <div className="ml-4 mt-2 space-y-1">
+                        <button
+                          onClick={() => {
+                            navigate("/chat-support");
+                            if (onMobileClose) onMobileClose();
+                          }}
+                          className={cn(
+                            "w-full flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
+                            location.pathname === "/chat-support"
+                              ? "bg-orange-400/30 text-white"
+                              : "text-orange-100 hover:bg-orange-400/20 hover:text-white"
+                          )}
+                        >
+                          Resident Support
+                        </button>
+                        <button
+                          onClick={() => {
+                            navigate("/admin-chat");
+                            if (onMobileClose) onMobileClose();
+                          }}
+                          className={cn(
+                            "w-full flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
+                            location.pathname === "/admin-chat"
+                              ? "bg-orange-400/30 text-white"
+                              : "text-orange-100 hover:bg-orange-400/20 hover:text-white"
+                          )}
+                        >
+                          Admin Chat
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+              
               // Special handling for "Manage Users" with dropdown
               if (item.title === "Manage Users") {
                 return (
@@ -257,11 +336,6 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
                   {(!isCollapsed || isMobileOpen) && item.title === "Manage Reports" && (manageReportsBadge ?? 0) > 0 && (
                     <Badge className="bg-orange-500 hover:bg-orange-400 text-white text-xs border-0 font-semibold animate-pulse">
                       {manageReportsBadge}
-                    </Badge>
-                  )}
-                  {(!isCollapsed || isMobileOpen) && item.title === "Chat Support" && (chatSupportBadge ?? 0) > 0 && (
-                    <Badge className="bg-orange-500 hover:bg-orange-400 text-white text-xs border-0 font-semibold">
-                      {chatSupportBadge}
                     </Badge>
                   )}
                 </button>

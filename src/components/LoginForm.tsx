@@ -9,7 +9,7 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from "fire
 import { toast } from "@/components/ui/sonner";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query, where } from "firebase/firestore";
-import { Eye, EyeOff, HelpCircle, Shield, User } from "lucide-react";
+import { Eye, EyeOff, HelpCircle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SessionManager } from "@/lib/sessionManager";
@@ -198,7 +198,11 @@ export function LoginForm() {
             <div className="flex flex-col items-center justify-center mb-4">
               {userType === "super-admin" ? (
                 <div className="flex flex-col items-center space-y-2">
-                  <Shield className="h-8 w-8 text-brand-orange" />
+                  <img 
+                    src="/accizard-uploads/logo-ldrrmo-png.png" 
+                    alt="LDRRMO Logo" 
+                    className="h-16 w-16 object-contain"
+                  />
                   <div className="text-center">
                     <CardTitle className="text-2xl sm:text-3xl font-bold text-gray-800 mb-0">Account Login</CardTitle>
                     <p className="text-sm text-gray-600 mt-1">Welcome back, Super Admin!</p>
@@ -206,7 +210,11 @@ export function LoginForm() {
                 </div>
               ) : (
                 <div className="flex flex-col items-center space-y-2">
-                  <User className="h-8 w-8 text-brand-orange" />
+                  <img 
+                    src="/accizard-uploads/logo-ldrrmo-png.png" 
+                    alt="LDRRMO Logo" 
+                    className="h-16 w-16 object-contain"
+                  />
                   <div className="text-center">
                     <CardTitle className="text-2xl sm:text-3xl font-bold text-gray-800 mb-0">Account Login</CardTitle>
                     <p className="text-sm text-gray-600 mt-1">Welcome back, Admin!</p>

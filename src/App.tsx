@@ -66,6 +66,7 @@ const ManageReportsPage = lazy(() => import("./components/ManageReportsPage").th
 const RiskMapPage = lazy(() => import("./components/RiskMapPage").then(module => ({ default: module.RiskMapPage })));
 const AnnouncementsPage = lazy(() => import("./components/AnnouncementsPage").then(module => ({ default: module.AnnouncementsPage })));
 const ChatSupportPage = lazy(() => import("./components/ChatSupportPage").then(module => ({ default: module.ChatSupportPage })));
+const AdminChatPage = lazy(() => import("./components/AdminChatPage").then(module => ({ default: module.AdminChatPage })));
 const SystemLogsPage = lazy(() => import("./components/SystemLogsPage").then(module => ({ default: module.SystemLogsPage })));
 
 // Auth context and provider
@@ -187,6 +188,7 @@ const App = () => (
                   <Route path="/risk-map" element={<RiskMapPage />} />
                   <Route path="/announcements" element={<AnnouncementsPage />} />
                   <Route path="/chat-support" element={<ChatSupportPage />} />
+                  <Route path="/admin-chat" element={<AdminChatPage />} />
                   <Route path="/system-logs" element={<SystemLogsPage />} />
                 </Route>
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

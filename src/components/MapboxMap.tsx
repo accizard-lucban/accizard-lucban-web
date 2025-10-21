@@ -1304,3 +1304,4 @@ export function MapboxMap({
     </div>
   );
 }
+

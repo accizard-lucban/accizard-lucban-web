@@ -222,35 +222,26 @@ export function ManageReportsPage() {
           };
         });
         
-        console.log("Processed reports:", fetched.length, "reports");
-        console.log("Report IDs:", fetched.map(r => r.id));
-        
         // Check for new reports and trigger alert (only if count increased)
         if (previousReportCount > 0 && fetched.length > previousReportCount) {
-          const newReports = fetched.slice(0, fetched.length - previousReportCount);
-          if (newReports.length > 0) {
-            const latestNewReport = newReports[0];
-            console.log("New report detected:", latestNewReport);
+          const newReportCount = fetched.length - previousReportCount;
+          
+          if (newReportCount > 0) {
+            // Get the newest report (first in the array since we order by timestamp desc)
+            const latestNewReport = fetched[0];
             
             // Set alert data and show modal
             setNewReportData(latestNewReport);
             setShowNewReportAlert(true);
             
-            // Play alarm sound
+            // Play alarm sound (continuous until dismissed)
             playAlarmSound();
-            
-            // Auto-hide alert after 10 seconds
-            setTimeout(() => {
-              setShowNewReportAlert(false);
-            }, 10000);
           }
         }
         
         // Always update the reports state (this handles deletions automatically)
         setPreviousReportCount(fetched.length);
         setReports(fetched);
-        
-        console.log("Reports state updated with", fetched.length, "reports");
       });
       return () => unsubscribe();
     } catch (err) {
@@ -974,6 +965,17 @@ export function ManageReportsPage() {
   const [showNewReportAlert, setShowNewReportAlert] = useState(false);
   const [newReportData, setNewReportData] = useState<any>(null);
   const [previousReportCount, setPreviousReportCount] = useState(0);
+  const [alarmInterval, setAlarmInterval] = useState<NodeJS.Timeout | null>(null);
+
+  // Cleanup alarm interval on component unmount
+  useEffect(() => {
+    return () => {
+      if (alarmInterval) {
+        clearInterval(alarmInterval);
+        setAlarmInterval(null);
+      }
+    };
+  }, [alarmInterval]);
 
   // Helper function to get current time in HH:MM AM/PM format
   const getCurrentTime = () => {
@@ -994,18 +996,36 @@ export function ManageReportsPage() {
     return `${hours}:${minutes}`;
   };
 
-  // Function to play alarming sound for new reports
+  // Function to play alarming sound for new reports (continuous until dismissed)
   const playAlarmSound = () => {
+    // Clear any existing alarm interval
+    if (alarmInterval) {
+      clearInterval(alarmInterval);
+    }
+    
+    // Play alarm immediately
+    playSingleAlarm();
+    
+    // Set up continuous alarm every 3 seconds
+    const interval = setInterval(() => {
+      playSingleAlarm();
+    }, 3000);
+    
+    setAlarmInterval(interval);
+  };
+
+  // Function to play a single alarm sound
+  const playSingleAlarm = () => {
     try {
       // Play the custom alarm sound from the uploaded MP3 file
       const audio = new Audio('/accizard-uploads/alarmsoundfx.mp3');
-      audio.volume = 0.7; // Adjust volume as needed (0.0 to 1.0)
+      audio.volume = 0.8; // Increased volume for better attention
       
       // Set a timeout to fall back to Web Audio API if MP3 fails to load
       const fallbackTimeout = setTimeout(() => {
         console.log("MP3 loading too slow, falling back to Web Audio API");
         playWebAudioAlarm();
-      }, 2000); // 2 second timeout
+      }, 1500); // Reduced timeout for faster fallback
       
       audio.addEventListener('canplaythrough', () => {
         clearTimeout(fallbackTimeout); // Cancel fallback if MP3 loads successfully
@@ -1029,6 +1049,16 @@ export function ManageReportsPage() {
       playWebAudioAlarm();
     }
   };
+
+  // Function to stop the alarm
+  const stopAlarm = () => {
+    if (alarmInterval) {
+      clearInterval(alarmInterval);
+      setAlarmInterval(null);
+      console.log("Alarm stopped");
+    }
+  };
+
 
   // Fallback function using Web Audio API
   const playWebAudioAlarm = () => {
@@ -5338,7 +5368,12 @@ export function ManageReportsPage() {
         </Dialog>
 
         {/* New Report Alert Modal */}
-        <Dialog open={showNewReportAlert} onOpenChange={setShowNewReportAlert}>
+        <Dialog open={showNewReportAlert} onOpenChange={(open) => {
+          if (!open) {
+            stopAlarm();
+          }
+          setShowNewReportAlert(open);
+        }}>
           <DialogContent className="max-w-md border-brand-red bg-red-50">
             <DialogHeader>
               <DialogTitle className="text-xl font-bold text-brand-red flex items-center gap-2">
@@ -5384,6 +5419,7 @@ export function ManageReportsPage() {
                 <div className="flex gap-2">
                   <Button 
                     onClick={() => {
+                      stopAlarm();
                       setShowNewReportAlert(false);
                       // You can add navigation to the specific report here
                     }}
@@ -5393,7 +5429,10 @@ export function ManageReportsPage() {
                   </Button>
                   <Button 
                     variant="outline" 
-                    onClick={() => setShowNewReportAlert(false)}
+                    onClick={() => {
+                      stopAlarm();
+                      setShowNewReportAlert(false);
+                    }}
                     className="flex-1 border-red-300 text-brand-red hover:bg-red-100"
                   >
                     Dismiss

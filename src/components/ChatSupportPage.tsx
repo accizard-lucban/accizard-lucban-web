@@ -225,12 +225,65 @@ export function ChatSupportPage() {
         
         console.log("✅ All chat sessions loaded with profile pictures:", sessionsData);
         
-        // Sort by most recent activity
+        // Sort by most recent activity (most recent at top)
         sessionsData.sort((a, b) => {
-          const timeA = a.lastMessageTime?.toDate?.() || a.lastAccessTime?.toDate?.() || new Date(0);
-          const timeB = b.lastMessageTime?.toDate?.() || b.lastAccessTime?.toDate?.() || new Date(0);
-          return timeB.getTime() - timeA.getTime();
+          // Helper function to get timestamp from various fields
+          const getTimestamp = (session: any): number => {
+            // Priority order: lastMessageTime > updatedAt > lastAccessTime > createdAt > now
+            
+            // 1. Try lastMessageTime first (most recent message) - highest priority
+            if (session.lastMessageTime?.toDate) {
+              return session.lastMessageTime.toDate().getTime();
+            } else if (session.lastMessageTime instanceof Date) {
+              return session.lastMessageTime.getTime();
+            } else if (typeof session.lastMessageTime === 'number') {
+              return session.lastMessageTime;
+            }
+            
+            // 2. Try updatedAt (when chat metadata was last updated)
+            if (session.updatedAt?.toDate) {
+              return session.updatedAt.toDate().getTime();
+            } else if (session.updatedAt instanceof Date) {
+              return session.updatedAt.getTime();
+            } else if (typeof session.updatedAt === 'number') {
+              return session.updatedAt;
+            }
+            
+            // 3. Fall back to lastAccessTime (when chat was last opened/accessed)
+            if (session.lastAccessTime?.toDate) {
+              return session.lastAccessTime.toDate().getTime();
+            } else if (session.lastAccessTime instanceof Date) {
+              return session.lastAccessTime.getTime();
+            } else if (typeof session.lastAccessTime === 'number') {
+              return session.lastAccessTime;
+            }
+            
+            // 4. Fall back to createdAt (when chat was created)
+            if (session.createdAt?.toDate) {
+              return session.createdAt.toDate().getTime();
+            } else if (session.createdAt instanceof Date) {
+              return session.createdAt.getTime();
+            } else if (typeof session.createdAt === 'number') {
+              return session.createdAt;
+            }
+            
+            // 5. If no timestamp exists, use current time so new chats appear at top
+            return Date.now();
+          };
+          
+          const timeA = getTimestamp(a);
+          const timeB = getTimestamp(b);
+          
+          return timeB - timeA; // Sort descending (most recent first)
         });
+        
+        console.log("📊 Sorted chat sessions:", sessionsData.map(s => ({
+          id: s.id,
+          name: s.userName,
+          lastMessageTime: s.lastMessageTime,
+          lastAccessTime: s.lastAccessTime,
+          createdAt: s.createdAt
+        })));
         
         setChatSessions(sessionsData);
         setLoadingChatSessions(false);
@@ -422,7 +475,39 @@ export function ChatSupportPage() {
           ...msgDoc.data()
         })) as ChatMessage[];
         
-        console.log("💬 Processed messages:", messagesData);
+        // CLIENT-SIDE SORTING: Ensure messages are properly sorted by timestamp
+        // This handles cases where Firestore's orderBy might not work correctly
+        // due to serverTimestamp() being null initially or different timestamp formats
+        messagesData.sort((a, b) => {
+          // Convert timestamps to comparable Date objects
+          const getTimestamp = (msg: ChatMessage): number => {
+            if (!msg.timestamp) return 0; // Put messages without timestamp at the start
+            
+            if (msg.timestamp?.toDate && typeof msg.timestamp.toDate === 'function') {
+              return msg.timestamp.toDate().getTime();
+            } else if (msg.timestamp instanceof Date) {
+              return msg.timestamp.getTime();
+            } else if (typeof msg.timestamp === 'number') {
+              return msg.timestamp;
+            } else if (typeof msg.timestamp === 'string') {
+              return new Date(msg.timestamp).getTime();
+            }
+            return 0;
+          };
+          
+          const timeA = getTimestamp(a);
+          const timeB = getTimestamp(b);
+          
+          return timeA - timeB; // Sort ascending (oldest first)
+        });
+        
+        console.log("💬 Processed and sorted messages:", messagesData.map(m => ({
+          id: m.id,
+          sender: m.senderName,
+          timestamp: m.timestamp,
+          message: m.message?.substring(0, 30)
+        })));
+        
         setMessages(messagesData);
         setLoadingMessages(false);
         
@@ -536,7 +621,8 @@ export function ChatSupportPage() {
         mobileNumber: phoneNumber,
         profilePicture: profilePictureUrl,
         profilePictureUrl: profilePictureUrl,
-        lastAccessTime: serverTimestamp()
+        lastAccessTime: serverTimestamp(), // Always update access time to bring chat to top
+        updatedAt: serverTimestamp() // Track when chat metadata was last updated
       };
       
       // If messages exist, populate with last message info
@@ -545,10 +631,15 @@ export function ChatSupportPage() {
         chatData.lastMessage = lastMessage.message || lastMessage.content || "";
         chatData.lastMessageTime = lastMessage.timestamp || serverTimestamp();
         chatData.lastMessageSenderName = lastMessage.senderName || "";
+        // Set createdAt if it doesn't exist (for older restored chats)
+        // Use merge: true so we don't overwrite existing createdAt
         console.log("📬 Restoring chat with last message:", chatData.lastMessage);
         toast.success("Chat restored with existing messages");
       } else {
+        // For brand new chats without any messages
         chatData.createdAt = serverTimestamp();
+        chatData.lastMessage = "No messages yet";
+        chatData.lastMessageTime = serverTimestamp(); // Set this so new chats appear at top
         toast.success("Chat session started");
       }
 
@@ -1297,7 +1388,18 @@ export function ChatSupportPage() {
                           console.log("🔍 Rendering message:", msg);
                           console.log("Message content field:", msg.message);
                           
-                          const isAdmin = msg.senderId !== selectedSession?.userId;
+                          // Check if message is from admin by comparing senderId with user IDs
+                          // User messages: senderId matches userId/id/firebaseUid of selected session
+                          // Admin messages: senderId is different (admin's uid)
+                          const userIds = [
+                            selectedSession?.userId,
+                            selectedSession?.id,
+                            selectedSession?.firebaseUid
+                          ].filter(Boolean);
+                          
+                          const isAdmin = !userIds.includes(msg.senderId);
+                          
+                          console.log("📧 Message ID:", msg.id, "| Sender:", msg.senderId, "| Is Admin:", isAdmin, "| User IDs:", userIds);
                           
                           // Check if this message matches the search query
                           const isSearchMatch = searchMatchingMessages.some(m => m.id === msg.id);
