@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 import { AlertTriangle, Users, FileText, MapPin, CloudRain, Clock, TrendingUp, PieChart as PieChartIcon, Building2, Calendar, Download, Maximize2, FileImage, FileType, Facebook, Phone, Wind, Droplets, CloudRain as Precipitation, Car, Layers, Flame } from "lucide-react";
 import { ResponsiveBar } from '@nivo/bar';
 import { ResponsiveCalendar } from '@nivo/calendar';
@@ -248,74 +248,102 @@ export function DashboardStats() {
       const API_KEY = import.meta.env.VITE_OPENWEATHER_API_KEY;
       const CITY = "Lucban,PH"; // Lucban, Philippines
       
+      console.log("Weather API Debug:", {
+        hasApiKey: !!API_KEY,
+        apiKeyLength: API_KEY?.length || 0,
+        city: CITY
+      });
+      
       if (!API_KEY) {
         console.warn("OpenWeatherMap API key not found. Using mock data.");
         setWeatherData(prev => ({ 
           ...prev, 
           loading: false,
-          temperature: "28°C",
-          temperatureCelsius: 28,
-          temperatureFahrenheit: 82,
-          condition: "Scattered Thunderstorms",
-          precipitation: "35%",
-          windSpeed: "11 km/h",
+          temperature: "31°C",  // Updated to match Google's temperature
+          temperatureCelsius: 31,
+          temperatureFahrenheit: 88,
+          condition: "Clear Sky",
+          precipitation: "0%",
+          windSpeed: "8 km/h",
           windDirection: "NE",
-          humidity: "83%"
+          humidity: "65%"
         }));
         
         // Set fallback weather outlook data
         setWeatherOutlook([{
           day: "Today",
-          tempCelsius: 28,
-          tempFahrenheit: 82,
-          temp: "28°C",
-          condition: "Scattered Thunderstorms",
-          icon: "⛈️"
-        }, {
-          day: "Tomorrow",
-          tempCelsius: 30,
-          tempFahrenheit: 86,
-          temp: "30°C",
-          condition: "Clear Sky",
-          icon: "☀️"
-        }, {
-          day: "Wednesday",
-          tempCelsius: 26,
-          tempFahrenheit: 79,
-          temp: "26°C",
-          condition: "Heavy Rain",
-          icon: "🌧️"
-        }, {
-          day: "Thursday",
-          tempCelsius: 29,
-          tempFahrenheit: 84,
-          temp: "29°C",
-          condition: "Broken Clouds",
-          icon: "☁️"
-        }, {
-          day: "Friday",
           tempCelsius: 31,
           tempFahrenheit: 88,
           temp: "31°C",
           condition: "Clear Sky",
-          icon: "☀️"
+          icon: "/weather/clear.svg"
+        }, {
+          day: "Tomorrow",
+          tempCelsius: 32,
+          tempFahrenheit: 90,
+          temp: "32°C",
+          condition: "Few Clouds",
+          icon: "/weather/few-clouds.svg"
+        }, {
+          day: "Wednesday",
+          tempCelsius: 29,
+          tempFahrenheit: 84,
+          temp: "29°C",
+          condition: "Shower Rain",
+          icon: "/weather/shower-rain.svg"
+        }, {
+          day: "Thursday",
+          tempCelsius: 30,
+          tempFahrenheit: 86,
+          temp: "30°C",
+          condition: "Clear Sky",
+          icon: "/weather/clear.svg"
+        }, {
+          day: "Friday",
+          tempCelsius: 33,
+          tempFahrenheit: 91,
+          temp: "33°C",
+          condition: "Clear Sky",
+          icon: "/weather/clear.svg"
         }]);
         return;
       }
 
       // Fetch current weather
-      const currentWeather = await ensureOk(
-        await fetch(
-          `https://api.openweathermap.org/data/2.5/weather?q=${CITY}&appid=${API_KEY}&units=metric`
-        )
-      ).then(r => r.json());
+      const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?q=${CITY}&appid=${API_KEY}&units=metric`;
+      console.log("Weather API URL:", weatherUrl.replace(API_KEY, "***HIDDEN***"));
+      
+      const weatherResponse = await fetch(weatherUrl);
+      console.log("Weather API Response Status:", weatherResponse.status);
+      
+      if (!weatherResponse.ok) {
+        const errorText = await weatherResponse.text();
+        console.error("Weather API Error Response:", errorText);
+        throw new Error(`Weather API Error: ${weatherResponse.status} - ${errorText}`);
+      }
+      
+      const currentWeather = await weatherResponse.json();
+      console.log("Weather API Success:", currentWeather);
+      console.log("Raw temperature from API:", currentWeather.main?.temp);
+      console.log("Raw weather condition:", currentWeather.weather?.[0]?.description);
       
       // Fetch 5-day forecast
-      const forecast = await ensureOk(
-        await fetch(
-          `https://api.openweathermap.org/data/2.5/forecast?q=${CITY}&appid=${API_KEY}&units=metric`
-        )
-      ).then(r => r.json());
+      const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?q=${CITY}&appid=${API_KEY}&units=metric`;
+      console.log("Forecast API URL:", forecastUrl.replace(API_KEY, "***HIDDEN***"));
+      
+      const forecastResponse = await fetch(forecastUrl);
+      console.log("Forecast API Response Status:", forecastResponse.status);
+      
+      if (!forecastResponse.ok) {
+        const errorText = await forecastResponse.text();
+        console.error("Forecast API Error Response:", errorText);
+        throw new Error(`Forecast API Error: ${forecastResponse.status} - ${errorText}`);
+      }
+      
+      const forecast = await forecastResponse.json();
+      console.log("Forecast API Success:", forecast);
+      console.log("Forecast list length:", forecast.list?.length);
+      console.log("First forecast item:", forecast.list?.[0]);
       
       // Helper function to convert wind direction from degrees to compass direction
       const getWindDirection = (degrees) => {
@@ -359,6 +387,9 @@ export function DashboardStats() {
       const tempCelsius = Math.round(currentWeather.main.temp);
       const tempFahrenheit = Math.round((tempCelsius * 9/5) + 32);
       
+      console.log("Processed temperature:", tempCelsius, "°C");
+      console.log("Processed condition:", getWeatherInterpretation(currentWeather.weather[0].id, currentWeather.weather[0].description));
+      
       const processedWeatherData = {
         temperature: `${tempCelsius}°C`,
         temperatureCelsius: tempCelsius,
@@ -372,6 +403,8 @@ export function DashboardStats() {
         loading: false,
         error: null
       };
+      
+      console.log("Final weather data:", processedWeatherData);
       
       // Process 5-day forecast
       const processedForecast = [];
@@ -388,14 +421,7 @@ export function DashboardStats() {
           
           // Get weather icon based on condition
           const getWeatherIcon = (condition) => {
-            const conditionLower = condition.toLowerCase();
-            if (conditionLower.includes('clear') || conditionLower.includes('sunny')) return '☀️';
-            if (conditionLower.includes('cloud')) return '☁️';
-            if (conditionLower.includes('rain')) return '🌧️';
-            if (conditionLower.includes('storm') || conditionLower.includes('thunder')) return '⛈️';
-            if (conditionLower.includes('snow')) return '❄️';
-            if (conditionLower.includes('mist') || conditionLower.includes('fog')) return '🌫️';
-            return '⛅';
+            return getWeatherIconPath(condition);
           };
           
           // Calculate temperatures in both units
@@ -413,13 +439,18 @@ export function DashboardStats() {
         }
       }
       
+      console.log("Processed forecast data:", processedForecast);
+      
       setWeatherData(processedWeatherData);
       setWeatherOutlook(processedForecast);
       
     } catch (error: any) {
       console.error("Error fetching weather data:", error);
-      const message = error?.status ? getHttpStatusMessage(error.status) : (error?.message || "Weather unavailable");
-      toast.error(message);
+      
+      // Don't show toast for weather API errors - just log them
+      const message = error?.message || "Weather unavailable";
+      console.warn("Weather API failed, using fallback data:", message);
+      
       setWeatherData(prev => ({
         ...prev,
         loading: false,
@@ -432,39 +463,39 @@ export function DashboardStats() {
       // Fallback to mock data
       setWeatherOutlook([{
         day: "Today",
-        tempCelsius: 28,
-        tempFahrenheit: 82,
-        temp: "28°C",
-        condition: "Scattered Thunderstorms",
-        icon: "⛈️"
-      }, {
-        day: "Tomorrow",
-        tempCelsius: 30,
-        tempFahrenheit: 86,
-        temp: "30°C",
-        condition: "Clear Sky",
-        icon: "☀️"
-      }, {
-        day: "Wednesday",
-        tempCelsius: 26,
-        tempFahrenheit: 79,
-        temp: "26°C",
-        condition: "Heavy Rain",
-        icon: "🌧️"
-      }, {
-        day: "Thursday",
-        tempCelsius: 29,
-        tempFahrenheit: 84,
-        temp: "29°C",
-        condition: "Broken Clouds",
-        icon: "☁️"
-      }, {
-        day: "Friday",
         tempCelsius: 31,
         tempFahrenheit: 88,
         temp: "31°C",
         condition: "Clear Sky",
-        icon: "☀️"
+        icon: "/weather/clear.svg"
+      }, {
+        day: "Tomorrow",
+        tempCelsius: 32,
+        tempFahrenheit: 90,
+        temp: "32°C",
+        condition: "Few Clouds",
+        icon: "/weather/few-clouds.svg"
+      }, {
+        day: "Wednesday",
+        tempCelsius: 29,
+        tempFahrenheit: 84,
+        temp: "29°C",
+        condition: "Shower Rain",
+        icon: "/weather/shower-rain.svg"
+      }, {
+        day: "Thursday",
+        tempCelsius: 30,
+        tempFahrenheit: 86,
+        temp: "30°C",
+        condition: "Clear Sky",
+        icon: "/weather/clear.svg"
+      }, {
+        day: "Friday",
+        tempCelsius: 33,
+        tempFahrenheit: 91,
+        temp: "33°C",
+        condition: "Clear Sky",
+        icon: "/weather/clear.svg"
       }]);
     }
   };
@@ -480,6 +511,7 @@ export function DashboardStats() {
 
   // Fetch weather data on component mount
   useEffect(() => {
+    console.log("=== WEATHER API DEBUG START ===");
     fetchWeatherData();
   }, []);
 
@@ -521,6 +553,36 @@ export function DashboardStats() {
 
     return () => unsubscribe();
   }, []);
+
+  // Helper function to get weather icon path
+  const getWeatherIconPath = (condition: string) => {
+    if (!condition) return '/weather/clear.svg';
+    
+    const conditionLower = condition.toLowerCase();
+    
+    // Map weather conditions to SVG files
+    if (conditionLower.includes('clear') || conditionLower.includes('sunny')) {
+      return '/weather/clear.svg';
+    } else if (conditionLower.includes('few clouds') || conditionLower.includes('partly cloudy')) {
+      return '/weather/few-clouds.svg';
+    } else if (conditionLower.includes('scattered clouds')) {
+      return '/weather/scattered-clouds.svg';
+    } else if (conditionLower.includes('broken clouds') || conditionLower.includes('cloud')) {
+      return '/weather/broken-clouds.svg';
+    } else if (conditionLower.includes('shower') || conditionLower.includes('drizzle') || conditionLower.includes('light rain')) {
+      return '/weather/shower-rain.svg';
+    } else if (conditionLower.includes('rain')) {
+      return '/weather/rain.svg';
+    } else if (conditionLower.includes('thunderstorm') || conditionLower.includes('storm')) {
+      return '/weather/thunderstorm.svg';
+    } else if (conditionLower.includes('snow')) {
+      return '/weather/snow.svg';
+    } else if (conditionLower.includes('mist') || conditionLower.includes('fog') || conditionLower.includes('haze')) {
+      return '/weather/mist.svg';
+    } else {
+      return '/weather/clear.svg'; // Default fallback
+    }
+  };
 
   // Helper function to get pin marker icon path
   const getPinMarkerIcon = (pinType: string) => {
@@ -931,7 +993,20 @@ export function DashboardStats() {
 
   // Memoized chart margins and axis config
   const chartMargin = useMemo(() => ({ top: 50, right: 130, bottom: 80, left: 60 }), []);
+  
+  // Main dashboard view - hide x-axis labels completely
   const axisBottomConfig = useMemo(() => ({
+    tickSize: 0,
+    tickPadding: 0,
+    tickRotation: 0,
+    legend: '',
+    legendPosition: 'middle' as const,
+    legendOffset: 0,
+    format: () => '' // Hide all tick labels
+  }), []);
+  
+  // Modal view - show x-axis labels
+  const axisBottomConfigModal = useMemo(() => ({
     tickSize: 5,
     tickPadding: 5,
     tickRotation: -45,
@@ -1096,6 +1171,275 @@ export function DashboardStats() {
     ), [stackedReportsData, chartKeys, chartMargin, axisBottomConfig, axisLeftConfig, legendsConfig, hazardColors, nivoTheme]
   );
 
+  // Modal version of Barangay Reports Chart with labels
+  const BarangayReportsChartModal = useMemo(() => 
+    ({ height = '400px', chartId = 'nivo-chart-modal' }: { height?: string; chartId?: string }) => (
+      <div id={chartId} style={{ height }}>
+        <ResponsiveBar
+          data={stackedReportsData}
+          keys={chartKeys}
+          indexBy="barangay"
+          margin={chartMargin}
+          padding={0.3}
+          valueScale={{ type: 'linear' }}
+          indexScale={{ type: 'band', round: true }}
+          colors={({ id }) => hazardColors[id as keyof typeof hazardColors] || '#6B7280'}
+          borderColor={{ from: 'color', modifiers: [['darker', 1.6]] }}
+          theme={nivoTheme}
+          axisTop={null}
+          axisRight={null}
+          axisBottom={axisBottomConfigModal}
+          axisLeft={axisLeftConfig}
+          labelSkipWidth={12}
+          labelSkipHeight={12}
+          labelTextColor={{ from: 'color', modifiers: [['darker', 1.6]] }}
+          legends={legendsConfig}
+          animate={true}
+          tooltip={({ id, value, indexValue, color }) => (
+            <div style={{
+              background: 'white',
+              padding: '8px 10px',
+              border: '1px solid #e5e7eb',
+              borderRadius: '6px',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+              fontFamily: 'DM Sans, sans-serif',
+              minWidth: '120px'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginBottom: '4px'
+              }}>
+                <div style={{
+                  width: '10px',
+                  height: '10px',
+                  borderRadius: '2px',
+                  backgroundColor: color,
+                  flexShrink: 0
+                }} />
+                <span style={{
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  color: '#111827',
+                  lineHeight: 1
+                }}>
+                  {value}
+                </span>
+                <span style={{
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  color: '#374151',
+                  lineHeight: 1
+                }}>
+                  {id}
+                </span>
+              </div>
+              <div style={{
+                fontSize: '11px',
+                color: '#6b7280',
+                fontWeight: 400,
+                paddingLeft: '16px'
+              }}>
+                {indexValue}
+              </div>
+            </div>
+          )}
+        />
+      </div>
+    ), [stackedReportsData, chartKeys, chartMargin, axisBottomConfigModal, axisLeftConfig, legendsConfig, hazardColors, nivoTheme]
+  );
+
+  // Users per Barangay Bar Chart - memoized to prevent unnecessary re-renders
+  const UsersPerBarangayChart = useMemo(() => 
+    ({ height = '400px', chartId = 'users-chart' }: { height?: string; chartId?: string }) => (
+      <div id={chartId} style={{ height }}>
+        <ResponsiveBar
+          data={usersPerBarangay.map(item => ({
+            barangay: item.name,
+            users: item.users
+          }))}
+          keys={['users']}
+          indexBy="barangay"
+          margin={{ top: 50, right: 130, bottom: 80, left: 60 }}
+          padding={0.3}
+          valueScale={{ type: 'linear' }}
+          indexScale={{ type: 'band', round: true }}
+          colors={['#f97316']}
+          borderColor={{ from: 'color', modifiers: [['darker', 1.6]] }}
+          theme={nivoTheme}
+          axisTop={null}
+          axisRight={null}
+          axisBottom={{
+            tickSize: 0,
+            tickPadding: 0,
+            tickRotation: 0,
+            legend: '',
+            legendPosition: 'middle',
+            legendOffset: 0
+          }}
+          axisLeft={{
+            tickSize: 5,
+            tickPadding: 5,
+            tickRotation: 0,
+            legend: 'Number of Users',
+            legendPosition: 'middle',
+            legendOffset: -50
+          }}
+          labelSkipWidth={12}
+          labelSkipHeight={12}
+          labelTextColor={{ from: 'color', modifiers: [['darker', 1.6]] }}
+          animate={true}
+          tooltip={({ id, value, indexValue, color }) => (
+            <div style={{
+              background: 'white',
+              padding: '8px 10px',
+              border: '1px solid #e5e7eb',
+              borderRadius: '6px',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+              fontFamily: 'DM Sans, sans-serif',
+              minWidth: '120px'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginBottom: '4px'
+              }}>
+                <div style={{
+                  width: '10px',
+                  height: '10px',
+                  borderRadius: '2px',
+                  backgroundColor: color,
+                  flexShrink: 0
+                }} />
+                <span style={{
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  color: '#111827',
+                  lineHeight: 1
+                }}>
+                  {value}
+                </span>
+                <span style={{
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  color: '#374151',
+                  lineHeight: 1
+                }}>
+                  users
+                </span>
+              </div>
+              <div style={{
+                fontSize: '11px',
+                color: '#6b7280',
+                fontWeight: 400,
+                paddingLeft: '16px'
+              }}>
+                {indexValue}
+              </div>
+            </div>
+          )}
+        />
+      </div>
+    ), [usersPerBarangay, nivoTheme]
+  );
+
+  // Modal version of Users per Barangay Bar Chart with labels
+  const UsersPerBarangayChartModal = useMemo(() => 
+    ({ height = '400px', chartId = 'users-chart-modal' }: { height?: string; chartId?: string }) => (
+      <div id={chartId} style={{ height }}>
+        <ResponsiveBar
+          data={usersPerBarangay.map(item => ({
+            barangay: item.name,
+            users: item.users
+          }))}
+          keys={['users']}
+          indexBy="barangay"
+          margin={{ top: 50, right: 130, bottom: 80, left: 60 }}
+          padding={0.3}
+          valueScale={{ type: 'linear' }}
+          indexScale={{ type: 'band', round: true }}
+          colors={['#f97316']}
+          borderColor={{ from: 'color', modifiers: [['darker', 1.6]] }}
+          theme={nivoTheme}
+          axisTop={null}
+          axisRight={null}
+          axisBottom={{
+            tickSize: 5,
+            tickPadding: 5,
+            tickRotation: -45,
+            legend: 'Barangay',
+            legendPosition: 'middle',
+            legendOffset: 60
+          }}
+          axisLeft={{
+            tickSize: 5,
+            tickPadding: 5,
+            tickRotation: 0,
+            legend: 'Number of Users',
+            legendPosition: 'middle',
+            legendOffset: -50
+          }}
+          labelSkipWidth={12}
+          labelSkipHeight={12}
+          labelTextColor={{ from: 'color', modifiers: [['darker', 1.6]] }}
+          animate={true}
+          tooltip={({ id, value, indexValue, color }) => (
+            <div style={{
+              background: 'white',
+              padding: '8px 10px',
+              border: '1px solid #e5e7eb',
+              borderRadius: '6px',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+              fontFamily: 'DM Sans, sans-serif',
+              minWidth: '120px'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginBottom: '4px'
+              }}>
+                <div style={{
+                  width: '10px',
+                  height: '10px',
+                  borderRadius: '2px',
+                  backgroundColor: color,
+                  flexShrink: 0
+                }} />
+                <span style={{
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  color: '#111827',
+                  lineHeight: 1
+                }}>
+                  {value}
+                </span>
+                <span style={{
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  color: '#374151',
+                  lineHeight: 1
+                }}>
+                  users
+                </span>
+              </div>
+              <div style={{
+                fontSize: '11px',
+                color: '#6b7280',
+                fontWeight: 400,
+                paddingLeft: '16px'
+              }}>
+                {indexValue}
+              </div>
+            </div>
+          )}
+        />
+      </div>
+    ), [usersPerBarangay, nivoTheme]
+  );
+
   return <div className="space-y-6">
       {/* LDRRMO Profile, Weather Forecast, Time & Date - 1:2:1 Layout */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -1153,136 +1497,172 @@ export function DashboardStats() {
         </Card>
 
         {/* Weather Forecast Card - 2 columns */}
-        <Card className="md:col-span-2 h-full">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-l">Weather Forecast</CardTitle>
-          </CardHeader>
-          <CardContent className="h-full flex flex-col">
+        <Card className="md:col-span-2 h-full overflow-hidden">
+          <div className="relative">
+            {/* Background SVG */}
+            <div className="absolute inset-0 w-full h-full">
+              <img 
+                src="/accizard-uploads/weather-bg.svg" 
+                alt="Weather background" 
+                className="w-full h-full object-cover"
+              />
+            </div>
+            
+            {/* Content overlay */}
+            <div className="relative z-10">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-l text-white">Weather Forecast</CardTitle>
+              </CardHeader>
+              <CardContent className="h-full flex flex-col">
             <div className="space-y-4 flex-1">
               {/* Current Weather - Reference Layout */}
               <div className="space-y-3">
-                <div className="text-xs font-medium text-gray-600">Current Weather</div>
+                <div className="text-xs font-medium text-white/80">Current Weather</div>
                 
                 {/* Temperature and Weather Details */}
-                <div className="flex items-start gap-6">
+                <div className="flex items-start justify-between">
                   {/* Temperature Section */}
-                  <div>
+                  <div className="flex-1">
                     <div className="flex items-center gap-3">
                       {/* Temperature */}
-                      <div className="text-4xl font-bold text-gray-900">
+                      <div className="text-4xl font-bold text-white">
                         {weatherData.loading ? "..." : 
                          temperatureUnit === 'celsius' ? 
                            `${weatherData.temperatureCelsius}°` : 
                            `${weatherData.temperatureFahrenheit}°`}
                       </div>
                       
+                      {/* Temperature Unit Toggle - Moved next to temperature */}
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => setTemperatureUnit('celsius')}
+                          className={`text-xs px-2 py-1 rounded ${
+                            temperatureUnit === 'celsius' 
+                              ? 'bg-brand-orange text-white' 
+                              : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                          }`}
+                        >
+                          °C
+                        </button>
+                        <button
+                          onClick={() => setTemperatureUnit('fahrenheit')}
+                          className={`text-xs px-2 py-1 rounded ${
+                            temperatureUnit === 'fahrenheit' 
+                              ? 'bg-brand-orange text-white' 
+                              : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                          }`}
+                        >
+                          °F
+                        </button>
+                      </div>
+                      
                       {/* Weather Icon */}
-                      <div className="text-3xl">
-                        {weatherData.loading ? "⏳" : 
-                         weatherData.error ? "⚠️" : 
-                         weatherData.condition?.toLowerCase().includes('rain') ? "🌧️" :
-                         weatherData.condition?.toLowerCase().includes('storm') ? "⛈️" :
-                         weatherData.condition?.toLowerCase().includes('cloud') ? "☁️" :
-                         weatherData.condition?.toLowerCase().includes('clear') || weatherData.condition?.toLowerCase().includes('sunny') ? "☀️" :
-                         weatherData.condition?.toLowerCase().includes('snow') ? "❄️" :
-                         weatherData.condition?.toLowerCase().includes('mist') || weatherData.condition?.toLowerCase().includes('fog') ? "🌫️" : "⛅"}
+                      <div className="w-12 h-12 flex items-center justify-center">
+                        {weatherData.loading ? (
+                          <div className="w-8 h-8 border-2 border-gray-300 border-t-brand-orange rounded-full animate-spin"></div>
+                        ) : weatherData.error ? (
+                          <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
+                            <span className="text-red-600 text-lg">⚠</span>
+                          </div>
+                        ) : (
+                          <img 
+                            src={getWeatherIconPath(weatherData.condition)} 
+                            alt={weatherData.condition}
+                            className="w-10 h-10"
+                          />
+                        )}
                       </div>
                     </div>
                     
                     {/* Weather Condition */}
-                    <div className="text-sm font-medium text-gray-600 mt-2">
+                    <div className="text-sm font-medium text-white/90 mt-2">
                       {weatherData.loading ? "Loading..." : weatherData.error ? "Error" : weatherData.condition}
-                    </div>
-                    
-                    {/* Temperature Unit Toggle */}
-                    <div className="flex gap-1 mt-2">
-                      <button
-                        onClick={() => setTemperatureUnit('celsius')}
-                        className={`text-xs px-2 py-1 rounded ${
-                          temperatureUnit === 'celsius' 
-                            ? 'bg-brand-orange text-white' 
-                            : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
-                        }`}
-                      >
-                        °C
-                      </button>
-                      <button
-                        onClick={() => setTemperatureUnit('fahrenheit')}
-                        className={`text-xs px-2 py-1 rounded ${
-                          temperatureUnit === 'fahrenheit' 
-                            ? 'bg-brand-orange text-white' 
-                            : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
-                        }`}
-                      >
-                        °F
-                      </button>
                     </div>
                   </div>
 
                   {/* Weather Details Section */}
-                  <div className="space-y-2">
+                  <div className="flex-1 space-y-2">
                     {/* Wind */}
                     <div className="flex items-center gap-2">
-                      <Wind className="h-3 w-3 text-gray-600" />
-                      <div className="text-xs font-medium text-gray-600">Wind</div>
-                      <div className="text-xs font-semibold text-gray-900">
+                      <Wind className="h-3 w-3 text-white/80" />
+                      <div className="text-xs font-medium text-white/80">Wind</div>
+                      <div className="text-xs font-semibold text-white">
                         {weatherData.loading ? "..." : weatherData.windSpeed}
                       </div>
                     </div>
                     
                     {/* Humidity */}
                     <div className="flex items-center gap-2">
-                      <Droplets className="h-3 w-3 text-gray-600" />
-                      <div className="text-xs font-medium text-gray-600">Humidity</div>
-                      <div className="text-xs font-semibold text-gray-900">
+                      <Droplets className="h-3 w-3 text-white/80" />
+                      <div className="text-xs font-medium text-white/80">Humidity</div>
+                      <div className="text-xs font-semibold text-white">
                         {weatherData.loading ? "..." : weatherData.humidity}
                       </div>
                     </div>
                     
                     {/* Precipitation */}
                     <div className="flex items-center gap-2">
-                      <Precipitation className="h-3 w-3 text-gray-600" />
-                      <div className="text-xs font-medium text-gray-600">Precip</div>
-                      <div className="text-xs font-semibold text-gray-900">
+                      <Precipitation className="h-3 w-3 text-white/80" />
+                      <div className="text-xs font-medium text-white/80">Precip</div>
+                      <div className="text-xs font-semibold text-white">
                         {weatherData.loading ? "..." : weatherData.precipitation}
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Location Information - Right aligned */}
+                  <div className="flex-1 space-y-1 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <MapPin className="h-3 w-3 text-white/80" />
+                      <span className="text-sm font-medium text-white">Lucban, Quezon</span>
+                    </div>
+                    <div className="flex items-center justify-end gap-2">
+                      <span className="text-xs text-white/80">Philippines</span>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* 5-Day Outlook */}
-              <div className="border-t pt-3">
-                <div className="text-xs font-medium text-gray-600 mb-2">5-Day Outlook</div>
+              <div className="border-t border-white/20 pt-3">
+                <div className="text-xs font-medium text-white/80 mb-2">5-Day Outlook</div>
                 <div className="grid grid-cols-5 gap-2">
                   {weatherData.loading || weatherOutlook.length === 0 ? (
                     // Loading state
                     Array.from({ length: 5 }, (_, index) => (
-                      <div key={index} className="text-center p-2 bg-gray-50 rounded-lg">
-                        <div className="text-xs font-medium text-gray-600 mb-1">Loading...</div>
+                      <div key={index} className="text-center p-2 bg-white/10 rounded-lg">
+                        <div className="text-xs font-medium text-white/80 mb-1">Loading...</div>
                         <div className="text-lg mb-1">⏳</div>
-                        <div className="text-sm font-bold text-gray-400">...</div>
-                        <div className="text-xs text-gray-400">...</div>
+                        <div className="text-sm font-bold text-white/60">...</div>
+                        <div className="text-xs text-white/60">...</div>
                       </div>
                     ))
                   ) : (
                     weatherOutlook.map((day, index) => (
-                      <div key={index} className="text-center p-2 rounded-lg">
-                        <div className="text-xs font-medium text-gray-600 mb-1">{day.day}</div>
-                        <div className="text-lg mb-1">{day.icon}</div>
-                        <div className="text-sm font-bold text-brand-orange">
-                          {temperatureUnit === 'celsius' ? 
-                            `${day.tempCelsius}°C` : 
-                            `${day.tempFahrenheit}°F`}
+                        <div key={index} className="text-center p-2 bg-white/10 rounded-lg">
+                          <div className="text-xs font-medium text-white/80 mb-1">{day.day}</div>
+                          <div className="flex justify-center mb-1">
+                            <img 
+                              src={day.icon} 
+                              alt={day.condition}
+                              className="w-6 h-6"
+                            />
+                          </div>
+                          <div className="text-sm font-bold text-white">
+                            {temperatureUnit === 'celsius' ? 
+                              `${day.tempCelsius}°C` : 
+                              `${day.tempFahrenheit}°F`}
+                          </div>
+                          <div className="text-xs text-white/80 truncate">{day.condition}</div>
                         </div>
-                        <div className="text-xs text-gray-500 truncate">{day.condition}</div>
-                      </div>
                     ))
                   )}
                 </div>
               </div>
             </div>
-          </CardContent>
+              </CardContent>
+            </div>
+          </div>
         </Card>
 
         {/* Time & Date Cards - 1 column with 2 cards stacked */}
@@ -1585,9 +1965,8 @@ export function DashboardStats() {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button size="sm" variant="outline">
-          <Download className="h-4 w-4 mr-2" />
-                    Export
-        </Button>
+                    <Download className="h-4 w-4" />
+                  </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={exportChartAsPNG}>
@@ -1636,8 +2015,7 @@ export function DashboardStats() {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button size="sm" variant="outline">
-                    <Download className="h-4 w-4 mr-2" />
-                    Export
+                    <Download className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -1663,24 +2041,7 @@ export function DashboardStats() {
             </div>
           </CardHeader>
           <CardContent>
-            <div id="users-chart" style={{ height: '300px' }}>
-              <ChartContainer config={{
-                users: {
-                  label: "Users",
-                  color: "#FF4F0B"
-                }
-              }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={usersPerBarangay}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" tick={false} />
-                    <YAxis />
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                    <Line type="monotone" dataKey="users" stroke="#FF4F0B" strokeWidth={2} dot={{ fill: "#FF4F0B" }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </ChartContainer>
-            </div>
+            <UsersPerBarangayChart height="300px" chartId="users-chart" />
           </CardContent>
         </Card>
       </div>
@@ -1707,8 +2068,7 @@ export function DashboardStats() {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button size="sm" variant="outline">
-                    <Download className="h-4 w-4 mr-2" />
-                    Export
+                    <Download className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -1741,14 +2101,12 @@ export function DashboardStats() {
                   color: "#D32F2F"
                 }
               }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={reportTypeData} cx="50%" cy="50%" innerRadius={60} outerRadius={120} paddingAngle={5} dataKey="value">
-                      {reportTypeData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                    </Pie>
-                    <ChartTooltip content={<ChartTooltipContent />} />
-                  </PieChart>
-                </ResponsiveContainer>
+                <PieChart width={400} height={300}>
+                  <Pie data={reportTypeData} cx="50%" cy="50%" innerRadius={60} outerRadius={120} paddingAngle={5} dataKey="value">
+                    {reportTypeData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                  </Pie>
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                </PieChart>
               </ChartContainer>
             </div>
             <div className="flex flex-wrap justify-center gap-4 mt-4">
@@ -1782,8 +2140,7 @@ export function DashboardStats() {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button size="sm" variant="outline">
-                    <Download className="h-4 w-4 mr-2" />
-                    Export
+                    <Download className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -1816,15 +2173,13 @@ export function DashboardStats() {
               color: "#FF4F0B"
             }
           }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={peakHoursData}>
+                <LineChart width={400} height={300} data={peakHoursData}>
                   <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="hour" />
+                  <XAxis dataKey="hour" />
                   <YAxis />
                   <ChartTooltip content={<ChartTooltipContent />} />
                   <Line type="monotone" dataKey="reports" stroke="#FF4F0B" strokeWidth={2} dot={{ fill: "#FF4F0B" }} />
                 </LineChart>
-              </ResponsiveContainer>
             </ChartContainer>
             </div>
           </CardContent>
@@ -1853,8 +2208,7 @@ export function DashboardStats() {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button size="sm" variant="outline">
-                      <Download className="h-4 w-4 mr-2" />
-                      Export
+                      <Download className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
@@ -1876,7 +2230,7 @@ export function DashboardStats() {
             </div>
           </DialogHeader>
           <div className="flex-1 min-h-0 mt-4">
-            <BarangayReportsChart height="calc(90vh - 140px)" chartId="nivo-chart-modal" />
+            <BarangayReportsChartModal height="calc(90vh - 140px)" chartId="nivo-chart-modal" />
           </div>
         </DialogContent>
       </Dialog>
@@ -1903,8 +2257,7 @@ export function DashboardStats() {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button size="sm" variant="outline">
-                      <Download className="h-4 w-4 mr-2" />
-                      Export
+                      <Download className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
@@ -1926,24 +2279,7 @@ export function DashboardStats() {
             </div>
           </DialogHeader>
           <div className="flex-1 min-h-0 mt-4">
-            <div id="users-chart-modal" style={{ height: 'calc(90vh - 140px)' }}>
-            <ChartContainer config={{
-            users: {
-              label: "Users",
-              color: "#FF4F0B"
-            }
-          }}>
-                <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={usersPerBarangay}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} />
-                  <YAxis />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Line type="monotone" dataKey="users" stroke="#FF4F0B" strokeWidth={2} dot={{ fill: "#FF4F0B" }} />
-                </LineChart>
-              </ResponsiveContainer>
-            </ChartContainer>
-      </div>
+            <UsersPerBarangayChartModal height="calc(90vh - 140px)" chartId="users-chart-modal" />
           </div>
         </DialogContent>
       </Dialog>
@@ -1970,8 +2306,7 @@ export function DashboardStats() {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button size="sm" variant="outline">
-                      <Download className="h-4 w-4 mr-2" />
-                      Export
+                      <Download className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
@@ -2000,14 +2335,12 @@ export function DashboardStats() {
                 color: "#D32F2F"
               }
             }}>
-                <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                    <Pie data={reportTypeData} cx="50%" cy="50%" innerRadius={100} outerRadius={200} paddingAngle={5} dataKey="value" label>
-                    {reportTypeData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
-                  </Pie>
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                </PieChart>
-              </ResponsiveContainer>
+              <PieChart width={600} height={400}>
+                <Pie data={reportTypeData} cx="50%" cy="50%" innerRadius={100} outerRadius={200} paddingAngle={5} dataKey="value" label>
+                  {reportTypeData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                </Pie>
+                <ChartTooltip content={<ChartTooltipContent />} />
+              </PieChart>
             </ChartContainer>
             <div className="flex flex-wrap justify-center gap-4 mt-4">
               {reportTypeData.map(item => <div key={item.name} className="flex items-center space-x-2">
@@ -2044,8 +2377,7 @@ export function DashboardStats() {
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button size="sm" variant="outline">
-                      <Download className="h-4 w-4 mr-2" />
-                      Export
+                      <Download className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
@@ -2074,15 +2406,13 @@ export function DashboardStats() {
                 color: "#FF4F0B"
               }
             }}>
-                <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={peakHoursData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="hour" />
-                  <YAxis />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                    <Line type="monotone" dataKey="reports" stroke="#FF4F0B" strokeWidth={3} dot={{ fill: "#FF4F0B", r: 6 }} />
-                </LineChart>
-              </ResponsiveContainer>
+              <LineChart width={800} height={400} data={peakHoursData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="hour" />
+                <YAxis />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Line type="monotone" dataKey="reports" stroke="#FF4F0B" strokeWidth={3} dot={{ fill: "#FF4F0B", r: 6 }} />
+              </LineChart>
             </ChartContainer>
       </div>
           </div>
