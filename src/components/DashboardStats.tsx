@@ -1,17 +1,28 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
-import { AlertTriangle, Users, FileText, MapPin, CloudRain, Clock, TrendingUp, PieChart as PieChartIcon, Building2, Calendar, Download, Maximize2, FileImage, FileType } from "lucide-react";
+import { AlertTriangle, Users, FileText, MapPin, CloudRain, Clock, TrendingUp, PieChart as PieChartIcon, Building2, Calendar, Download, Maximize2, FileImage, FileType, Facebook, Phone, Wind, Droplets, CloudRain as Precipitation, Car, Layers, Flame } from "lucide-react";
 import { ResponsiveBar } from '@nivo/bar';
+import { ResponsiveCalendar } from '@nivo/calendar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/sonner";
 import { ensureOk, getHttpStatusMessage } from "@/lib/utils";
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+import { usePins } from "@/hooks/usePins";
+import { Pin } from "@/types/pin";
+import { db } from "@/lib/firebase";
+import { collection, query, orderBy, onSnapshot, where, Timestamp } from "firebase/firestore";
+
+// Use the custom Mapbox access token for AcciZard Lucban
+mapboxgl.accessToken = 'pk.eyJ1IjoiYWNjaXphcmQtbHVjYmFuIiwiYSI6ImNtY3VhOHdxODAwcjcya3BzYTR2M25kcTEifQ.aBi4Zmkezyqa7Pfh519KbQ';
 
 export function DashboardStats() {
+  const { subscribeToPins } = usePins();
   const [totalReportsFilter, setTotalReportsFilter] = useState("this-week");
   const [barangayReportsFilter, setBarangayReportsFilter] = useState("this-week");
   const [usersBarangayFilter, setUsersBarangayFilter] = useState("this-week");
@@ -24,16 +35,26 @@ export function DashboardStats() {
   const [isPeakHoursModalOpen, setIsPeakHoursModalOpen] = useState(false);
   const [weatherData, setWeatherData] = useState({
     temperature: "28°C",
-    condition: "Partly Cloudy",
+    temperatureCelsius: 28,
+    temperatureFahrenheit: 82,
+    condition: "Scattered Thunderstorms",
     humidity: "75%",
     rainfall: "Light",
-    precipitation: "0mm",
-    windSpeed: "0 km/h",
-    windDirection: "N",
+    precipitation: "35%",
+    windSpeed: "11 km/h",
+    windDirection: "NE",
     loading: true,
     error: null
   });
   const [weatherOutlook, setWeatherOutlook] = useState([]);
+  const [temperatureUnit, setTemperatureUnit] = useState<'celsius' | 'fahrenheit'>('celsius');
+  const [pins, setPins] = useState<Pin[]>([]);
+  const [mapLayerMode, setMapLayerMode] = useState<'normal' | 'traffic' | 'heatmap'>('normal');
+  const [reports, setReports] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const map = useRef<mapboxgl.Map | null>(null);
+  const markersRef = useRef<mapboxgl.Marker[]>([]);
 
   // Hazard colors using brand-orange and brand-red shades
   const hazardColors = useMemo(() => ({
@@ -196,13 +217,13 @@ export function DashboardStats() {
     reports: 5
   }];
 
-  // Calendar heatmap data for the past year
-  const generateCalendarData = () => {
+  // Calendar heatmap data for 2025 only
+  const generateCalendarData2025 = () => {
     const data = [];
-    const today = new Date();
-    const startDate = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
+    const startDate = new Date(2025, 0, 1); // January 1, 2025
+    const endDate = new Date(2025, 11, 31); // December 31, 2025
     
-    for (let d = new Date(startDate); d <= today; d.setDate(d.getDate() + 1)) {
+    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
       const dateStr = d.toISOString().split('T')[0];
       // Generate random report counts (0-8) with some realistic patterns
       const dayOfWeek = d.getDay();
@@ -211,19 +232,16 @@ export function DashboardStats() {
       const extraCount = Math.random() < 0.1 ? Math.floor(Math.random() * 3) : 0; // 10% chance of extra activity
       
       data.push({
-        date: dateStr,
-        count: baseCount + extraCount,
-        day: d.getDate(),
-        month: d.getMonth(),
-        year: d.getFullYear()
+        day: dateStr,
+        value: baseCount + extraCount
       });
     }
     return data;
   };
 
-  const calendarData = generateCalendarData();
+  const calendarData2025 = generateCalendarData2025();
 
-  // OpenWeatherMap API integration
+  // Enhanced Weather API integration (similar to Google Weather)
   const fetchWeatherData = async () => {
     try {
       // You'll need to add your OpenWeatherMap API key to environment variables
@@ -235,10 +253,53 @@ export function DashboardStats() {
         setWeatherData(prev => ({ 
           ...prev, 
           loading: false,
-          precipitation: "2mm",
-          windSpeed: "8 km/h",
-          windDirection: "NE"
+          temperature: "28°C",
+          temperatureCelsius: 28,
+          temperatureFahrenheit: 82,
+          condition: "Scattered Thunderstorms",
+          precipitation: "35%",
+          windSpeed: "11 km/h",
+          windDirection: "NE",
+          humidity: "83%"
         }));
+        
+        // Set fallback weather outlook data
+        setWeatherOutlook([{
+          day: "Today",
+          tempCelsius: 28,
+          tempFahrenheit: 82,
+          temp: "28°C",
+          condition: "Scattered Thunderstorms",
+          icon: "⛈️"
+        }, {
+          day: "Tomorrow",
+          tempCelsius: 30,
+          tempFahrenheit: 86,
+          temp: "30°C",
+          condition: "Clear Sky",
+          icon: "☀️"
+        }, {
+          day: "Wednesday",
+          tempCelsius: 26,
+          tempFahrenheit: 79,
+          temp: "26°C",
+          condition: "Heavy Rain",
+          icon: "🌧️"
+        }, {
+          day: "Thursday",
+          tempCelsius: 29,
+          tempFahrenheit: 84,
+          temp: "29°C",
+          condition: "Broken Clouds",
+          icon: "☁️"
+        }, {
+          day: "Friday",
+          tempCelsius: 31,
+          tempFahrenheit: 88,
+          temp: "31°C",
+          condition: "Clear Sky",
+          icon: "☀️"
+        }]);
         return;
       }
 
@@ -263,10 +324,46 @@ export function DashboardStats() {
         return directions[index];
       };
 
+      // Helper function to get weather interpretation
+      const getWeatherInterpretation = (weatherCode, description) => {
+        const code = weatherCode;
+        const desc = description.toLowerCase();
+        
+        // Weather interpretations based on OpenWeatherMap codes and descriptions
+        if (code >= 200 && code < 300) return "Thunderstorm";
+        if (code >= 300 && code < 400) return "Drizzle";
+        if (code >= 500 && code < 600) {
+          if (desc.includes('heavy')) return "Heavy Rain";
+          if (desc.includes('moderate')) return "Moderate Rain";
+          if (desc.includes('light')) return "Light Rain";
+          return "Rain";
+        }
+        if (code >= 600 && code < 700) return "Snow";
+        if (code >= 700 && code < 800) {
+          if (desc.includes('mist')) return "Mist";
+          if (desc.includes('fog')) return "Fog";
+          if (desc.includes('haze')) return "Haze";
+          return "Atmospheric";
+        }
+        if (code === 800) return "Clear Sky";
+        if (code === 801) return "Few Clouds";
+        if (code === 802) return "Scattered Clouds";
+        if (code === 803) return "Broken Clouds";
+        if (code === 804) return "Overcast";
+        
+        // Fallback to capitalized description
+        return description.charAt(0).toUpperCase() + description.slice(1);
+      };
+
       // Process current weather data
+      const tempCelsius = Math.round(currentWeather.main.temp);
+      const tempFahrenheit = Math.round((tempCelsius * 9/5) + 32);
+      
       const processedWeatherData = {
-        temperature: `${Math.round(currentWeather.main.temp)}°C`,
-        condition: currentWeather.weather[0].description,
+        temperature: `${tempCelsius}°C`,
+        temperatureCelsius: tempCelsius,
+        temperatureFahrenheit: tempFahrenheit,
+        condition: getWeatherInterpretation(currentWeather.weather[0].id, currentWeather.weather[0].description),
         humidity: `${currentWeather.main.humidity}%`,
         rainfall: currentWeather.rain ? `${currentWeather.rain['1h'] || 0}mm` : "0mm",
         precipitation: currentWeather.rain ? `${currentWeather.rain['1h'] || 0}mm` : "0mm",
@@ -279,7 +376,6 @@ export function DashboardStats() {
       // Process 5-day forecast
       const processedForecast = [];
       const today = new Date();
-      const dayNames = ['Today', 'Tomorrow', 'Wednesday', 'Thursday', 'Friday'];
       
       // Get daily forecasts (every 8th item = 24 hours apart)
       for (let i = 0; i < 5; i++) {
@@ -302,10 +398,16 @@ export function DashboardStats() {
             return '⛅';
           };
           
+          // Calculate temperatures in both units
+          const tempCelsius = Math.round(dayForecast.main.temp);
+          const tempFahrenheit = Math.round((tempCelsius * 9/5) + 32);
+          
           processedForecast.push({
             day: dayName,
-            temp: `${Math.round(dayForecast.main.temp)}°C`,
-            condition: dayForecast.weather[0].description,
+            tempCelsius: tempCelsius,
+            tempFahrenheit: tempFahrenheit,
+            temp: `${tempCelsius}°C`, // Default to Celsius
+            condition: getWeatherInterpretation(dayForecast.weather[0].id, dayForecast.weather[0].description),
             icon: getWeatherIcon(dayForecast.weather[0].description)
           });
         }
@@ -330,28 +432,38 @@ export function DashboardStats() {
       // Fallback to mock data
       setWeatherOutlook([{
         day: "Today",
+        tempCelsius: 28,
+        tempFahrenheit: 82,
         temp: "28°C",
-        condition: "Partly Cloudy",
-        icon: "⛅"
+        condition: "Scattered Thunderstorms",
+        icon: "⛈️"
       }, {
         day: "Tomorrow",
+        tempCelsius: 30,
+        tempFahrenheit: 86,
         temp: "30°C",
-        condition: "Sunny",
+        condition: "Clear Sky",
         icon: "☀️"
       }, {
         day: "Wednesday",
+        tempCelsius: 26,
+        tempFahrenheit: 79,
         temp: "26°C",
-        condition: "Rainy",
+        condition: "Heavy Rain",
         icon: "🌧️"
       }, {
         day: "Thursday",
+        tempCelsius: 29,
+        tempFahrenheit: 84,
         temp: "29°C",
-        condition: "Cloudy",
+        condition: "Broken Clouds",
         icon: "☁️"
       }, {
         day: "Friday",
+        tempCelsius: 31,
+        tempFahrenheit: 88,
         temp: "31°C",
-        condition: "Sunny",
+        condition: "Clear Sky",
         icon: "☀️"
       }]);
     }
@@ -370,6 +482,268 @@ export function DashboardStats() {
   useEffect(() => {
     fetchWeatherData();
   }, []);
+
+  // Fetch reports from Firestore
+  useEffect(() => {
+    const reportsQuery = query(collection(db, "reports"), orderBy("timestamp", "desc"));
+    const unsubscribe = onSnapshot(reportsQuery, (snapshot) => {
+      const fetched = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          timestamp: data.timestamp?.toDate() || new Date()
+        };
+      });
+      setReports(fetched);
+    }, (error) => {
+      console.error("Error fetching reports:", error);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Fetch users from Firestore
+  useEffect(() => {
+    const usersQuery = query(collection(db, "users"));
+    const unsubscribe = onSnapshot(usersQuery, (snapshot) => {
+      const fetched = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data
+        };
+      });
+      setUsers(fetched);
+    }, (error) => {
+      console.error("Error fetching users:", error);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Helper function to get pin marker icon path
+  const getPinMarkerIcon = (pinType: string) => {
+    const icons: Record<string, string> = {
+      'Road Crash': '/markers/road-crash.svg',
+      'Fire': '/markers/fire.svg',
+      'Medical Emergency': '/markers/medical-emergency.svg',
+      'Flooding': '/markers/flooding.svg',
+      'Volcanic Activity': '/markers/volcano.svg',
+      'Landslide': '/markers/landslide.svg',
+      'Earthquake': '/markers/earthquake.svg',
+      'Civil Disturbance': '/markers/civil-disturbance.svg',
+      'Armed Conflict': '/markers/armed-conflict.svg',
+      'Infectious Disease': '/markers/infectious-disease.svg',
+      'Others': '/markers/default.svg',
+      'Evacuation Centers': '/markers/evacuation-center.svg',
+      'Health Facilities': '/markers/health-facility.svg',
+      'Police Stations': '/markers/police-station.svg',
+      'Fire Stations': '/markers/fire-station.svg',
+      'Government Offices': '/markers/government-office.svg'
+    };
+    return icons[pinType] || '/markers/default.svg';
+  };
+
+  // Initialize map snippet
+  useEffect(() => {
+    if (mapContainer.current && !map.current) {
+      map.current = new mapboxgl.Map({
+        container: mapContainer.current,
+        style: 'mapbox://styles/accizard-lucban/cmh0vikyo00c501st1cprgxwc', // Custom AcciZard style (aligned with RiskMapPage)
+        center: [121.5556, 14.1139], // Lucban, Quezon coordinates (aligned with RiskMapPage)
+        zoom: 13,
+        attributionControl: false
+      });
+
+      // Wait for map to load before adding traffic source
+      map.current.on('load', () => {
+        if (!map.current) return;
+        
+        // Add traffic source
+        if (!map.current.getSource('mapbox-traffic')) {
+          map.current.addSource('mapbox-traffic', {
+            type: 'vector',
+            url: 'mapbox://mapbox.mapbox-traffic-v1'
+          });
+        }
+
+        // Add traffic layer (hidden by default)
+        if (!map.current.getLayer('traffic')) {
+          map.current.addLayer({
+            id: 'traffic',
+            type: 'line',
+            source: 'mapbox-traffic',
+            'source-layer': 'traffic',
+            paint: {
+              'line-width': 2,
+              'line-color': [
+                'case',
+                ['==', ['get', 'congestion'], 'low'], '#4ade80',
+                ['==', ['get', 'congestion'], 'moderate'], '#fbbf24',
+                ['==', ['get', 'congestion'], 'heavy'], '#f87171',
+                ['==', ['get', 'congestion'], 'severe'], '#dc2626',
+                '#94a3b8'
+              ]
+            },
+            layout: {
+              'visibility': 'none'
+            }
+          });
+        }
+      });
+    }
+
+    return () => {
+      if (map.current) {
+        map.current.remove();
+        map.current = null;
+      }
+    };
+  }, []);
+
+  // Update markers when pins change
+  useEffect(() => {
+    if (!map.current) return;
+
+    // Clear existing markers
+    markersRef.current.forEach(marker => marker.remove());
+    markersRef.current = [];
+
+    // Add markers for each pin
+    pins.forEach(pin => {
+      const iconPath = getPinMarkerIcon(pin.type);
+      
+      const el = document.createElement('div');
+      el.className = 'marker';
+      el.style.cssText = `
+        width: 40px;
+        height: 40px;
+        cursor: pointer;
+        background-image: url('${iconPath}');
+        background-size: contain;
+        background-repeat: no-repeat;
+        background-position: center;
+      `;
+
+      // Add popup with pin information
+      const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(`
+        <div style="font-family: 'DM Sans', sans-serif;">
+          <h3 style="font-weight: 600; margin-bottom: 4px;">${pin.title}</h3>
+          <p style="font-size: 12px; color: #6b7280; margin-bottom: 4px;">${pin.type}</p>
+          <p style="font-size: 11px; color: #9ca3af;">${pin.locationName}</p>
+        </div>
+      `);
+
+      const marker = new mapboxgl.Marker(el)
+        .setLngLat([pin.longitude, pin.latitude])
+        .setPopup(popup)
+        .addTo(map.current!);
+
+      markersRef.current.push(marker);
+    });
+  }, [pins]);
+
+  // Subscribe to pins from database
+  useEffect(() => {
+    console.log('Subscribing to pins for dashboard map');
+    
+    const unsubscribe = subscribeToPins(
+      {}, // No filters - show all pins
+      (fetchedPins) => {
+        console.log('Dashboard map: Pins updated from database:', fetchedPins.length);
+        setPins(fetchedPins);
+      },
+      (error) => {
+        console.error('Dashboard map: Error fetching pins:', error);
+        // Silently fail - don't show error toast on dashboard
+      }
+    );
+
+    return () => {
+      console.log('Dashboard map: Unsubscribing from pins');
+      unsubscribe();
+    };
+  }, [subscribeToPins]);
+
+  // Handle map layer mode changes
+  useEffect(() => {
+    if (!map.current || !map.current.isStyleLoaded()) return;
+
+    const currentMap = map.current;
+
+    // Toggle traffic layer
+    if (currentMap.getLayer('traffic')) {
+      currentMap.setLayoutProperty(
+        'traffic',
+        'visibility',
+        mapLayerMode === 'traffic' ? 'visible' : 'none'
+      );
+    }
+
+    // Toggle heatmap
+    if (mapLayerMode === 'heatmap') {
+      // Add heatmap layer if it doesn't exist
+      if (!currentMap.getLayer('pins-heatmap')) {
+        // Create GeoJSON from pins
+        const geojsonData: GeoJSON.FeatureCollection = {
+          type: 'FeatureCollection',
+          features: pins.map(pin => ({
+            type: 'Feature',
+            geometry: {
+              type: 'Point',
+              coordinates: [pin.longitude, pin.latitude]
+            },
+            properties: {
+              intensity: 1
+            }
+          }))
+        };
+
+        // Add source if doesn't exist
+        if (!currentMap.getSource('pins-heatmap-source')) {
+          currentMap.addSource('pins-heatmap-source', {
+            type: 'geojson',
+            data: geojsonData
+          });
+        }
+
+        // Add heatmap layer
+        currentMap.addLayer({
+          id: 'pins-heatmap',
+          type: 'heatmap',
+          source: 'pins-heatmap-source',
+          paint: {
+            'heatmap-weight': 1,
+            'heatmap-intensity': 1,
+            'heatmap-color': [
+              'interpolate',
+              ['linear'],
+              ['heatmap-density'],
+              0, 'rgba(0, 0, 255, 0)',
+              0.2, 'rgb(0, 255, 255)',
+              0.4, 'rgb(0, 255, 0)',
+              0.6, 'rgb(255, 255, 0)',
+              0.8, 'rgb(255, 165, 0)',
+              1, 'rgb(255, 0, 0)'
+            ],
+            'heatmap-radius': 30,
+            'heatmap-opacity': 0.7
+          }
+        });
+      }
+
+      // Show heatmap, hide markers
+      currentMap.setLayoutProperty('pins-heatmap', 'visibility', 'visible');
+      markersRef.current.forEach(marker => marker.getElement().style.display = 'none');
+    } else {
+      // Hide heatmap, show markers
+      if (currentMap.getLayer('pins-heatmap')) {
+        currentMap.setLayoutProperty('pins-heatmap', 'visibility', 'none');
+      }
+      markersRef.current.forEach(marker => marker.getElement().style.display = 'block');
+    }
+  }, [mapLayerMode, pins]);
 
   // Format current time for display
   const formattedTime = currentTime.toLocaleString("en-PH", {
@@ -596,6 +970,53 @@ export function DashboardStats() {
     ]
   }], []);
 
+  // Calculate dynamic statistics from reports
+  const weeklyReports = useMemo(() => {
+    const now = new Date();
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    return reports.filter(r => r.timestamp >= oneWeekAgo).length;
+  }, [reports]);
+
+  const activeUsers = useMemo(() => {
+    return users.length;
+  }, [users]);
+
+  const mostCommonType = useMemo(() => {
+    if (reports.length === 0) return { type: 'N/A', count: 0, percentage: 0 };
+    
+    const typeCounts: Record<string, number> = {};
+    reports.forEach(report => {
+      const type = report.type || 'Others';
+      typeCounts[type] = (typeCounts[type] || 0) + 1;
+    });
+
+    const sortedTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+    if (sortedTypes.length === 0) return { type: 'N/A', count: 0, percentage: 0 };
+
+    const [type, count] = sortedTypes[0];
+    const percentage = Math.round((count / reports.length) * 100);
+    
+    return { type, count, percentage };
+  }, [reports]);
+
+  const avgResponseTime = useMemo(() => {
+    const reportsWithResponseTime = reports.filter(r => 
+      r.resolvedAt && r.timestamp
+    );
+    
+    if (reportsWithResponseTime.length === 0) return 0;
+
+    const totalMinutes = reportsWithResponseTime.reduce((sum, report) => {
+      const resolvedTime = report.resolvedAt?.toDate ? report.resolvedAt.toDate() : new Date(report.resolvedAt);
+      const submittedTime = report.timestamp;
+      const diffMs = resolvedTime.getTime() - submittedTime.getTime();
+      const diffMinutes = diffMs / (1000 * 60);
+      return sum + diffMinutes;
+    }, 0);
+
+    return (totalMinutes / reportsWithResponseTime.length).toFixed(1);
+  }, [reports]);
+
   // Reusable chart component - memoized to prevent unnecessary re-renders
   const BarangayReportsChart = useMemo(() => 
     ({ height = '400px', chartId = 'nivo-chart' }: { height?: string; chartId?: string }) => (
@@ -676,67 +1097,157 @@ export function DashboardStats() {
   );
 
   return <div className="space-y-6">
-      {/* PST & Weather Card - Uneven Layout */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-        {/* PST Card - Time and Date */}
-        <Card className="md:col-span-2">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Time and Date</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-                {/* Calendar Widget */}
-              <div className="flex justify-center">
-                <div className="text-center">
-                  <div className="text-xs font-medium text-gray-600 mb-1">
-                    {currentTime.toLocaleDateString('en-US', { month: 'short' })}
-                  </div>
-                  <div className="text-lg font-bold text-brand-orange">
-                    {currentTime.getDate()}
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    {currentTime.toLocaleDateString('en-US', { weekday: 'short' })}
-                  </div>
+      {/* LDRRMO Profile, Weather Forecast, Time & Date - 1:2:1 Layout */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        {/* Lucban LDRRMO Profile Card - 1 column */}
+        <Card className="h-full">
+          <CardContent className="flex flex-col justify-between h-full">
+            <div className="space-y-4">
+              {/* LDRRMO Logo */}
+              <div className="flex justify-center pt-4">
+                <img 
+                  src="/accizard-uploads/logo-ldrrmo-png.png" 
+                  alt="Lucban LDRRMO" 
+                  className="h-36 w-auto object-contain"
+                />
+              </div>
+                
+              {/* Organization Info */}
+              <div className="text-center space-y-2">
+                <div className="text-sm font-semibold text-gray-900 leading-tight">
+                  Lucban Disaster Risk Reduction and Management Office
                 </div>
               </div>
-              
-              {/* Time Display */}
-              <div className="text-center">
-                <div className="text-sm font-bold text-gray-900">{formattedTime}</div>
-                <div className="text-xs text-gray-500">Asia/Manila</div>
+            </div>
+
+            {/* Contact Information */}
+            <div className="space-y-3 pt-4">
+              {/* Facebook */}
+              <div className="space-y-1">
+                <div className="text-xs font-regular text-gray-600 text-center">Facebook</div>
+                <div className="flex items-center justify-center space-x-2">
+                  <Facebook className="h-4 w-4 text-blue-600" />
+                  <a 
+                    href="https://www.facebook.com/LucbanDRRMO" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                  >
+                    Lucban DRRM Office
+                  </a>
+                </div>
+              </div>
+
+              {/* Contact Numbers */}
+              <div className="space-y-1">
+                <div className="text-xs font-regular text-gray-600 text-center">Contact Numbers</div>
+                <div className="flex items-center justify-center space-x-2">
+                  <Phone className="h-4 w-4 text-brand-orange" />
+                  <div className="text-xs font-semibold text-brand-orange">
+                    540-1709 or 0917 520 4211
+                  </div>
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Weather Card - Larger with 5-day outlook */}
-        <Card className="md:col-span-3">
+        {/* Weather Forecast Card - 2 columns */}
+        <Card className="md:col-span-2 h-full">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Weather Forecast</CardTitle>
+            <CardTitle className="text-l">Weather Forecast</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {/* Current Weather */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="text-2xl">
-                    {weatherData.loading ? "⏳" : 
-                     weatherData.error ? "⚠️" : "⛅"}
-                  </div>
+          <CardContent className="h-full flex flex-col">
+            <div className="space-y-4 flex-1">
+              {/* Current Weather - Reference Layout */}
+              <div className="space-y-3">
+                <div className="text-xs font-medium text-gray-600">Current Weather</div>
+                
+                {/* Temperature and Weather Details */}
+                <div className="flex items-start gap-6">
+                  {/* Temperature Section */}
                   <div>
-                    <div className="text-xl font-bold text-gray-900">
-                      {weatherData.loading ? "Loading..." : weatherData.temperature}
+                    <div className="flex items-center gap-3">
+                      {/* Temperature */}
+                      <div className="text-4xl font-bold text-gray-900">
+                        {weatherData.loading ? "..." : 
+                         temperatureUnit === 'celsius' ? 
+                           `${weatherData.temperatureCelsius}°` : 
+                           `${weatherData.temperatureFahrenheit}°`}
+                      </div>
+                      
+                      {/* Weather Icon */}
+                      <div className="text-3xl">
+                        {weatherData.loading ? "⏳" : 
+                         weatherData.error ? "⚠️" : 
+                         weatherData.condition?.toLowerCase().includes('rain') ? "🌧️" :
+                         weatherData.condition?.toLowerCase().includes('storm') ? "⛈️" :
+                         weatherData.condition?.toLowerCase().includes('cloud') ? "☁️" :
+                         weatherData.condition?.toLowerCase().includes('clear') || weatherData.condition?.toLowerCase().includes('sunny') ? "☀️" :
+                         weatherData.condition?.toLowerCase().includes('snow') ? "❄️" :
+                         weatherData.condition?.toLowerCase().includes('mist') || weatherData.condition?.toLowerCase().includes('fog') ? "🌫️" : "⛅"}
+                      </div>
                     </div>
-                    <div className="text-sm text-gray-700">
-                      {weatherData.loading ? "Fetching weather..." : 
-                       weatherData.error ? "Weather unavailable" : weatherData.condition}
+                    
+                    {/* Weather Condition */}
+                    <div className="text-sm font-medium text-gray-600 mt-2">
+                      {weatherData.loading ? "Loading..." : weatherData.error ? "Error" : weatherData.condition}
+                    </div>
+                    
+                    {/* Temperature Unit Toggle */}
+                    <div className="flex gap-1 mt-2">
+                      <button
+                        onClick={() => setTemperatureUnit('celsius')}
+                        className={`text-xs px-2 py-1 rounded ${
+                          temperatureUnit === 'celsius' 
+                            ? 'bg-brand-orange text-white' 
+                            : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                        }`}
+                      >
+                        °C
+                      </button>
+                      <button
+                        onClick={() => setTemperatureUnit('fahrenheit')}
+                        className={`text-xs px-2 py-1 rounded ${
+                          temperatureUnit === 'fahrenheit' 
+                            ? 'bg-brand-orange text-white' 
+                            : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                        }`}
+                      >
+                        °F
+                      </button>
                     </div>
                   </div>
-                </div>
-                <div className="text-right text-xs text-gray-500 space-y-1">
-                  <div>Humidity: {weatherData.loading ? "..." : weatherData.humidity}</div>
-                  <div>Precipitation: {weatherData.loading ? "..." : weatherData.precipitation}</div>
-                  <div>Wind: {weatherData.loading ? "..." : `${weatherData.windSpeed} ${weatherData.windDirection}`}</div>
+
+                  {/* Weather Details Section */}
+                  <div className="space-y-2">
+                    {/* Wind */}
+                    <div className="flex items-center gap-2">
+                      <Wind className="h-3 w-3 text-gray-600" />
+                      <div className="text-xs font-medium text-gray-600">Wind</div>
+                      <div className="text-xs font-semibold text-gray-900">
+                        {weatherData.loading ? "..." : weatherData.windSpeed}
+                      </div>
+                    </div>
+                    
+                    {/* Humidity */}
+                    <div className="flex items-center gap-2">
+                      <Droplets className="h-3 w-3 text-gray-600" />
+                      <div className="text-xs font-medium text-gray-600">Humidity</div>
+                      <div className="text-xs font-semibold text-gray-900">
+                        {weatherData.loading ? "..." : weatherData.humidity}
+                      </div>
+                    </div>
+                    
+                    {/* Precipitation */}
+                    <div className="flex items-center gap-2">
+                      <Precipitation className="h-3 w-3 text-gray-600" />
+                      <div className="text-xs font-medium text-gray-600">Precip</div>
+                      <div className="text-xs font-semibold text-gray-900">
+                        {weatherData.loading ? "..." : weatherData.precipitation}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -744,7 +1255,7 @@ export function DashboardStats() {
               <div className="border-t pt-3">
                 <div className="text-xs font-medium text-gray-600 mb-2">5-Day Outlook</div>
                 <div className="grid grid-cols-5 gap-2">
-                  {weatherData.loading ? (
+                  {weatherData.loading || weatherOutlook.length === 0 ? (
                     // Loading state
                     Array.from({ length: 5 }, (_, index) => (
                       <div key={index} className="text-center p-2 bg-gray-50 rounded-lg">
@@ -756,10 +1267,14 @@ export function DashboardStats() {
                     ))
                   ) : (
                     weatherOutlook.map((day, index) => (
-                      <div key={index} className="text-center p-2 bg-gray-50 rounded-lg">
+                      <div key={index} className="text-center p-2 rounded-lg">
                         <div className="text-xs font-medium text-gray-600 mb-1">{day.day}</div>
                         <div className="text-lg mb-1">{day.icon}</div>
-                        <div className="text-sm font-bold text-brand-orange">{day.temp}</div>
+                        <div className="text-sm font-bold text-brand-orange">
+                          {temperatureUnit === 'celsius' ? 
+                            `${day.tempCelsius}°C` : 
+                            `${day.tempFahrenheit}°F`}
+                        </div>
                         <div className="text-xs text-gray-500 truncate">{day.condition}</div>
                       </div>
                     ))
@@ -769,30 +1284,227 @@ export function DashboardStats() {
             </div>
           </CardContent>
         </Card>
-      </div>
 
-      {/* Statistical Summary Cards with Filters */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-        <Card className="shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="p-6">
-            <div className="flex items-start justify-between">
-              <div className="flex items-start gap-3">
-                <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <FileText className="h-5 w-5 text-brand-orange" />
-                </div>
-                <div className="space-y-0.5">
-                  <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Total Reports</p>
-                  <p className="text-xs text-brand-orange font-medium">All time</p>
+        {/* Time & Date Cards - 1 column with 2 cards stacked */}
+        <div className="h-full flex flex-col gap-6">
+          {/* Time Card - Top */}
+          <Card className="flex-1">
+            <CardContent className="flex flex-col items-center justify-center h-full p-6">
+              {/* Time Display */}
+              <div className="text-center">
+                <div className="text-4xl font-bold text-gray-900 tracking-tight">
+                  {currentTime.toLocaleTimeString('en-PH', {
+                    timeZone: 'Asia/Manila',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                  })}
                 </div>
               </div>
-              <div className="text-right">
-                <p className="text-3xl font-bold text-gray-900">{getTotalReports()}</p>
+
+              {/* Timezone */}
+              <div className="text-center mt-3">
+                <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  Asia/Manila (GMT+8)
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Date Card - Bottom */}
+          <Card className="flex-1">
+            <CardContent className="flex flex-col items-center justify-center h-full p-6">
+              {/* Date Number */}
+              <div className="text-7xl font-black text-brand-orange leading-none">
+                {currentTime.toLocaleDateString('en-US', { 
+                  day: 'numeric'
+                })}
+              </div>
+
+              {/* Month and Year */}
+              <div className="text-lg font-semibold text-gray-700 mt-3">
+                {currentTime.toLocaleDateString('en-US', { 
+                  month: 'long',
+                  year: 'numeric'
+                })}
+              </div>
+
+              {/* Day of Week */}
+              <div className="text-sm font-medium text-gray-600 mt-1">
+                {currentTime.toLocaleDateString('en-US', { 
+                  weekday: 'long'
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+      </div>
+
+      {/* Calendar Heatmap and Map Snippet */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* Calendar Heatmap - Report Activity */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Report Activity Calendar - 2025</CardTitle>
+          </CardHeader>
+          <CardContent className="p-4">
+            <div className="space-y-3">
+              {/* Nivo Calendar Chart */}
+              <div style={{ height: '100px' }}>
+                <ResponsiveCalendar
+                  data={calendarData2025}
+                  from="2025-01-01"
+                  to="2025-12-31"
+                  emptyColor="#f3f4f6"
+                  colors={[
+                    '#fed7aa', // orange-200 (very light orange) - Infectious Disease
+                    '#fb923c', // brand-orange-400 (lighter) - Fire
+                    '#f97316', // brand-orange (primary) - Road Crash
+                    '#ea580c', // brand-orange-600 (darker) - Medical Emergency
+                    '#dc2626', // red-600 (medium red) - Earthquake
+                    '#991b1b'  // brand-red (primary) - Flooding
+                  ]}
+                  margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
+                  yearSpacing={20}
+                  monthBorderColor="#ffffff"
+                  dayBorderWidth={1}
+                  dayBorderColor="#ffffff"
+                  legends={[
+                    {
+                      anchor: 'bottom-right',
+                      direction: 'row',
+                      translateY: 20,
+                      itemCount: 4,
+                      itemWidth: 35,
+                      itemHeight: 30,
+                      itemsSpacing: 10,
+                      itemDirection: 'right-to-left'
+                    }
+                  ]}
+                  theme={nivoTheme}
+                  tooltip={({ day, value }) => (
+                    <div style={{
+                      background: 'white',
+                      padding: '8px 12px',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '6px',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                      fontFamily: 'DM Sans, sans-serif',
+                      fontSize: '12px'
+                    }}>
+                      <div style={{ fontWeight: 600, color: '#111827' }}>
+                        {new Date(day).toLocaleDateString('en-US', { 
+                          weekday: 'long', 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        })}
+                      </div>
+                      <div style={{ color: '#f97316', fontWeight: 500 }}>
+                        {value} reports
+                      </div>
+                    </div>
+                  )}
+                />
+              </div>
+
+              {/* Summary Stats */}
+              <div className="grid grid-cols-3 gap-3 pt-3 border-t">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-brand-orange">
+                    {calendarData2025.reduce((sum, day) => sum + day.value, 0)}
+                  </div>
+                  <div className="text-sm text-gray-600">Total Reports</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-brand-red">
+                    {Math.max(...calendarData2025.map(d => d.value))}
+                  </div>
+                  <div className="text-sm text-gray-600">Peak Day</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-gray-700">
+                    {(calendarData2025.reduce((sum, day) => sum + day.value, 0) / calendarData2025.length).toFixed(1)}
+                  </div>
+                  <div className="text-sm text-gray-600">Avg/Day</div>
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm hover:shadow-md transition-shadow">
+        {/* Map Snippet */}
+        <Card>
+          <CardContent className="p-4">
+            <div className="relative">
+              <div 
+                ref={mapContainer}
+                className="w-full h-64 rounded-lg border border-gray-200 overflow-hidden"
+                style={{ minHeight: '256px' }}
+              >
+                {/* Map will be rendered here */}
+              </div>
+              {/* Map Layer Toggle Button */}
+              <Button 
+                size="sm" 
+                variant="secondary"
+                className="absolute top-2 right-2 bg-white/90 hover:bg-white text-gray-700 border border-gray-300 shadow-sm"
+                onClick={() => {
+                  // Cycle through layer modes: normal -> traffic -> heatmap -> normal
+                  setMapLayerMode(prev => {
+                    if (prev === 'normal') return 'traffic';
+                    if (prev === 'traffic') return 'heatmap';
+                    return 'normal';
+                  });
+                }}
+              >
+                {mapLayerMode === 'normal' && (
+                  <>
+                    <Layers className="h-3 w-3 mr-1" />
+                    Normal
+                  </>
+                )}
+                {mapLayerMode === 'traffic' && (
+                  <>
+                    <Car className="h-3 w-3 mr-1" />
+                    Traffic
+                  </>
+                )}
+                {mapLayerMode === 'heatmap' && (
+                  <>
+                    <Flame className="h-3 w-3 mr-1" />
+                    Heatmap
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Statistical Summary Cards with Filters */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+        <Card className="shadow-sm">
+          <CardContent className="p-6">
+            <div className="flex items-start justify-between">
+              <div className="flex items-start gap-3">
+                <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle className="h-5 w-5 text-brand-orange" />
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Most Common Type</p>
+                  <p className="text-xs text-brand-orange font-medium">{mostCommonType.type} - {mostCommonType.percentage}%</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-3xl font-bold text-gray-900">{mostCommonType.count}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm">
           <CardContent className="p-6">
             <div className="flex items-start justify-between">
               <div className="flex items-start gap-3">
@@ -805,13 +1517,13 @@ export function DashboardStats() {
           </div>
               </div>
               <div className="text-right">
-                <p className="text-3xl font-bold text-gray-900">23</p>
+                <p className="text-3xl font-bold text-gray-900">{weeklyReports}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm hover:shadow-md transition-shadow">
+        <Card className="shadow-sm">
           <CardContent className="p-6">
             <div className="flex items-start justify-between">
               <div className="flex items-start gap-3">
@@ -824,140 +1536,32 @@ export function DashboardStats() {
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-3xl font-bold text-gray-900">1,240</p>
+                <p className="text-3xl font-bold text-gray-900">{activeUsers.toLocaleString()}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="shadow-sm hover:shadow-md transition-shadow">
+        <Card className="shadow-sm">
           <CardContent className="p-6">
             <div className="flex items-start justify-between">
               <div className="flex items-start gap-3">
                 <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <MapPin className="h-5 w-5 text-brand-orange" />
+                  <Clock className="h-5 w-5 text-brand-orange" />
                 </div>
                 <div className="space-y-0.5">
-                  <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Most Common Type</p>
-                  <p className="text-xs text-brand-orange font-medium">Road Crash - 45%</p>
+                  <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Avg Response Time</p>
+                  <p className="text-xs text-brand-orange font-medium">Emergency calls</p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-3xl font-bold text-gray-900">45</p>
+                <p className="text-3xl font-bold text-gray-900">8.5</p>
+                <p className="text-xs text-gray-500 font-medium">minutes</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
-
-      {/* Calendar Heatmap - Report Activity */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Report Activity Calendar</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {/* Legend */}
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Less</span>
-              <div className="flex items-center space-x-1">
-                <div className="w-3 h-3 bg-gray-100 rounded-sm"></div>
-                <div className="w-3 h-3 bg-brand-orange/20 rounded-sm"></div>
-                <div className="w-3 h-3 bg-brand-orange/40 rounded-sm"></div>
-                <div className="w-3 h-3 bg-brand-orange/60 rounded-sm"></div>
-                <div className="w-3 h-3 bg-brand-orange rounded-sm"></div>
-                <div className="w-3 h-3 bg-brand-red rounded-sm"></div>
-              </div>
-              <span className="text-sm text-gray-600">More</span>
-            </div>
-
-            {/* Calendar Grid */}
-            <div className="overflow-x-auto">
-              <div className="inline-block min-w-full">
-                {/* Month headers */}
-                <div className="flex mb-2">
-                  {Array.from({ length: 12 }, (_, i) => {
-                    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                    const monthData = calendarData.filter(d => d.month === i);
-                    const monthWidth = (monthData.length / 7) * 11; // Approximate width based on days
-                    return (
-                      <div key={i} className="text-xs text-gray-500 text-center" style={{ width: `${monthWidth}px` }}>
-                        {monthNames[i]}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Calendar squares */}
-                <div className="flex flex-wrap gap-1">
-                  {calendarData.map((day, index) => {
-                    const getIntensity = (count) => {
-                      if (count === 0) return 'bg-gray-100';
-                      if (count <= 1) return 'bg-brand-orange/20';
-                      if (count <= 2) return 'bg-brand-orange/40';
-                      if (count <= 3) return 'bg-brand-orange/60';
-                      if (count <= 5) return 'bg-brand-orange';
-                      return 'bg-brand-red';
-                    };
-
-                    const formatDate = (dateStr) => {
-                      const date = new Date(dateStr);
-                      return date.toLocaleDateString('en-US', { 
-                        weekday: 'long', 
-                        year: 'numeric', 
-                        month: 'long', 
-                        day: 'numeric' 
-                      });
-                    };
-
-                    return (
-                      <div
-                        key={index}
-                        className={`w-3 h-3 rounded-sm cursor-pointer hover:ring-2 hover:ring-brand-orange/50 transition-all ${getIntensity(day.count)}`}
-                        title={`${formatDate(day.date)}: ${day.count} reports`}
-                      />
-                    );
-                  })}
-                </div>
-
-                {/* Day labels */}
-                <div className="flex mt-2 text-xs text-gray-500">
-                  <div className="w-3"></div>
-                  <div className="w-3 text-center">S</div>
-                  <div className="w-3 text-center">M</div>
-                  <div className="w-3 text-center">T</div>
-                  <div className="w-3 text-center">W</div>
-                  <div className="w-3 text-center">T</div>
-                  <div className="w-3 text-center">F</div>
-                  <div className="w-3 text-center">S</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Summary Stats */}
-            <div className="grid grid-cols-3 gap-4 pt-4 border-t">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-brand-orange">
-                  {calendarData.reduce((sum, day) => sum + day.count, 0)}
-                </div>
-                <div className="text-sm text-gray-600">Total Reports</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-brand-red">
-                  {Math.max(...calendarData.map(d => d.count))}
-                </div>
-                <div className="text-sm text-gray-600">Peak Day</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-gray-700">
-                  {(calendarData.reduce((sum, day) => sum + day.count, 0) / calendarData.length).toFixed(1)}
-                </div>
-                <div className="text-sm text-gray-600">Avg/Day</div>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

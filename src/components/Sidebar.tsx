@@ -366,6 +366,30 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
         </div>
       </div>
 
+      {/* Partnership Card */}
+      {(!isCollapsed || isMobileOpen) && (
+        <div className="px-3 pb-3">
+          <div className="bg-white/10 backdrop-blur-sm rounded-lg p-3 border border-white/20">
+            <div className="flex items-center justify-between">
+              <img 
+                src="/accizard-uploads/logo-ldrrmo-png.png" 
+                alt="Lucban LDRRMO" 
+                className="h-8 w-auto object-contain"
+              />
+              <div className="text-center flex-1 px-2">
+                <div className="text-xs font-light text-muted">
+                  in partnership with
+                </div>
+                <div className="text-xs font-bold">
+                  Lucban LDRRMO
+                </div>
+              </div>
+              <div className="w-8"></div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sign Out Button */}
       <div className="p-3 border-t border-orange-400/30">
         <AlertDialog open={showSignOut} onOpenChange={setShowSignOut}>

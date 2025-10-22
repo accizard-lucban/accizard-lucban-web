@@ -41,8 +41,8 @@ import { Info } from 'lucide-react';
 import { ensureOk } from '@/lib/utils';
 import { Pin } from '@/types/pin';
 
-// Use environment variable for Mapbox access token
-mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+// Use the custom Mapbox access token for AcciZard Lucban
+mapboxgl.accessToken = 'pk.eyJ1IjoiYWNjaXphcmQtbHVjYmFuIiwiYSI6ImNtY3VhOHdxODAwcjcya3BzYTR2M25kcTEifQ.aBi4Zmkezyqa7Pfh519KbQ';
 
 interface Marker {
   id: string;
@@ -618,7 +618,7 @@ export function MapboxMap({
 
         map.current = new mapboxgl.Map({
           container: mapContainer.current,
-          style: 'mapbox://styles/mapbox/streets-v12',
+          style: 'mapbox://styles/accizard-lucban/cmh0vikyo00c501st1cprgxwc',
           center: center,
           zoom: zoom
         });
@@ -1304,4 +1304,5 @@ export function MapboxMap({
     </div>
   );
 }
+
 
