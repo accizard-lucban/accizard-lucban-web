@@ -374,7 +374,7 @@ export function AnnouncementsPage() {
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
-                  <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <div className="h-10 w-10 bg-orange-50 border border-orange-200 rounded-lg flex items-center justify-center flex-shrink-0">
                     <Info className="h-5 w-5 text-brand-orange" />
                   </div>
                   <div className="space-y-0.5">
@@ -393,7 +393,7 @@ export function AnnouncementsPage() {
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
-                  <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <div className="h-10 w-10 bg-orange-50 border border-orange-200 rounded-lg flex items-center justify-center flex-shrink-0">
                     <AlertTriangle className="h-5 w-5 text-brand-orange" />
                   </div>
                   <div className="space-y-0.5">
@@ -412,7 +412,7 @@ export function AnnouncementsPage() {
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
-                  <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <div className="h-10 w-10 bg-orange-50 border border-orange-200 rounded-lg flex items-center justify-center flex-shrink-0">
                     <Calendar className="h-5 w-5 text-brand-orange" />
                   </div>
                   <div className="space-y-0.5">

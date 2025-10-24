@@ -114,7 +114,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
       
       {/* Sidebar */}
       <div className={cn(
-        "bg-gradient-to-b from-orange-500 to-red-600 text-white transition-all duration-300 flex flex-col h-screen fixed left-0 top-0 z-50",
+        "bg-brand-orange text-white transition-all duration-300 flex flex-col h-screen fixed left-0 top-0 z-50",
         // Mobile: slide in/out
         isMobileOpen ? "w-64 translate-x-0" : "w-0 -translate-x-full",
         // Tablet and Desktop: always visible with proper width
@@ -123,7 +123,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
         isCollapsed ? "lg:w-16" : "lg:w-64"
       )}>
       {/* Header */}
-      <div className="p-4 border-b border-orange-400/30 flex items-center justify-between">
+      <div className="p-4 border-b border-white/20 flex items-center justify-between">
         {(!isCollapsed || isMobileOpen) && <div className="flex items-center space-x-3">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-transparent">
               <img alt="ACCIZARD" className="w-8 h-8" src="/accizard-uploads/accizard-logo-white-png.png" />
@@ -135,7 +135,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
         
         {/* Mobile close button */}
         {isMobileOpen && onMobileClose && (
-          <button onClick={onMobileClose} className="p-2 hover:bg-orange-400/20 rounded-lg transition-colors lg:hidden">
+          <button onClick={onMobileClose} className="p-2 hover:bg-white/20 rounded-lg transition-colors lg:hidden">
             <X className="h-5 w-5" />
           </button>
         )}
@@ -144,7 +144,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
         <button 
           onClick={() => onCollapse(!isCollapsed)} 
           className={cn(
-            "p-2 hover:bg-orange-400/20 rounded-lg transition-colors",
+            "p-2 hover:bg-white/20 rounded-lg transition-colors",
             isMobileOpen && "hidden lg:block"
           )}
         >
@@ -155,7 +155,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
       {/* Menu */}
       <div className="flex-1 py-6 overflow-y-auto">
         <div className="px-3">
-          {(!isCollapsed || isMobileOpen) && <div className="text-xs font-semibold text-orange-100 uppercase tracking-wider mb-4 px-3">
+          {(!isCollapsed || isMobileOpen) && <div className="text-xs font-semibold text-white/90 uppercase tracking-wider mb-4 px-3">
               MENU
             </div>}
           <nav className="space-y-2">
@@ -181,7 +181,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
                       className={cn(
                         "w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", 
                         (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "justify-between px-4 py-3", 
-                        (location.pathname === '/chat-support' || location.pathname === '/admin-chat') ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white"
+                        (location.pathname === '/chat-support' || location.pathname === '/admin-chat') ? "bg-white text-brand-orange shadow-lg" : "text-white/90 hover:bg-white/20 hover:text-white"
                       )}
                     >
                       <div className={cn("flex items-center", (isCollapsed && !isMobileOpen) && "justify-center")}>
@@ -212,7 +212,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
                             "w-full flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
                             location.pathname === "/chat-support"
                               ? "bg-orange-400/30 text-white"
-                              : "text-orange-100 hover:bg-orange-400/20 hover:text-white"
+                              : "text-white/90 hover:bg-white/20 hover:text-white"
                           )}
                         >
                           Resident Support
@@ -226,7 +226,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
                             "w-full flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
                             location.pathname === "/admin-chat"
                               ? "bg-orange-400/30 text-white"
-                              : "text-orange-100 hover:bg-orange-400/20 hover:text-white"
+                              : "text-white/90 hover:bg-white/20 hover:text-white"
                           )}
                         >
                           Admin Chat
@@ -257,7 +257,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
                       className={cn(
                         "w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", 
                         (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "justify-between px-4 py-3", 
-                        (isActive(item.path) || location.pathname.startsWith('/manage-users')) ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white"
+                        (isActive(item.path) || location.pathname.startsWith('/manage-users')) ? "bg-white text-brand-orange shadow-lg" : "text-white/90 hover:bg-white/20 hover:text-white"
                       )}
                     >
                       <div className={cn("flex items-center", (isCollapsed && !isMobileOpen) && "justify-center")}>
@@ -289,7 +289,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
                               "w-full flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
                               location.pathname === "/manage-users" && location.state?.tab === "admins"
                                 ? "bg-orange-400/30 text-white"
-                                : "text-orange-100 hover:bg-orange-400/20 hover:text-white"
+                                : "text-white/90 hover:bg-white/20 hover:text-white"
                             )}
                           >
                             Admin Accounts
@@ -304,7 +304,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
                             "w-full flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
                             location.pathname === "/manage-users" && location.state?.tab === "residents"
                               ? "bg-orange-400/30 text-white"
-                              : "text-orange-100 hover:bg-orange-400/20 hover:text-white"
+                              : "text-white/90 hover:bg-white/20 hover:text-white"
                           )}
                         >
                           Residents
@@ -326,7 +326,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
                   className={cn(
                     "w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", 
                     (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "justify-between px-4 py-3", 
-                    isActive(item.path) ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white"
+                    isActive(item.path) ? "bg-white text-brand-orange shadow-lg" : "text-white/90 hover:bg-white/20 hover:text-white"
                   )}
                 >
                   <div className={cn("flex items-center", (isCollapsed && !isMobileOpen) && "justify-center")}>
@@ -345,7 +345,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
         </div>
 
         <div className="px-3 mt-8">
-          {(!isCollapsed || isMobileOpen) && <div className="text-xs font-semibold text-orange-100 uppercase tracking-wider mb-4 px-3">
+          {(!isCollapsed || isMobileOpen) && <div className="text-xs font-semibold text-white/90 uppercase tracking-wider mb-4 px-3">
               OTHERS
             </div>}
           <nav className="space-y-2">
@@ -358,7 +358,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
                 onMouseEnter={() => preloadRoute(item.preload, item.title)}
                 onFocus={() => preloadRoute(item.preload, item.title)}
                 onTouchStart={() => preloadRoute(item.preload, item.title)}
-                className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "px-4 py-3", isActive(item.path) ? "bg-white text-orange-600 shadow-lg" : "text-orange-100 hover:bg-orange-400/20 hover:text-white")}>
+                className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "px-4 py-3", isActive(item.path) ? "bg-white text-brand-orange shadow-lg" : "text-white/90 hover:bg-white/20 hover:text-white")}>
                 <item.icon className={cn("h-5 w-5 flex-shrink-0", (!isCollapsed || isMobileOpen) && "mr-3")} />
                 {(!isCollapsed || isMobileOpen) && <span>{item.title}</span>}
               </button>)}
@@ -394,7 +394,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
       <div className="p-3 border-t border-orange-400/30">
         <AlertDialog open={showSignOut} onOpenChange={setShowSignOut}>
           <AlertDialogTrigger asChild>
-            <button onClick={() => setShowSignOut(true)} className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200 text-orange-100 hover:bg-red-500 hover:text-white", (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "px-4 py-3")}>
+            <button onClick={() => setShowSignOut(true)} className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200 text-white/90 hover:bg-red-500 hover:text-white", (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "px-4 py-3")}>
               <LogOut className={cn("h-5 w-5 flex-shrink-0", (!isCollapsed || isMobileOpen) && "mr-3")} />
               {(!isCollapsed || isMobileOpen) && <span>Sign Out</span>}
             </button>

@@ -4,10 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, LineChart, Line } from "recharts";
-import { AlertTriangle, Users, FileText, MapPin, CloudRain, Clock, TrendingUp, PieChart as PieChartIcon, Building2, Calendar, Download, Maximize2, FileImage, FileType, Facebook, Phone, Wind, Droplets, CloudRain as Precipitation, Car, Layers, Flame } from "lucide-react";
+import { AlertTriangle, Users, FileText, MapPin, CloudRain, Clock, TrendingUp, PieChart as PieChartIcon, Building2, Calendar, Download, Maximize2, FileImage, FileType, Facebook, PhoneCall, Wind, Droplets, CloudRain as Precipitation, Car, Layers, Flame, Activity } from "lucide-react";
 import { ResponsiveBar } from '@nivo/bar';
 import { ResponsiveCalendar } from '@nivo/calendar';
+import { ResponsiveLine } from '@nivo/line';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { ReportsOverTimeChart } from "@/components/charts/ReportsOverTimeChart";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/sonner";
 import { ensureOk, getHttpStatusMessage } from "@/lib/utils";
@@ -33,6 +35,7 @@ export function DashboardStats() {
   const [isUsersChartModalOpen, setIsUsersChartModalOpen] = useState(false);
   const [isPieChartModalOpen, setIsPieChartModalOpen] = useState(false);
   const [isPeakHoursModalOpen, setIsPeakHoursModalOpen] = useState(false);
+  const [isReportsOverTimeModalOpen, setIsReportsOverTimeModalOpen] = useState(false);
   const [weatherData, setWeatherData] = useState({
     temperature: "28°C",
     temperatureCelsius: 28,
@@ -52,22 +55,34 @@ export function DashboardStats() {
   const [mapLayerMode, setMapLayerMode] = useState<'normal' | 'traffic' | 'heatmap'>('normal');
   const [reports, setReports] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [enabledReportTypes, setEnabledReportTypes] = useState<Record<string, boolean>>({
+    'Road Crash': true,
+    'Fire': true,
+    'Medical Emergency': true,
+    'Flooding': true,
+    'Volcanic Activity': true,
+    'Landslide': true,
+    'Earthquake': true,
+    'Civil Disturbance': true,
+    'Armed Conflict': true,
+    'Infectious Disease': true
+  });
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
 
-  // Hazard colors using brand-orange and brand-red shades
+  // Hazard colors using brand-orange to brand-red spectrum
   const hazardColors = useMemo(() => ({
-    'Road Crash': '#f97316',      // brand-orange (primary)
-    'Fire': '#fb923c',            // brand-orange-400 (lighter)
-    'Medical Emergency': '#ea580c', // brand-orange-600 (darker)
-    'Flooding': '#991b1b',        // brand-red (primary)
-    'Volcanic Activity': '#b91c1c', // brand-red-700 (lighter)
-    'Landslide': '#7f1d1d',      // brand-red-900 (darker)
-    'Earthquake': '#dc2626',     // red-600 (medium red)
-    'Civil Disturbance': '#ef4444', // red-500 (bright red)
-    'Armed Conflict': '#c2410c',  // orange-700 (dark orange)
-    'Infectious Disease': '#fed7aa' // orange-200 (very light orange)
+    'Road Crash': '#ff4e3a',      // bright red-orange
+    'Fire': '#ff703d',            // orange
+    'Medical Emergency': '#fcad3e', // golden orange/amber
+    'Flooding': '#439693',        // muted teal
+    'Volcanic Activity': '#027a6a', // deep teal
+    'Landslide': '#439693',       // muted teal
+    'Earthquake': '#fcad3e',      // golden orange/amber
+    'Civil Disturbance': '#ff703d', // orange
+    'Armed Conflict': '#ff4e3a',  // bright red-orange
+    'Infectious Disease': '#439693' // muted teal
   }), []);
 
   // Sample data for visualizations with all 32 barangays
@@ -106,43 +121,53 @@ export function DashboardStats() {
     { name: "Tinamnan", reports: 11 }
   ];
 
-  // Stacked data for Nivo chart - reports by type per barangay - memoized to prevent re-renders
-  const stackedReportsData = useMemo(() => [
-    { barangay: "Abang", "Road Crash": 3, "Fire": 2, "Medical Emergency": 1, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 1, "Civil Disturbance": 1 },
-    { barangay: "Aliliw", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Atulinao", "Road Crash": 4, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 1, "Civil Disturbance": 1 },
-    { barangay: "Ayuti", "Road Crash": 1, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Barangay 1", "Road Crash": 3, "Fire": 2, "Medical Emergency": 1, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Barangay 2", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Barangay 3", "Road Crash": 2, "Fire": 2, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Barangay 4", "Road Crash": 3, "Fire": 2, "Medical Emergency": 1, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Barangay 5", "Road Crash": 3, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Barangay 6", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Barangay 7", "Road Crash": 4, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Barangay 8", "Road Crash": 1, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Barangay 9", "Road Crash": 3, "Fire": 2, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Barangay 10", "Road Crash": 2, "Fire": 2, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Igang", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Kabatete", "Road Crash": 3, "Fire": 2, "Medical Emergency": 2, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Kakawit", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Kalangay", "Road Crash": 3, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Kalyaat", "Road Crash": 3, "Fire": 2, "Medical Emergency": 1, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Kilib", "Road Crash": 4, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 1, "Civil Disturbance": 1 },
-    { barangay: "Kulapi", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Mahabang Parang", "Road Crash": 3, "Fire": 2, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Malupak", "Road Crash": 2, "Fire": 2, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Manasa", "Road Crash": 3, "Fire": 2, "Medical Emergency": 2, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "May-it", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Nagsinamo", "Road Crash": 4, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Nalunao", "Road Crash": 3, "Fire": 2, "Medical Emergency": 1, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Palola", "Road Crash": 3, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Piis", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Samil", "Road Crash": 3, "Fire": 2, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Tiawe", "Road Crash": 2, "Fire": 2, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
-    { barangay: "Tinamnan", "Road Crash": 3, "Fire": 2, "Medical Emergency": 2, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 }
-  ], []);
+  // Stacked data for Nivo chart - reports by type per barangay - memoized and sorted by total reports descending
+  const stackedReportsData = useMemo(() => {
+    const data = [
+      { barangay: "Abang", "Road Crash": 3, "Fire": 2, "Medical Emergency": 1, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 1, "Civil Disturbance": 1 },
+      { barangay: "Aliliw", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Atulinao", "Road Crash": 4, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 1, "Civil Disturbance": 1 },
+      { barangay: "Ayuti", "Road Crash": 1, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Barangay 1", "Road Crash": 3, "Fire": 2, "Medical Emergency": 1, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Barangay 2", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Barangay 3", "Road Crash": 2, "Fire": 2, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Barangay 4", "Road Crash": 3, "Fire": 2, "Medical Emergency": 1, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Barangay 5", "Road Crash": 3, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Barangay 6", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Barangay 7", "Road Crash": 4, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Barangay 8", "Road Crash": 1, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Barangay 9", "Road Crash": 3, "Fire": 2, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Barangay 10", "Road Crash": 2, "Fire": 2, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Igang", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Kabatete", "Road Crash": 3, "Fire": 2, "Medical Emergency": 2, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Kakawit", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Kalangay", "Road Crash": 3, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Kalyaat", "Road Crash": 3, "Fire": 2, "Medical Emergency": 1, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Kilib", "Road Crash": 4, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 1, "Civil Disturbance": 1 },
+      { barangay: "Kulapi", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Mahabang Parang", "Road Crash": 3, "Fire": 2, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Malupak", "Road Crash": 2, "Fire": 2, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Manasa", "Road Crash": 3, "Fire": 2, "Medical Emergency": 2, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "May-it", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Nagsinamo", "Road Crash": 4, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Nalunao", "Road Crash": 3, "Fire": 2, "Medical Emergency": 1, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Palola", "Road Crash": 3, "Fire": 3, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Piis", "Road Crash": 2, "Fire": 1, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 0, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Samil", "Road Crash": 3, "Fire": 2, "Medical Emergency": 2, "Flooding": 2, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Tiawe", "Road Crash": 2, "Fire": 2, "Medical Emergency": 1, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 },
+      { barangay: "Tinamnan", "Road Crash": 3, "Fire": 2, "Medical Emergency": 2, "Flooding": 1, "Volcanic Activity": 1, "Landslide": 1, "Earthquake": 0, "Civil Disturbance": 1 }
+    ];
+    
+    // Sort by total reports in descending order
+    return data.sort((a, b) => {
+      const totalA = Object.values(a).slice(1).reduce((sum: number, val: any) => sum + val, 0);
+      const totalB = Object.values(b).slice(1).reduce((sum: number, val: any) => sum + val, 0);
+      return totalB - totalA;
+    });
+  }, []);
 
-  const usersPerBarangay = [
+  // Memoized users per barangay data to prevent unnecessary re-renders
+  const usersPerBarangay = useMemo(() => [
     { name: "Abang", users: 120 },
     { name: "Aliliw", users: 85 },
     { name: "Atulinao", users: 150 },
@@ -175,24 +200,109 @@ export function DashboardStats() {
     { name: "Samil", users: 125 },
     { name: "Tiawe", users: 98 },
     { name: "Tinamnan", users: 115 }
-  ];
+  ], []);
+
+  // Reports over time data - memoized to prevent randomization
+  const reportsOverTimeData = useMemo(() => {
+    const reportTypes = [
+      'Road Crash', 'Fire', 'Medical Emergency', 'Flooding', 
+      'Volcanic Activity', 'Landslide', 'Earthquake', 'Civil Disturbance',
+      'Armed Conflict', 'Infectious Disease'
+    ];
+    
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    
+    return reportTypes.map(reportType => ({
+      id: reportType,
+      data: months.map((month, index) => {
+        // Create realistic patterns for each report type - static data
+        let baseValue = 0;
+        switch (reportType) {
+          case 'Road Crash':
+            baseValue = 15 + Math.floor(Math.sin(index * 0.5) * 8) + (index % 3);
+            break;
+          case 'Fire':
+            baseValue = 8 + Math.floor(Math.sin(index * 0.3) * 4) + (index % 2);
+            break;
+          case 'Medical Emergency':
+            baseValue = 12 + Math.floor(Math.sin(index * 0.4) * 6) + (index % 4);
+            break;
+          case 'Flooding':
+            baseValue = 6 + Math.floor(Math.sin(index * 0.6) * 5) + (index % 3);
+            break;
+          case 'Volcanic Activity':
+            baseValue = 3 + Math.floor(Math.sin(index * 0.2) * 2) + (index % 2);
+            break;
+          case 'Landslide':
+            baseValue = 4 + Math.floor(Math.sin(index * 0.4) * 3) + (index % 2);
+            break;
+          case 'Earthquake':
+            baseValue = 2 + Math.floor(Math.sin(index * 0.1) * 2) + (index % 2);
+            break;
+          case 'Civil Disturbance':
+            baseValue = 5 + Math.floor(Math.sin(index * 0.3) * 3) + (index % 2);
+            break;
+          case 'Armed Conflict':
+            baseValue = 1 + Math.floor(Math.sin(index * 0.1) * 1) + (index % 1);
+            break;
+          case 'Infectious Disease':
+            baseValue = 7 + Math.floor(Math.sin(index * 0.5) * 4) + (index % 3);
+            break;
+          default:
+            baseValue = 5;
+        }
+        
+        return {
+          x: month,
+          y: Math.max(0, baseValue)
+        };
+      })
+    }));
+  }, []);
 
   const reportTypeData = [{
     name: "Road Crash",
-    value: 45,
-    color: "#FF4F0B"
+    value: 25,
+    color: "#ff4e3a"
   }, {
     name: "Fire",
-    value: 25,
-    color: "#D32F2F"
-  }, {
-    name: "Flooding",
-    value: 20,
-    color: "#3b82f6"
+    value: 18,
+    color: "#ff703d"
   }, {
     name: "Medical Emergency",
+    value: 15,
+    color: "#fcad3e"
+  }, {
+    name: "Flooding",
+    value: 12,
+    color: "#439693"
+  }, {
+    name: "Earthquake",
     value: 10,
-    color: "#22c55e"
+    color: "#027a6a"
+  }, {
+    name: "Landslide",
+    value: 8,
+    color: "#439693"
+  }, {
+    name: "Volcanic Activity",
+    value: 5,
+    color: "#027a6a"
+  }, {
+    name: "Civil Disturbance",
+    value: 4,
+    color: "#ff703d"
+  }, {
+    name: "Armed Conflict",
+    value: 2,
+    color: "#ff4e3a"
+  }, {
+    name: "Infectious Disease",
+    value: 1,
+    color: "#fcad3e"
   }];
   const peakHoursData = [{
     hour: "6AM",
@@ -217,36 +327,49 @@ export function DashboardStats() {
     reports: 5
   }];
 
-  // Calendar heatmap data for 2025 only
-  const generateCalendarData2025 = () => {
+  // Calendar heatmap data for 2025 only - static data to prevent randomization
+  const calendarData2025 = useMemo(() => {
     const data = [];
     const startDate = new Date(2025, 0, 1); // January 1, 2025
     const endDate = new Date(2025, 11, 31); // December 31, 2025
     
+    // Static data pattern for consistent display
+    const staticPatterns = {
+      0: 2, // Sunday
+      1: 4, // Monday
+      2: 3, // Tuesday
+      3: 5, // Wednesday
+      4: 4, // Thursday
+      5: 3, // Friday
+      6: 1  // Saturday
+    };
+    
     for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
       const dateStr = d.toISOString().split('T')[0];
-      // Generate random report counts (0-8) with some realistic patterns
       const dayOfWeek = d.getDay();
-      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-      const baseCount = isWeekend ? Math.floor(Math.random() * 3) : Math.floor(Math.random() * 6);
-      const extraCount = Math.random() < 0.1 ? Math.floor(Math.random() * 3) : 0; // 10% chance of extra activity
+      
+      // Use static pattern with occasional variations
+      let value = staticPatterns[dayOfWeek as keyof typeof staticPatterns];
+      
+      // Add some variation based on date to make it look more realistic
+      const dayOfMonth = d.getDate();
+      if (dayOfMonth % 7 === 0) value += 1; // Every 7th day gets +1
+      if (dayOfMonth % 15 === 0) value += 2; // Every 15th day gets +2
       
       data.push({
         day: dateStr,
-        value: baseCount + extraCount
+        value: Math.min(value, 8) // Cap at 8
       });
     }
     return data;
-  };
-
-  const calendarData2025 = generateCalendarData2025();
+  }, []);
 
   // Enhanced Weather API integration (similar to Google Weather)
   const fetchWeatherData = async () => {
     try {
       // You'll need to add your OpenWeatherMap API key to environment variables
       const API_KEY = import.meta.env.VITE_OPENWEATHER_API_KEY;
-      const CITY = "Lucban,PH"; // Lucban, Philippines
+      const CITY = "Lucban,PH"; // Lucban, Philippines - fallback location
       
       console.log("Weather API Debug:", {
         hasApiKey: !!API_KEY,
@@ -309,141 +432,53 @@ export function DashboardStats() {
         return;
       }
 
-      // Fetch current weather
-      const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?q=${CITY}&appid=${API_KEY}&units=metric`;
-      console.log("Weather API URL:", weatherUrl.replace(API_KEY, "***HIDDEN***"));
+      // Try to get user's precise location
+      let weatherUrl, forecastUrl;
       
-      const weatherResponse = await fetch(weatherUrl);
-      console.log("Weather API Response Status:", weatherResponse.status);
-      
-      if (!weatherResponse.ok) {
-        const errorText = await weatherResponse.text();
-        console.error("Weather API Error Response:", errorText);
-        throw new Error(`Weather API Error: ${weatherResponse.status} - ${errorText}`);
+      if (navigator.geolocation) {
+        // Use geolocation API to get precise location
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            
+            console.log("Using precise location:", { lat, lon });
+            
+            // Fetch current weather using coordinates
+            weatherUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric`;
+            console.log("Weather API URL:", weatherUrl.replace(API_KEY, "***HIDDEN***"));
+            
+            const weatherResponse = await fetch(weatherUrl);
+            console.log("Weather API Response Status:", weatherResponse.status);
+            
+            if (!weatherResponse.ok) {
+              const errorText = await weatherResponse.text();
+              console.error("Weather API Error Response:", errorText);
+              throw new Error(`Weather API Error: ${weatherResponse.status} - ${errorText}`);
+            }
+            
+            const currentWeather = await weatherResponse.json();
+            console.log("Weather API Success:", currentWeather);
+            console.log("Raw temperature from API:", currentWeather.main?.temp);
+            console.log("Raw weather condition:", currentWeather.weather?.[0]?.description);
+            
+            // Fetch 5-day forecast using coordinates
+            forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric`;
+            console.log("Forecast API URL:", forecastUrl.replace(API_KEY, "***HIDDEN***"));
+            
+            await processWeatherDataInternal(forecastUrl, currentWeather, API_KEY);
+          },
+          async (error) => {
+            console.warn("Geolocation failed, using city name:", error.message);
+            // Fallback to city name
+            await fetchWeatherByCityInternal(CITY, API_KEY);
+          }
+        );
+      } else {
+        console.warn("Geolocation not supported, using city name");
+        // Fallback to city name
+        await fetchWeatherByCityInternal(CITY, API_KEY);
       }
-      
-      const currentWeather = await weatherResponse.json();
-      console.log("Weather API Success:", currentWeather);
-      console.log("Raw temperature from API:", currentWeather.main?.temp);
-      console.log("Raw weather condition:", currentWeather.weather?.[0]?.description);
-      
-      // Fetch 5-day forecast
-      const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?q=${CITY}&appid=${API_KEY}&units=metric`;
-      console.log("Forecast API URL:", forecastUrl.replace(API_KEY, "***HIDDEN***"));
-      
-      const forecastResponse = await fetch(forecastUrl);
-      console.log("Forecast API Response Status:", forecastResponse.status);
-      
-      if (!forecastResponse.ok) {
-        const errorText = await forecastResponse.text();
-        console.error("Forecast API Error Response:", errorText);
-        throw new Error(`Forecast API Error: ${forecastResponse.status} - ${errorText}`);
-      }
-      
-      const forecast = await forecastResponse.json();
-      console.log("Forecast API Success:", forecast);
-      console.log("Forecast list length:", forecast.list?.length);
-      console.log("First forecast item:", forecast.list?.[0]);
-      
-      // Helper function to convert wind direction from degrees to compass direction
-      const getWindDirection = (degrees) => {
-        const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
-        const index = Math.round(degrees / 22.5) % 16;
-        return directions[index];
-      };
-
-      // Helper function to get weather interpretation
-      const getWeatherInterpretation = (weatherCode, description) => {
-        const code = weatherCode;
-        const desc = description.toLowerCase();
-        
-        // Weather interpretations based on OpenWeatherMap codes and descriptions
-        if (code >= 200 && code < 300) return "Thunderstorm";
-        if (code >= 300 && code < 400) return "Drizzle";
-        if (code >= 500 && code < 600) {
-          if (desc.includes('heavy')) return "Heavy Rain";
-          if (desc.includes('moderate')) return "Moderate Rain";
-          if (desc.includes('light')) return "Light Rain";
-          return "Rain";
-        }
-        if (code >= 600 && code < 700) return "Snow";
-        if (code >= 700 && code < 800) {
-          if (desc.includes('mist')) return "Mist";
-          if (desc.includes('fog')) return "Fog";
-          if (desc.includes('haze')) return "Haze";
-          return "Atmospheric";
-        }
-        if (code === 800) return "Clear Sky";
-        if (code === 801) return "Few Clouds";
-        if (code === 802) return "Scattered Clouds";
-        if (code === 803) return "Broken Clouds";
-        if (code === 804) return "Overcast";
-        
-        // Fallback to capitalized description
-        return description.charAt(0).toUpperCase() + description.slice(1);
-      };
-
-      // Process current weather data
-      const tempCelsius = Math.round(currentWeather.main.temp);
-      const tempFahrenheit = Math.round((tempCelsius * 9/5) + 32);
-      
-      console.log("Processed temperature:", tempCelsius, "°C");
-      console.log("Processed condition:", getWeatherInterpretation(currentWeather.weather[0].id, currentWeather.weather[0].description));
-      
-      const processedWeatherData = {
-        temperature: `${tempCelsius}°C`,
-        temperatureCelsius: tempCelsius,
-        temperatureFahrenheit: tempFahrenheit,
-        condition: getWeatherInterpretation(currentWeather.weather[0].id, currentWeather.weather[0].description),
-        humidity: `${currentWeather.main.humidity}%`,
-        rainfall: currentWeather.rain ? `${currentWeather.rain['1h'] || 0}mm` : "0mm",
-        precipitation: currentWeather.rain ? `${currentWeather.rain['1h'] || 0}mm` : "0mm",
-        windSpeed: `${Math.round(currentWeather.wind.speed * 3.6)} km/h`, // Convert m/s to km/h
-        windDirection: getWindDirection(currentWeather.wind.deg || 0),
-        loading: false,
-        error: null
-      };
-      
-      console.log("Final weather data:", processedWeatherData);
-      
-      // Process 5-day forecast
-      const processedForecast = [];
-      const today = new Date();
-      
-      // Get daily forecasts (every 8th item = 24 hours apart)
-      for (let i = 0; i < 5; i++) {
-        const forecastIndex = i * 8; // Every 8th forecast (24 hours)
-        if (forecastIndex < forecast.list.length) {
-          const dayForecast = forecast.list[forecastIndex];
-          const dayName = i === 0 ? 'Today' : 
-                         i === 1 ? 'Tomorrow' : 
-                         new Date(today.getTime() + i * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { weekday: 'long' });
-          
-          // Get weather icon based on condition
-          const getWeatherIcon = (condition) => {
-            return getWeatherIconPath(condition);
-          };
-          
-          // Calculate temperatures in both units
-          const tempCelsius = Math.round(dayForecast.main.temp);
-          const tempFahrenheit = Math.round((tempCelsius * 9/5) + 32);
-          
-          processedForecast.push({
-            day: dayName,
-            tempCelsius: tempCelsius,
-            tempFahrenheit: tempFahrenheit,
-            temp: `${tempCelsius}°C`, // Default to Celsius
-            condition: getWeatherInterpretation(dayForecast.weather[0].id, dayForecast.weather[0].description),
-            icon: getWeatherIcon(dayForecast.weather[0].description)
-          });
-        }
-      }
-      
-      console.log("Processed forecast data:", processedForecast);
-      
-      setWeatherData(processedWeatherData);
-      setWeatherOutlook(processedForecast);
-      
     } catch (error: any) {
       console.error("Error fetching weather data:", error);
       
@@ -497,6 +532,154 @@ export function DashboardStats() {
         condition: "Clear Sky",
         icon: "/weather/clear.svg"
       }]);
+    }
+  };
+
+  // Helper function to process weather data (internal function inside component)
+  const processWeatherDataInternal = async (forecastUrl: string, currentWeather: any, apiKey: string) => {
+    const forecastResponse = await fetch(forecastUrl);
+    console.log("Forecast API Response Status:", forecastResponse.status);
+    
+    if (!forecastResponse.ok) {
+      const errorText = await forecastResponse.text();
+      console.error("Forecast API Error Response:", errorText);
+      throw new Error(`Forecast API Error: ${forecastResponse.status} - ${errorText}`);
+    }
+    
+    const forecast = await forecastResponse.json();
+    console.log("Forecast API Success:", forecast);
+    console.log("Forecast list length:", forecast.list?.length);
+    console.log("First forecast item:", forecast.list?.[0]);
+    
+    // Helper function to convert wind direction from degrees to compass direction
+    const getWindDirection = (degrees: number) => {
+      const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+      const index = Math.round(degrees / 22.5) % 16;
+      return directions[index];
+    };
+
+    // Helper function to get weather interpretation
+    const getWeatherInterpretation = (weatherCode: number, description: string) => {
+      const code = weatherCode;
+      const desc = description.toLowerCase();
+      
+      // Weather interpretations based on OpenWeatherMap codes and descriptions
+      if (code >= 200 && code < 300) return "Thunderstorm";
+      if (code >= 300 && code < 400) return "Drizzle";
+      if (code >= 500 && code < 600) {
+        if (desc.includes('heavy')) return "Heavy Rain";
+        if (desc.includes('moderate')) return "Moderate Rain";
+        if (desc.includes('light')) return "Light Rain";
+        return "Rain";
+      }
+      if (code >= 600 && code < 700) return "Snow";
+      if (code >= 700 && code < 800) {
+        if (desc.includes('mist')) return "Mist";
+        if (desc.includes('fog')) return "Fog";
+        if (desc.includes('haze')) return "Haze";
+        return "Atmospheric";
+      }
+      if (code === 800) return "Clear Sky";
+      if (code === 801) return "Few Clouds";
+      if (code === 802) return "Scattered Clouds";
+      if (code === 803) return "Broken Clouds";
+      if (code === 804) return "Overcast";
+      
+      // Fallback to capitalized description
+      return description.charAt(0).toUpperCase() + description.slice(1);
+    };
+
+    // Process current weather data
+    const tempCelsius = Math.round(currentWeather.main.temp);
+    const tempFahrenheit = Math.round((tempCelsius * 9/5) + 32);
+    
+    console.log("Processed temperature:", tempCelsius, "°C");
+    console.log("Processed condition:", getWeatherInterpretation(currentWeather.weather[0].id, currentWeather.weather[0].description));
+    
+    const processedWeatherData = {
+      temperature: `${tempCelsius}°C`,
+      temperatureCelsius: tempCelsius,
+      temperatureFahrenheit: tempFahrenheit,
+      condition: getWeatherInterpretation(currentWeather.weather[0].id, currentWeather.weather[0].description),
+      humidity: `${currentWeather.main.humidity}%`,
+      rainfall: currentWeather.rain ? `${currentWeather.rain['1h'] || 0}mm` : "0mm",
+      precipitation: currentWeather.rain ? `${currentWeather.rain['1h'] || 0}mm` : "0mm",
+      windSpeed: `${Math.round(currentWeather.wind.speed * 3.6)} km/h`, // Convert m/s to km/h
+      windDirection: getWindDirection(currentWeather.wind.deg || 0),
+      loading: false,
+      error: null
+    };
+    
+    console.log("Final weather data:", processedWeatherData);
+    
+    // Process 5-day forecast
+    const processedForecast = [];
+    const today = new Date();
+    
+    // Get daily forecasts (every 8th item = 24 hours apart)
+    for (let i = 0; i < 5; i++) {
+      const forecastIndex = i * 8; // Every 8th forecast (24 hours)
+      if (forecastIndex < forecast.list.length) {
+        const dayForecast = forecast.list[forecastIndex];
+        const dayName = i === 0 ? 'Today' : 
+                       i === 1 ? 'Tomorrow' : 
+                       new Date(today.getTime() + i * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { weekday: 'long' });
+        
+        // Get weather icon path based on condition
+        const getWeatherIcon = (condition: string) => {
+          return getWeatherIconPath(condition);
+        };
+        
+        // Calculate temperatures in both units
+        const tempCelsius = Math.round(dayForecast.main.temp);
+        const tempFahrenheit = Math.round((tempCelsius * 9/5) + 32);
+        
+        processedForecast.push({
+          day: dayName,
+          tempCelsius: tempCelsius,
+          tempFahrenheit: tempFahrenheit,
+          temp: `${tempCelsius}°C`, // Default to Celsius
+          condition: getWeatherInterpretation(dayForecast.weather[0].id, dayForecast.weather[0].description),
+          icon: getWeatherIcon(dayForecast.weather[0].description)
+        });
+      }
+    }
+    
+    console.log("Processed forecast data:", processedForecast);
+    
+    setWeatherData(processedWeatherData);
+    setWeatherOutlook(processedForecast);
+  };
+
+  // Helper function to fetch weather by city name (internal function inside component)
+  const fetchWeatherByCityInternal = async (city: string, apiKey: string) => {
+    try {
+      // Fetch current weather
+      const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${apiKey}&units=metric`;
+      console.log("Weather API URL:", weatherUrl.replace(apiKey, "***HIDDEN***"));
+      
+      const weatherResponse = await fetch(weatherUrl);
+      console.log("Weather API Response Status:", weatherResponse.status);
+      
+      if (!weatherResponse.ok) {
+        const errorText = await weatherResponse.text();
+        console.error("Weather API Error Response:", errorText);
+        throw new Error(`Weather API Error: ${weatherResponse.status} - ${errorText}`);
+      }
+      
+      const currentWeather = await weatherResponse.json();
+      console.log("Weather API Success:", currentWeather);
+      console.log("Raw temperature from API:", currentWeather.main?.temp);
+      console.log("Raw weather condition:", currentWeather.weather?.[0]?.description);
+      
+      // Fetch 5-day forecast
+      const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?q=${city}&appid=${apiKey}&units=metric`;
+      console.log("Forecast API URL:", forecastUrl.replace(apiKey, "***HIDDEN***"));
+      
+      await processWeatherDataInternal(forecastUrl, currentWeather, apiKey);
+    } catch (error: any) {
+      console.error("Error fetching weather by city:", error);
+      throw error;
     }
   };
 
@@ -944,55 +1127,83 @@ export function DashboardStats() {
     exportChart(chartId, 'peak-reporting-hours', 'pdf');
   };
 
+  // Export functions for Reports Over Time chart
+  const exportReportsOverTimeChartAsPNG = () => {
+    const chartId = isReportsOverTimeModalOpen ? '#reports-over-time-chart-modal' : '#reports-over-time-chart';
+    exportChart(chartId, 'reports-over-time', 'png');
+  };
+
+  const exportReportsOverTimeChartAsSVG = () => {
+    const chartId = isReportsOverTimeModalOpen ? '#reports-over-time-chart-modal' : '#reports-over-time-chart';
+    exportChart(chartId, 'reports-over-time', 'svg');
+  };
+
+  const exportReportsOverTimeChartAsPDF = () => {
+    const chartId = isReportsOverTimeModalOpen ? '#reports-over-time-chart-modal' : '#reports-over-time-chart';
+    exportChart(chartId, 'reports-over-time', 'pdf');
+  };
+
   // Memoized Nivo theme to match DM Sans font
   const nivoTheme = useMemo(() => ({
     text: {
       fontFamily: 'DM Sans, sans-serif',
-      fontSize: 12,
+      fontSize: 10,
     },
     axis: {
       legend: {
         text: {
           fontFamily: 'DM Sans, sans-serif',
-          fontSize: 13,
+          fontSize: 11,
           fontWeight: 500,
         }
       },
       ticks: {
         text: {
           fontFamily: 'DM Sans, sans-serif',
-          fontSize: 11,
+          fontSize: 9,
         }
       }
     },
     legends: {
       text: {
         fontFamily: 'DM Sans, sans-serif',
-        fontSize: 12,
+        fontSize: 10,
       }
     },
     labels: {
       text: {
         fontFamily: 'DM Sans, sans-serif',
-        fontSize: 11,
+        fontSize: 9,
       }
     },
     tooltip: {
       container: {
         fontFamily: 'DM Sans, sans-serif',
-        fontSize: 12,
+        fontSize: 10,
       }
     }
   }), []);
 
-  // Memoized chart keys to prevent re-renders
-  const chartKeys = useMemo(() => [
-    'Road Crash', 'Fire', 'Medical Emergency', 'Flooding', 
-    'Volcanic Activity', 'Landslide', 'Earthquake', 'Civil Disturbance'
-  ], []);
+  // Function to toggle report type visibility
+  const toggleReportType = (reportType: string) => {
+    setEnabledReportTypes(prev => ({
+      ...prev,
+      [reportType]: !prev[reportType]
+    }));
+  };
+
+  // Memoized chart keys based on enabled report types
+  const chartKeys = useMemo(() => {
+    const allKeys = [
+      'Road Crash', 'Fire', 'Medical Emergency', 'Flooding', 
+      'Volcanic Activity', 'Landslide', 'Earthquake', 'Civil Disturbance',
+      'Armed Conflict', 'Infectious Disease'
+    ];
+    return allKeys.filter(key => enabledReportTypes[key]);
+  }, [enabledReportTypes]);
 
   // Memoized chart margins and axis config
-  const chartMargin = useMemo(() => ({ top: 50, right: 130, bottom: 80, left: 60 }), []);
+  const chartMargin = useMemo(() => ({ top: 30, right: 60, bottom: 30, left: 60 }), []);
   
   // Main dashboard view - hide x-axis labels completely
   const axisBottomConfig = useMemo(() => ({
@@ -1024,17 +1235,17 @@ export function DashboardStats() {
   }), []);
   const legendsConfig = useMemo(() => [{
     dataFrom: 'keys' as const,
-    anchor: 'bottom-right' as const,
-    direction: 'column' as const,
+    anchor: 'bottom' as const,
+    direction: 'row' as const,
     justify: false,
-    translateX: 120,
-    translateY: 0,
-    itemsSpacing: 2,
+    translateX: 0,
+    translateY: 20,
+    itemsSpacing: 20,
     itemWidth: 100,
     itemHeight: 20,
     itemDirection: 'left-to-right' as const,
     itemOpacity: 0.85,
-    symbolSize: 20,
+    symbolSize: 18,
     effects: [
       {
         on: 'hover' as const,
@@ -1094,8 +1305,8 @@ export function DashboardStats() {
 
   // Reusable chart component - memoized to prevent unnecessary re-renders
   const BarangayReportsChart = useMemo(() => 
-    ({ height = '400px', chartId = 'nivo-chart' }: { height?: string; chartId?: string }) => (
-      <div id={chartId} style={{ height }}>
+    ({ height = '100%', chartId = 'nivo-chart' }: { height?: string; chartId?: string }) => (
+      <div id={chartId} style={{ height, minHeight: '300px' }}>
         <ResponsiveBar
           data={stackedReportsData}
           keys={chartKeys}
@@ -1114,7 +1325,7 @@ export function DashboardStats() {
           labelSkipWidth={12}
           labelSkipHeight={12}
           labelTextColor={{ from: 'color', modifiers: [['darker', 1.6]] }}
-          legends={legendsConfig}
+          legends={[]}
           animate={true}
           tooltip={({ id, value, indexValue, color }) => (
             <div style={{
@@ -1173,8 +1384,8 @@ export function DashboardStats() {
 
   // Modal version of Barangay Reports Chart with labels
   const BarangayReportsChartModal = useMemo(() => 
-    ({ height = '400px', chartId = 'nivo-chart-modal' }: { height?: string; chartId?: string }) => (
-      <div id={chartId} style={{ height }}>
+    ({ height = '100%', chartId = 'nivo-chart-modal' }: { height?: string; chartId?: string }) => (
+      <div id={chartId} style={{ height, minHeight: '400px' }}>
         <ResponsiveBar
           data={stackedReportsData}
           keys={chartKeys}
@@ -1193,7 +1404,7 @@ export function DashboardStats() {
           labelSkipWidth={12}
           labelSkipHeight={12}
           labelTextColor={{ from: 'color', modifiers: [['darker', 1.6]] }}
-          legends={legendsConfig}
+          legends={[]}
           animate={true}
           tooltip={({ id, value, indexValue, color }) => (
             <div style={{
@@ -1252,20 +1463,22 @@ export function DashboardStats() {
 
   // Users per Barangay Bar Chart - memoized to prevent unnecessary re-renders
   const UsersPerBarangayChart = useMemo(() => 
-    ({ height = '400px', chartId = 'users-chart' }: { height?: string; chartId?: string }) => (
-      <div id={chartId} style={{ height }}>
+    ({ height = '100%', chartId = 'users-chart' }: { height?: string; chartId?: string }) => (
+      <div id={chartId} style={{ height, minHeight: '160px' }}>
         <ResponsiveBar
-          data={usersPerBarangay.map(item => ({
-            barangay: item.name,
-            users: item.users
-          }))}
+          data={usersPerBarangay
+            .map(item => ({
+              barangay: item.name,
+              users: item.users
+            }))
+            .sort((a, b) => b.users - a.users)}
           keys={['users']}
           indexBy="barangay"
-          margin={{ top: 50, right: 130, bottom: 80, left: 60 }}
-          padding={0.3}
+          margin={{ top: 20, right: 40, bottom: 40, left: 50 }}
+          padding={0.2}
           valueScale={{ type: 'linear' }}
           indexScale={{ type: 'band', round: true }}
-          colors={['#f97316']}
+          colors={['#ff703d']}
           borderColor={{ from: 'color', modifiers: [['darker', 1.6]] }}
           theme={nivoTheme}
           axisTop={null}
@@ -1276,7 +1489,8 @@ export function DashboardStats() {
             tickRotation: 0,
             legend: '',
             legendPosition: 'middle',
-            legendOffset: 0
+            legendOffset: 0,
+            format: () => '' // Hide all tick labels
           }}
           axisLeft={{
             tickSize: 5,
@@ -1284,7 +1498,7 @@ export function DashboardStats() {
             tickRotation: 0,
             legend: 'Number of Users',
             legendPosition: 'middle',
-            legendOffset: -50
+            legendOffset: -40
           }}
           labelSkipWidth={12}
           labelSkipHeight={12}
@@ -1347,20 +1561,22 @@ export function DashboardStats() {
 
   // Modal version of Users per Barangay Bar Chart with labels
   const UsersPerBarangayChartModal = useMemo(() => 
-    ({ height = '400px', chartId = 'users-chart-modal' }: { height?: string; chartId?: string }) => (
-      <div id={chartId} style={{ height }}>
+    ({ height = '100%', chartId = 'users-chart-modal' }: { height?: string; chartId?: string }) => (
+      <div id={chartId} style={{ height, minHeight: '400px' }}>
         <ResponsiveBar
-          data={usersPerBarangay.map(item => ({
-            barangay: item.name,
-            users: item.users
-          }))}
+          data={usersPerBarangay
+            .map(item => ({
+              barangay: item.name,
+              users: item.users
+            }))
+            .sort((a, b) => b.users - a.users)}
           keys={['users']}
           indexBy="barangay"
           margin={{ top: 50, right: 130, bottom: 80, left: 60 }}
           padding={0.3}
           valueScale={{ type: 'linear' }}
           indexScale={{ type: 'band', round: true }}
-          colors={['#f97316']}
+          colors={['#ff703d']}
           borderColor={{ from: 'color', modifiers: [['darker', 1.6]] }}
           theme={nivoTheme}
           axisTop={null}
@@ -1440,20 +1656,247 @@ export function DashboardStats() {
     ), [usersPerBarangay, nivoTheme]
   );
 
-  return <div className="space-y-6">
+  // Peak Reporting Hours Line Chart - memoized to prevent unnecessary re-renders
+  const PeakHoursChart = useMemo(() => 
+    ({ height = '100%', chartId = 'peak-hours-chart' }: { height?: string; chartId?: string }) => (
+      <div id={chartId} style={{ height, minHeight: '160px' }}>
+        <ResponsiveLine
+          data={[{
+            id: 'reports',
+            data: peakHoursData.map(item => ({
+              x: item.hour,
+              y: item.reports
+            }))
+          }]}
+          margin={{ top: 20, right: 40, bottom: 40, left: 50 }}
+          xScale={{ type: 'point' }}
+          yScale={{ type: 'linear', min: 'auto', max: 'auto' }}
+          theme={nivoTheme}
+          axisTop={null}
+          axisRight={null}
+          axisBottom={{
+            tickSize: 5,
+            tickPadding: 5,
+            tickRotation: 0,
+            legend: 'Hour',
+            legendPosition: 'middle',
+            legendOffset: 30
+          }}
+          axisLeft={{
+            tickSize: 5,
+            tickPadding: 5,
+            tickRotation: 0,
+            legend: 'Number of Reports',
+            legendPosition: 'middle',
+            legendOffset: -40
+          }}
+          pointSize={8}
+          pointColor={{ theme: 'background' }}
+          pointBorderWidth={2}
+          pointBorderColor={{ from: 'serieColor' }}
+          pointLabelYOffset={-12}
+          enableGridX={true}
+          enableGridY={true}
+          useMesh={true}
+          colors={['#fcad3e']}
+          lineWidth={2}
+          areaBaselineValue={0}
+          areaOpacity={0.15}
+          fill={[{ match: '*', id: 'gradient' }]}
+          defs={[
+            {
+              id: 'gradient',
+              type: 'linearGradient',
+              colors: [
+                { offset: 0, color: '#fcad3e', opacity: 0.2 },
+                { offset: 100, color: '#fcad3e', opacity: 0 }
+              ]
+            }
+          ]}
+          tooltip={({ point }) => (
+            <div style={{
+              background: 'white',
+              padding: '8px 10px',
+              border: '1px solid #e5e7eb',
+              borderRadius: '6px',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+              fontFamily: 'DM Sans, sans-serif',
+              minWidth: '120px'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginBottom: '4px'
+              }}>
+                <div style={{
+                  width: '10px',
+                  height: '10px',
+                  borderRadius: '50%',
+                  backgroundColor: '#fcad3e',
+                  flexShrink: 0
+                }} />
+                <span style={{
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  color: '#111827',
+                  lineHeight: 1
+                }}>
+                  {point.data.y}
+                </span>
+                <span style={{
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  color: '#374151',
+                  lineHeight: 1
+                }}>
+                  reports
+                </span>
+              </div>
+              <div style={{
+                fontSize: '11px',
+                color: '#6b7280',
+                fontWeight: 400,
+                paddingLeft: '16px'
+              }}>
+                {point.data.x}
+              </div>
+            </div>
+          )}
+        />
+      </div>
+    ), [peakHoursData, nivoTheme]
+  );
+
+  // Modal version of Peak Reporting Hours Line Chart
+  const PeakHoursChartModal = useMemo(() => 
+    ({ height = '100%', chartId = 'peak-hours-chart-modal' }: { height?: string; chartId?: string }) => (
+      <div id={chartId} style={{ height, minHeight: '400px' }}>
+        <ResponsiveLine
+          data={[{
+            id: 'reports',
+            data: peakHoursData.map(item => ({
+              x: item.hour,
+              y: item.reports
+            }))
+          }]}
+          margin={{ top: 50, right: 130, bottom: 80, left: 60 }}
+          xScale={{ type: 'point' }}
+          yScale={{ type: 'linear', min: 'auto', max: 'auto' }}
+          theme={nivoTheme}
+          axisTop={null}
+          axisRight={null}
+          axisBottom={{
+            tickSize: 5,
+            tickPadding: 5,
+            tickRotation: 0,
+            legend: 'Hour',
+            legendPosition: 'middle',
+            legendOffset: 60
+          }}
+          axisLeft={{
+            tickSize: 5,
+            tickPadding: 5,
+            tickRotation: 0,
+            legend: 'Number of Reports',
+            legendPosition: 'middle',
+            legendOffset: -50
+          }}
+          pointSize={10}
+          pointColor={{ theme: 'background' }}
+          pointBorderWidth={2}
+          pointBorderColor={{ from: 'serieColor' }}
+          pointLabelYOffset={-12}
+          enableGridX={true}
+          enableGridY={true}
+          useMesh={true}
+          colors={['#fcad3e']}
+          lineWidth={3}
+          areaBaselineValue={0}
+          areaOpacity={0.15}
+          fill={[{ match: '*', id: 'gradient' }]}
+          defs={[
+            {
+              id: 'gradient',
+              type: 'linearGradient',
+              colors: [
+                { offset: 0, color: '#fcad3e', opacity: 0.2 },
+                { offset: 100, color: '#fcad3e', opacity: 0 }
+              ]
+            }
+          ]}
+          tooltip={({ point }) => (
+            <div style={{
+              background: 'white',
+              padding: '8px 10px',
+              border: '1px solid #e5e7eb',
+              borderRadius: '6px',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+              fontFamily: 'DM Sans, sans-serif',
+              minWidth: '120px'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                marginBottom: '4px'
+              }}>
+                <div style={{
+                  width: '10px',
+                  height: '10px',
+                  borderRadius: '50%',
+                  backgroundColor: '#fcad3e',
+                  flexShrink: 0
+                }} />
+                <span style={{
+                  fontSize: '15px',
+                  fontWeight: 600,
+                  color: '#111827',
+                  lineHeight: 1
+                }}>
+                  {point.data.y}
+                </span>
+                <span style={{
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  color: '#374151',
+                  lineHeight: 1
+                }}>
+                  reports
+                </span>
+              </div>
+              <div style={{
+                fontSize: '11px',
+                color: '#6b7280',
+                fontWeight: 400,
+                paddingLeft: '16px'
+              }}>
+                {point.data.x}
+              </div>
+            </div>
+          )}
+        />
+      </div>
+    ), [peakHoursData, nivoTheme]
+  );
+
+  return (
+    <div className="space-y-6">
       {/* LDRRMO Profile, Weather Forecast, Time & Date - 1:2:1 Layout */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {/* Lucban LDRRMO Profile Card - 1 column */}
-        <Card className="h-full">
+        <Card className="h-full bg-white border">
           <CardContent className="flex flex-col justify-between h-full">
             <div className="space-y-4">
               {/* LDRRMO Logo */}
               <div className="flex justify-center pt-4">
-                <img 
-                  src="/accizard-uploads/logo-ldrrmo-png.png" 
-                  alt="Lucban LDRRMO" 
-                  className="h-36 w-auto object-contain"
-                />
+                <div className="h-36 w-36 rounded-full flex border-2 border-brand-orange items-center justify-center bg-orange-50">
+                  <img 
+                    src="/accizard-uploads/logo-ldrrmo-png.png" 
+                    alt="Lucban LDRRMO" 
+                    className="h-28 w-auto object-contain"
+                  />
+                </div>
               </div>
                 
               {/* Organization Info */}
@@ -1467,15 +1910,15 @@ export function DashboardStats() {
             {/* Contact Information */}
             <div className="space-y-3 pt-4">
               {/* Facebook */}
-              <div className="space-y-1">
-                <div className="text-xs font-regular text-gray-600 text-center">Facebook</div>
+              <div className="space-y-1 bg-orange-50 border border-brand-orange rounded-lg p-3">
+               
                 <div className="flex items-center justify-center space-x-2">
-                  <Facebook className="h-4 w-4 text-blue-600" />
+                  <Facebook className="h-4 w-4 text-brand-orange stroke-brand-orange" />
                   <a 
                     href="https://www.facebook.com/LucbanDRRMO" 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                    className="text-xs font-semibold text-brand-orange hover:text-orange-600 transition-colors"
                   >
                     Lucban DRRM Office
                   </a>
@@ -1483,10 +1926,10 @@ export function DashboardStats() {
               </div>
 
               {/* Contact Numbers */}
-              <div className="space-y-1">
-                <div className="text-xs font-regular text-gray-600 text-center">Contact Numbers</div>
+              <div className="space-y-1 bg-orange-50 border border-brand-orange rounded-lg p-3">
+              
                 <div className="flex items-center justify-center space-x-2">
-                  <Phone className="h-4 w-4 text-brand-orange" />
+                  <PhoneCall className="h-4 w-4 text-brand-orange stroke-brand-orange" />
                   <div className="text-xs font-semibold text-brand-orange">
                     540-1709 or 0917 520 4211
                   </div>
@@ -1497,40 +1940,36 @@ export function DashboardStats() {
         </Card>
 
         {/* Weather Forecast Card - 2 columns */}
-        <Card className="md:col-span-2 h-full overflow-hidden">
+        <Card className="md:col-span-2 h-full overflow-hidden relative bg-white border">
+          {/* Weather Icon - Top Right Corner */}
+          <div className="absolute -top-2 -right-2 w-12 h-12 bg-orange-50 border border-brand-orange rounded-full flex items-center justify-center z-10">
+            <CloudRain className="h-6 w-6 text-brand-orange" />
+          </div>
+          
           <div className="relative">
-            {/* Background SVG */}
-            <div className="absolute inset-0 w-full h-full">
-              <img 
-                src="/accizard-uploads/weather-bg.svg" 
-                alt="Weather background" 
-                className="w-full h-full object-cover"
-              />
-            </div>
-            
             {/* Content overlay */}
             <div className="relative z-10">
               <CardHeader className="pb-2">
-                <CardTitle className="text-l text-white">Weather Forecast</CardTitle>
+                <CardTitle className="text-l text-gray-900">Weather Forecast</CardTitle>
               </CardHeader>
               <CardContent className="h-full flex flex-col">
             <div className="space-y-4 flex-1">
               {/* Current Weather - Reference Layout */}
               <div className="space-y-3">
-                <div className="text-xs font-medium text-white/80">Current Weather</div>
+                <div className="text-xs font-medium text-gray-700 pt-2  ">Current Weather</div>
                 
                 {/* Temperature and Weather Details */}
                 <div className="flex items-start justify-between">
                   {/* Temperature Section */}
                   <div className="flex-1">
                     <div className="flex items-center gap-3">
-                      {/* Temperature */}
-                      <div className="text-4xl font-bold text-white">
-                        {weatherData.loading ? "..." : 
-                         temperatureUnit === 'celsius' ? 
-                           `${weatherData.temperatureCelsius}°` : 
-                           `${weatherData.temperatureFahrenheit}°`}
-                      </div>
+                       {/* Temperature */}
+                       <div className="text-4xl font-bold text-brand-orange">
+                         {weatherData.loading ? "..." : 
+                          temperatureUnit === 'celsius' ? 
+                            `${weatherData.temperatureCelsius}°` : 
+                            `${weatherData.temperatureFahrenheit}°`}
+                       </div>
                       
                       {/* Temperature Unit Toggle - Moved next to temperature */}
                       <div className="flex gap-1">
@@ -1539,7 +1978,7 @@ export function DashboardStats() {
                           className={`text-xs px-2 py-1 rounded ${
                             temperatureUnit === 'celsius' 
                               ? 'bg-brand-orange text-white' 
-                              : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                           }`}
                         >
                           °C
@@ -1549,7 +1988,7 @@ export function DashboardStats() {
                           className={`text-xs px-2 py-1 rounded ${
                             temperatureUnit === 'fahrenheit' 
                               ? 'bg-brand-orange text-white' 
-                              : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                           }`}
                         >
                           °F
@@ -1561,21 +2000,23 @@ export function DashboardStats() {
                         {weatherData.loading ? (
                           <div className="w-8 h-8 border-2 border-gray-300 border-t-brand-orange rounded-full animate-spin"></div>
                         ) : weatherData.error ? (
-                          <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
-                            <span className="text-red-600 text-lg">⚠</span>
+                          <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
+                            <span className="text-gray-600 text-lg">⚠</span>
                           </div>
                         ) : (
-                          <img 
-                            src={getWeatherIconPath(weatherData.condition)} 
-                            alt={weatherData.condition}
-                            className="w-10 h-10"
-                          />
+                          <div className="w-12 h-12 bg-orange-50 border-2 border-brand-orange rounded-full flex items-center justify-center">
+                            <img 
+                              src={getWeatherIconPath(weatherData.condition)} 
+                              alt={weatherData.condition}
+                              className="w-8 h-8"
+                            />
+                          </div>
                         )}
                       </div>
                     </div>
                     
                     {/* Weather Condition */}
-                    <div className="text-sm font-medium text-white/90 mt-2">
+                    <div className="text-sm font-medium text-gray-900 mt-2">
                       {weatherData.loading ? "Loading..." : weatherData.error ? "Error" : weatherData.condition}
                     </div>
                   </div>
@@ -1584,27 +2025,27 @@ export function DashboardStats() {
                   <div className="flex-1 space-y-2">
                     {/* Wind */}
                     <div className="flex items-center gap-2">
-                      <Wind className="h-3 w-3 text-white/80" />
-                      <div className="text-xs font-medium text-white/80">Wind</div>
-                      <div className="text-xs font-semibold text-white">
+                      <Wind className="h-3 w-3 text-gray-600" />
+                      <div className="text-xs font-medium text-gray-600">Wind</div>
+                      <div className="text-xs font-semibold text-gray-900">
                         {weatherData.loading ? "..." : weatherData.windSpeed}
                       </div>
                     </div>
                     
                     {/* Humidity */}
                     <div className="flex items-center gap-2">
-                      <Droplets className="h-3 w-3 text-white/80" />
-                      <div className="text-xs font-medium text-white/80">Humidity</div>
-                      <div className="text-xs font-semibold text-white">
+                      <Droplets className="h-3 w-3 text-gray-600" />
+                      <div className="text-xs font-medium text-gray-600">Humidity</div>
+                      <div className="text-xs font-semibold text-gray-900">
                         {weatherData.loading ? "..." : weatherData.humidity}
                       </div>
                     </div>
                     
                     {/* Precipitation */}
                     <div className="flex items-center gap-2">
-                      <Precipitation className="h-3 w-3 text-white/80" />
-                      <div className="text-xs font-medium text-white/80">Precip</div>
-                      <div className="text-xs font-semibold text-white">
+                      <Precipitation className="h-3 w-3 text-gray-600" />
+                      <div className="text-xs font-medium text-gray-600">Precip</div>
+                      <div className="text-xs font-semibold text-gray-900">
                         {weatherData.loading ? "..." : weatherData.precipitation}
                       </div>
                     </div>
@@ -1613,47 +2054,60 @@ export function DashboardStats() {
                   {/* Location Information - Right aligned */}
                   <div className="flex-1 space-y-1 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <MapPin className="h-3 w-3 text-white/80" />
-                      <span className="text-sm font-medium text-white">Lucban, Quezon</span>
+                      <MapPin className="h-3 w-3 text-gray-600" />
+                      <span className="text-sm font-medium text-gray-900">Lucban, Quezon</span>
                     </div>
                     <div className="flex items-center justify-end gap-2">
-                      <span className="text-xs text-white/80">Philippines</span>
+                      <span className="text-xs text-gray-600">Philippines</span>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* 5-Day Outlook */}
-              <div className="border-t border-white/20 pt-3">
-                <div className="text-xs font-medium text-white/80 mb-2">5-Day Outlook</div>
+              <div className="border-t border-gray-200 pt-3">
+                <div className="text-xs font-semibold mb-2">5-Day Outlook</div>
                 <div className="grid grid-cols-5 gap-2">
                   {weatherData.loading || weatherOutlook.length === 0 ? (
                     // Loading state
                     Array.from({ length: 5 }, (_, index) => (
-                      <div key={index} className="text-center p-2 bg-white/10 rounded-lg">
-                        <div className="text-xs font-medium text-white/80 mb-1">Loading...</div>
+                      <div key={index} className="text-center p-2 rounded-lg">
+                        <div className="text-xs font-semibold mb-1">Loading...</div>
                         <div className="text-lg mb-1">⏳</div>
-                        <div className="text-sm font-bold text-white/60">...</div>
-                        <div className="text-xs text-white/60">...</div>
+                        <div className="text-sm font-bold">
+                          <div className="leading-tight">
+                            <div>...°C</div>
+                            <div className="text-xs font-medium">...°F</div>
+                          </div>
+                        </div>
+                        <div className="text-xs">...</div>
                       </div>
                     ))
                   ) : (
                     weatherOutlook.map((day, index) => (
-                        <div key={index} className="text-center p-2 bg-white/10 rounded-lg">
-                          <div className="text-xs font-medium text-white/80 mb-1">{day.day}</div>
+                        <div 
+                          key={index} 
+                          className={`text-center p-2 rounded-lg ${
+                            day.day === 'Today' 
+                              ? 'bg-orange-50 border-2 border-brand-orange' 
+                              : ''
+                          }`}
+                        >
+                          <div className="text-xs font-semibold mb-1">{day.day}</div>
                           <div className="flex justify-center mb-1">
                             <img 
                               src={day.icon} 
                               alt={day.condition}
-                              className="w-6 h-6"
+                              className="w-10 h-10"
                             />
                           </div>
-                          <div className="text-sm font-bold text-white">
-                            {temperatureUnit === 'celsius' ? 
-                              `${day.tempCelsius}°C` : 
-                              `${day.tempFahrenheit}°F`}
+                          <div className="text-sm font-bold">
+                            <div className="leading-tight">
+                              <div>{day.tempCelsius}°C</div>
+                              <div className="text-xs font-medium">{day.tempFahrenheit}°F</div>
+                            </div>
                           </div>
-                          <div className="text-xs text-white/80 truncate">{day.condition}</div>
+                          <div className="text-xs truncate">{day.condition}</div>
                         </div>
                     ))
                   )}
@@ -1667,12 +2121,49 @@ export function DashboardStats() {
 
         {/* Time & Date Cards - 1 column with 2 cards stacked */}
         <div className="h-full flex flex-col gap-6">
-          {/* Time Card - Top */}
-          <Card className="flex-1">
+          {/* Date Card - Top */}
+          <Card className="flex-1 relative overflow-hidden bg-white border">
+            {/* Calendar Icon - Top Right Corner */}
+            <div className="absolute -top-2 -right-2 w-12 h-12 bg-orange-50 border border-brand-orange rounded-full flex items-center justify-center z-10">
+              <Calendar className="h-6 w-6 text-brand-orange stroke-brand-orange" />
+            </div>
+            
+            <CardContent className="flex flex-col items-center justify-center h-full p-6">
+              {/* Date Number */}
+              <div className="text-6xl font-black text-black leading-none">
+                {currentTime.toLocaleDateString('en-US', { 
+                  day: 'numeric'
+                })}
+              </div>
+
+              {/* Month and Year */}
+              <div className="text-lg font-semibold text-black mt-3">
+                {currentTime.toLocaleDateString('en-US', { 
+                  month: 'long',
+                  year: 'numeric'
+                })}
+              </div>
+
+              {/* Day of Week */}
+              <div className="text-sm font-medium text-black mt-1">
+                {currentTime.toLocaleDateString('en-US', { 
+                  weekday: 'long'
+                })}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Time Card - Bottom */}
+          <Card className="flex-1 relative overflow-hidden bg-white border">
+            {/* Clock Icon - Top Right Corner */}
+            <div className="absolute -top-2 -right-2 w-12 h-12 bg-orange-50 border border-brand-orange rounded-full flex items-center justify-center z-10">
+              <Clock className="h-6 w-6 text-brand-orange stroke-brand-orange" />
+            </div>
+            
             <CardContent className="flex flex-col items-center justify-center h-full p-6">
               {/* Time Display */}
               <div className="text-center">
-                <div className="text-4xl font-bold text-gray-900 tracking-tight">
+                <div className="text-4xl font-bold text-black tracking-tight">
                   {currentTime.toLocaleTimeString('en-PH', {
                     timeZone: 'Asia/Manila',
                     hour: '2-digit',
@@ -1684,36 +2175,9 @@ export function DashboardStats() {
 
               {/* Timezone */}
               <div className="text-center mt-3">
-                <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                <div className="text-xs font-medium text-black uppercase tracking-wide">
                   Asia/Manila (GMT+8)
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Date Card - Bottom */}
-          <Card className="flex-1">
-            <CardContent className="flex flex-col items-center justify-center h-full p-6">
-              {/* Date Number */}
-              <div className="text-7xl font-black text-brand-orange leading-none">
-                {currentTime.toLocaleDateString('en-US', { 
-                  day: 'numeric'
-                })}
-              </div>
-
-              {/* Month and Year */}
-              <div className="text-lg font-semibold text-gray-700 mt-3">
-                {currentTime.toLocaleDateString('en-US', { 
-                  month: 'long',
-                  year: 'numeric'
-                })}
-              </div>
-
-              {/* Day of Week */}
-              <div className="text-sm font-medium text-gray-600 mt-1">
-                {currentTime.toLocaleDateString('en-US', { 
-                  weekday: 'long'
-                })}
               </div>
             </CardContent>
           </Card>
@@ -1724,14 +2188,14 @@ export function DashboardStats() {
       {/* Calendar Heatmap and Map Snippet */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* Calendar Heatmap - Report Activity */}
-        <Card>
+        <Card className="relative overflow-hidden">
           <CardHeader>
-            <CardTitle>Report Activity Calendar - 2025</CardTitle>
+            <CardTitle>Report Activity Calendar</CardTitle>
           </CardHeader>
           <CardContent className="p-4">
             <div className="space-y-3">
               {/* Nivo Calendar Chart */}
-              <div style={{ height: '100px' }}>
+              <div style={{ height: '120px', minHeight: '100px' }}>
                 <ResponsiveCalendar
                   data={calendarData2025}
                   from="2025-01-01"
@@ -1869,7 +2333,7 @@ export function DashboardStats() {
           <CardContent className="p-6">
             <div className="flex items-start justify-between">
               <div className="flex items-start gap-3">
-                <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                <div className="h-10 w-10 bg-orange-50 border border-brand-orange rounded-lg flex items-center justify-center flex-shrink-0">
                   <AlertTriangle className="h-5 w-5 text-brand-orange" />
                 </div>
                 <div className="space-y-0.5">
@@ -1888,13 +2352,13 @@ export function DashboardStats() {
           <CardContent className="p-6">
             <div className="flex items-start justify-between">
               <div className="flex items-start gap-3">
-                <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
-            <Calendar className="h-5 w-5 text-brand-orange" />
-            </div>
+                <div className="h-10 w-10 bg-orange-50 border border-brand-orange rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Calendar className="h-5 w-5 text-brand-orange" />
+                </div>
                 <div className="space-y-0.5">
                   <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">This Week</p>
                   <p className="text-xs text-brand-orange font-medium">Last 7 days</p>
-          </div>
+                </div>
               </div>
               <div className="text-right">
                 <p className="text-3xl font-bold text-gray-900">{weeklyReports}</p>
@@ -1907,7 +2371,7 @@ export function DashboardStats() {
           <CardContent className="p-6">
             <div className="flex items-start justify-between">
               <div className="flex items-start gap-3">
-                <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                <div className="h-10 w-10 bg-orange-50 border border-brand-orange rounded-lg flex items-center justify-center flex-shrink-0">
                   <Users className="h-5 w-5 text-brand-orange" />
                 </div>
                 <div className="space-y-0.5">
@@ -1926,7 +2390,7 @@ export function DashboardStats() {
           <CardContent className="p-6">
             <div className="flex items-start justify-between">
               <div className="flex items-start gap-3">
-                <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                <div className="h-10 w-10 bg-orange-50 border border-brand-orange rounded-lg flex items-center justify-center flex-shrink-0">
                   <Clock className="h-5 w-5 text-brand-orange" />
                 </div>
                 <div className="space-y-0.5">
@@ -1943,14 +2407,14 @@ export function DashboardStats() {
         </Card>
       </div>
 
-      {/* Charts Row */}
+      {/* Reports Over Time and Report Type Distribution - Side by Side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Bar Chart - Reports per Barangay */}
+        {/* Reports Over Time Chart */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Reports per Barangay</CardTitle>
+            <CardTitle>Reports Over Time</CardTitle>
             <div className="flex items-center gap-2">
-              <Select value={barangayReportsFilter} onValueChange={setBarangayReportsFilter}>
+              <Select value={reportTypeFilter} onValueChange={setReportTypeFilter}>
                 <SelectTrigger className="w-[120px]">
                   <SelectValue />
                 </SelectTrigger>
@@ -1969,15 +2433,15 @@ export function DashboardStats() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={exportChartAsPNG}>
+                  <DropdownMenuItem onClick={exportReportsOverTimeChartAsPNG}>
                     <FileImage className="h-4 w-4 mr-2" />
                     Export as PNG
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={exportChartAsSVG}>
+                  <DropdownMenuItem onClick={exportReportsOverTimeChartAsSVG}>
                     <FileType className="h-4 w-4 mr-2" />
                     Export as SVG
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={exportChartAsPDF}>
+                  <DropdownMenuItem onClick={exportReportsOverTimeChartAsPDF}>
                     <FileText className="h-4 w-4 mr-2" />
                     Export as PDF
                   </DropdownMenuItem>
@@ -1985,69 +2449,46 @@ export function DashboardStats() {
               </DropdownMenu>
 
               {/* Expand Button */}
-              <Button size="sm" variant="outline" onClick={() => setIsChartModalOpen(true)}>
-                <Maximize2 className="h-4 w-4" />
-        </Button>
-      </div>
-          </CardHeader>
-          <CardContent>
-            <BarangayReportsChart />
-          </CardContent>
-        </Card>
-
-        {/* Bar Chart - Users per Barangay */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Users per Barangay</CardTitle>
-            <div className="flex items-center gap-2">
-              <Select value={usersBarangayFilter} onValueChange={setUsersBarangayFilter}>
-                <SelectTrigger className="w-[120px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="this-week">This Week</SelectItem>
-                  <SelectItem value="this-month">This Month</SelectItem>
-                  <SelectItem value="this-year">This Year</SelectItem>
-                </SelectContent>
-              </Select>
-              
-              {/* Export Dropdown */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="sm" variant="outline">
-                    <Download className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={exportUsersChartAsPNG}>
-                    <FileImage className="h-4 w-4 mr-2" />
-                    Export as PNG
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={exportUsersChartAsSVG}>
-                    <FileType className="h-4 w-4 mr-2" />
-                    Export as SVG
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={exportUsersChartAsPDF}>
-                    <FileText className="h-4 w-4 mr-2" />
-                    Export as PDF
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              {/* Expand Button */}
-              <Button size="sm" variant="outline" onClick={() => setIsUsersChartModalOpen(true)}>
+              <Button size="sm" variant="outline" onClick={() => setIsReportsOverTimeModalOpen(true)}>
                 <Maximize2 className="h-4 w-4" />
               </Button>
             </div>
           </CardHeader>
-          <CardContent>
-            <UsersPerBarangayChart height="300px" chartId="users-chart" />
+          <CardContent className="space-y-4">
+            <div className="h-64">
+              <ReportsOverTimeChart 
+                data={reportsOverTimeData}
+                enabledReportTypes={enabledReportTypes}
+                hazardColors={hazardColors}
+                nivoTheme={nivoTheme}
+                height="100%" 
+                chartId="reports-over-time-chart" 
+              />
+            </div>
+            
+            {/* Custom Legend */}
+            <div className="pt-3 border-t border-gray-200">
+              <div className="flex flex-wrap gap-3 justify-center">
+                {Object.keys(enabledReportTypes).map((key) => (
+                  <div 
+                    key={key} 
+                    className={`flex items-center gap-1.5 cursor-pointer transition-opacity ${
+                      enabledReportTypes[key] ? 'opacity-100' : 'opacity-40'
+                    }`}
+                    onClick={() => toggleReportType(key)}
+                  >
+                    <div 
+                      className="w-3 h-3 rounded-sm" 
+                      style={{ backgroundColor: hazardColors[key as keyof typeof hazardColors] }}
+                    />
+                    <span className="text-xs font-medium text-gray-700">{key}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </CardContent>
         </Card>
-      </div>
 
-      {/* Charts Row 2 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Pie Chart - Report Type Distribution */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -2093,48 +2534,51 @@ export function DashboardStats() {
               </Button>
             </div>
           </CardHeader>
-          <CardContent>
-            <div id="pie-chart" style={{ height: '300px' }}>
+          <CardContent className="h-80 pb-3">
+            <div id="pie-chart" style={{ height: '220px', minHeight: '220px' }}>
               <ChartContainer config={{
                 reports: {
                   label: "Reports",
-                  color: "#D32F2F"
+                  color: "#ff703d"
                 }
               }}>
-                <PieChart width={400} height={300}>
-                  <Pie data={reportTypeData} cx="50%" cy="50%" innerRadius={60} outerRadius={120} paddingAngle={5} dataKey="value">
+                <PieChart>
+                  <Pie data={reportTypeData} cx="50%" cy="50%" innerRadius={50} outerRadius={100} paddingAngle={5} dataKey="value">
                     {reportTypeData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                   </Pie>
                   <ChartTooltip content={<ChartTooltipContent />} />
                 </PieChart>
               </ChartContainer>
             </div>
-            <div className="flex flex-wrap justify-center gap-4 mt-4">
-              {reportTypeData.map(item => <div key={item.name} className="flex items-center space-x-2">
-                  <div className="w-3 h-3 rounded-full" style={{
+            <div className="flex flex-wrap justify-center gap-3 mt-2">
+              {reportTypeData.map(item => <div key={item.name} className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-sm" style={{
                     backgroundColor: item.color
                   }}></div>
-                  <span className="text-sm">{item.name} ({item.value}%)</span>
+                  <span className="text-xs font-medium text-gray-700">{item.name} ({item.value}%)</span>
                 </div>)}
             </div>
           </CardContent>
         </Card>
+      </div>
 
-        {/* Peak Reporting Hours - Now as Line Chart */}
-        <Card>
+      {/* Reports per Barangay with Users per Barangay and Peak Reporting Hours - 2:2 Ratio */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Reports per Barangay - 2 columns */}
+        <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Peak Reporting Hours</CardTitle>
+            <CardTitle>Reports per Barangay</CardTitle>
             <div className="flex items-center gap-2">
-              <Select value={peakHoursFilter} onValueChange={setPeakHoursFilter}>
-              <SelectTrigger className="w-[120px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="this-week">This Week</SelectItem>
-                <SelectItem value="this-month">This Month</SelectItem>
-                <SelectItem value="this-year">This Year</SelectItem>
-              </SelectContent>
-            </Select>
+              <Select value={barangayReportsFilter} onValueChange={setBarangayReportsFilter}>
+                <SelectTrigger className="w-[120px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="this-week">This Week</SelectItem>
+                  <SelectItem value="this-month">This Month</SelectItem>
+                  <SelectItem value="this-year">This Year</SelectItem>
+                </SelectContent>
+              </Select>
               
               {/* Export Dropdown */}
               <DropdownMenu>
@@ -2144,15 +2588,15 @@ export function DashboardStats() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={exportPeakHoursChartAsPNG}>
+                  <DropdownMenuItem onClick={exportChartAsPNG}>
                     <FileImage className="h-4 w-4 mr-2" />
                     Export as PNG
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={exportPeakHoursChartAsSVG}>
+                  <DropdownMenuItem onClick={exportChartAsSVG}>
                     <FileType className="h-4 w-4 mr-2" />
                     Export as SVG
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={exportPeakHoursChartAsPDF}>
+                  <DropdownMenuItem onClick={exportChartAsPDF}>
                     <FileText className="h-4 w-4 mr-2" />
                     Export as PDF
                   </DropdownMenuItem>
@@ -2160,30 +2604,144 @@ export function DashboardStats() {
               </DropdownMenu>
 
               {/* Expand Button */}
-              <Button size="sm" variant="outline" onClick={() => setIsPeakHoursModalOpen(true)}>
+              <Button size="sm" variant="outline" onClick={() => setIsChartModalOpen(true)}>
                 <Maximize2 className="h-4 w-4" />
-              </Button>
-            </div>
+        </Button>
+      </div>
           </CardHeader>
-          <CardContent>
-            <div id="peak-hours-chart" style={{ height: '300px' }}>
-            <ChartContainer config={{
-            reports: {
-              label: "Reports",
-              color: "#FF4F0B"
-            }
-          }}>
-                <LineChart width={400} height={300} data={peakHoursData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="hour" />
-                  <YAxis />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Line type="monotone" dataKey="reports" stroke="#FF4F0B" strokeWidth={2} dot={{ fill: "#FF4F0B" }} />
-                </LineChart>
-            </ChartContainer>
+          <CardContent className="pt-2">
+            <div className="h-80">
+              <BarangayReportsChart />
+            </div>
+            {/* Custom Legend */}
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <div className="flex flex-wrap gap-3 justify-center">
+                {Object.keys(enabledReportTypes).map((key) => (
+                  <div 
+                    key={key} 
+                    className={`flex items-center gap-1.5 cursor-pointer transition-opacity ${
+                      enabledReportTypes[key] ? 'opacity-100' : 'opacity-40'
+                    }`}
+                    onClick={() => toggleReportType(key)}
+                  >
+                    <div 
+                      className="w-3 h-3 rounded-sm" 
+                      style={{ backgroundColor: hazardColors[key as keyof typeof hazardColors] }}
+                    />
+                    <span className="text-xs font-medium text-gray-700">{key}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </CardContent>
         </Card>
+
+        {/* Users per Barangay and Peak Reporting Hours - Stacked Vertically - 2 columns */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Users per Barangay Chart */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Users per Barangay</CardTitle>
+              <div className="flex items-center gap-2">
+                <Select value={usersBarangayFilter} onValueChange={setUsersBarangayFilter}>
+                  <SelectTrigger className="w-[120px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="this-week">This Week</SelectItem>
+                    <SelectItem value="this-month">This Month</SelectItem>
+                    <SelectItem value="this-year">This Year</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                {/* Export Dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={exportUsersChartAsPNG}>
+                      <FileImage className="h-4 w-4 mr-2" />
+                      Export as PNG
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={exportUsersChartAsSVG}>
+                      <FileType className="h-4 w-4 mr-2" />
+                      Export as SVG
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={exportUsersChartAsPDF}>
+                      <FileText className="h-4 w-4 mr-2" />
+                      Export as PDF
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Expand Button */}
+                <Button size="sm" variant="outline" onClick={() => setIsUsersChartModalOpen(true)}>
+                  <Maximize2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="h-40">
+                <UsersPerBarangayChart height="100%" chartId="users-chart" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Peak Reporting Hours - Now as Line Chart */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Peak Reporting Hours</CardTitle>
+              <div className="flex items-center gap-2">
+                <Select value={peakHoursFilter} onValueChange={setPeakHoursFilter}>
+                <SelectTrigger className="w-[120px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="this-week">This Week</SelectItem>
+                  <SelectItem value="this-month">This Month</SelectItem>
+                  <SelectItem value="this-year">This Year</SelectItem>
+                </SelectContent>
+              </Select>
+                
+                {/* Export Dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={exportPeakHoursChartAsPNG}>
+                      <FileImage className="h-4 w-4 mr-2" />
+                      Export as PNG
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={exportPeakHoursChartAsSVG}>
+                      <FileType className="h-4 w-4 mr-2" />
+                      Export as SVG
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={exportPeakHoursChartAsPDF}>
+                      <FileText className="h-4 w-4 mr-2" />
+                      Export as PDF
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {/* Expand Button */}
+                <Button size="sm" variant="outline" onClick={() => setIsPeakHoursModalOpen(true)}>
+                  <Maximize2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="h-40">
+                <PeakHoursChart height="100%" chartId="peak-hours-chart" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* Expanded Chart Modal */}
@@ -2230,7 +2788,29 @@ export function DashboardStats() {
             </div>
           </DialogHeader>
           <div className="flex-1 min-h-0 mt-4">
-            <BarangayReportsChartModal height="calc(90vh - 140px)" chartId="nivo-chart-modal" />
+            <div className="h-[calc(90vh-200px)]">
+              <BarangayReportsChartModal height="calc(90vh - 200px)" chartId="nivo-chart-modal" />
+            </div>
+            {/* Custom Legend for Modal */}
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <div className="flex flex-wrap gap-3 justify-center">
+                {Object.keys(enabledReportTypes).map((key) => (
+                  <div 
+                    key={key} 
+                    className={`flex items-center gap-1.5 cursor-pointer transition-opacity ${
+                      enabledReportTypes[key] ? 'opacity-100' : 'opacity-40'
+                    }`}
+                    onClick={() => toggleReportType(key)}
+                  >
+                    <div 
+                      className="w-3 h-3 rounded-sm" 
+                      style={{ backgroundColor: hazardColors[key as keyof typeof hazardColors] }}
+                    />
+                    <span className="text-xs font-medium text-gray-700">{key}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -2328,26 +2908,26 @@ export function DashboardStats() {
             </div>
           </DialogHeader>
           <div className="flex-1 min-h-0 mt-4">
-            <div id="pie-chart-modal" style={{ height: 'calc(90vh - 200px)' }}>
+            <div id="pie-chart-modal" style={{ height: 'calc(90vh - 200px)', minHeight: '400px' }}>
             <ChartContainer config={{
               reports: {
                 label: "Reports",
                 color: "#D32F2F"
               }
             }}>
-              <PieChart width={600} height={400}>
+              <PieChart>
                 <Pie data={reportTypeData} cx="50%" cy="50%" innerRadius={100} outerRadius={200} paddingAngle={5} dataKey="value" label>
                   {reportTypeData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                 </Pie>
                 <ChartTooltip content={<ChartTooltipContent />} />
               </PieChart>
             </ChartContainer>
-            <div className="flex flex-wrap justify-center gap-4 mt-4">
-              {reportTypeData.map(item => <div key={item.name} className="flex items-center space-x-2">
-                  <div className="w-3 h-3 rounded-full" style={{
+            <div className="flex flex-wrap justify-center gap-3 mt-4">
+              {reportTypeData.map(item => <div key={item.name} className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 rounded-sm" style={{
                     backgroundColor: item.color
                   }}></div>
-                  <span className="text-sm">{item.name} ({item.value}%)</span>
+                  <span className="text-xs font-medium text-gray-700">{item.name} ({item.value}%)</span>
                 </div>)}
             </div>
             </div>
@@ -2399,24 +2979,89 @@ export function DashboardStats() {
             </div>
           </DialogHeader>
           <div className="flex-1 min-h-0 mt-4">
-            <div id="peak-hours-chart-modal" style={{ height: 'calc(90vh - 140px)' }}>
-            <ChartContainer config={{
-              reports: {
-                label: "Reports",
-                color: "#FF4F0B"
-              }
-            }}>
-              <LineChart width={800} height={400} data={peakHoursData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="hour" />
-                <YAxis />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Line type="monotone" dataKey="reports" stroke="#FF4F0B" strokeWidth={3} dot={{ fill: "#FF4F0B", r: 6 }} />
-              </LineChart>
-            </ChartContainer>
-      </div>
+            <PeakHoursChartModal height="calc(90vh - 140px)" chartId="peak-hours-chart-modal" />
           </div>
         </DialogContent>
       </Dialog>
-    </div>;
+
+      {/* Expanded Reports Over Time Chart Modal */}
+      <Dialog open={isReportsOverTimeModalOpen} onOpenChange={setIsReportsOverTimeModalOpen}>
+        <DialogContent className="max-w-7xl h-[90vh] flex flex-col">
+          <DialogHeader>
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <DialogTitle>Reports Over Time - Detailed View</DialogTitle>
+              <div className="flex items-center gap-2">
+                <Select value={reportTypeFilter} onValueChange={setReportTypeFilter}>
+                  <SelectTrigger className="w-[120px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="this-week">This Week</SelectItem>
+                    <SelectItem value="this-month">This Month</SelectItem>
+                    <SelectItem value="this-year">This Year</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                {/* Export Dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={exportReportsOverTimeChartAsPNG}>
+                      <FileImage className="h-4 w-4 mr-2" />
+                      Export as PNG
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={exportReportsOverTimeChartAsSVG}>
+                      <FileType className="h-4 w-4 mr-2" />
+                      Export as SVG
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={exportReportsOverTimeChartAsPDF}>
+                      <FileText className="h-4 w-4 mr-2" />
+                      Export as PDF
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 mt-4">
+            <ReportsOverTimeChart 
+              data={reportsOverTimeData}
+              enabledReportTypes={enabledReportTypes}
+              hazardColors={hazardColors}
+              nivoTheme={nivoTheme}
+              height="calc(90vh - 140px)" 
+              chartId="reports-over-time-chart-modal"
+              pointSize={8}
+              bottomMargin={80}
+            />
+            
+            {/* Custom Legend for Modal */}
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <div className="flex flex-wrap gap-3 justify-center">
+                {Object.keys(enabledReportTypes).map((key) => (
+                  <div 
+                    key={key} 
+                    className={`flex items-center gap-1.5 cursor-pointer transition-opacity ${
+                      enabledReportTypes[key] ? 'opacity-100' : 'opacity-40'
+                    }`}
+                    onClick={() => toggleReportType(key)}
+                  >
+                    <div 
+                      className="w-3 h-3 rounded-sm" 
+                      style={{ backgroundColor: hazardColors[key as keyof typeof hazardColors] }}
+                    />
+                    <span className="text-xs font-medium text-gray-700">{key}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
 }

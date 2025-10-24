@@ -822,29 +822,490 @@ export function ManageReportsPage() {
       toast.error('Failed to export CSV. Please try again.');
     }
   };
-  const handlePrintPreview = () => {
-    // Create a new window with just the preview content
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      const content = document.getElementById('report-preview-content');
-      printWindow.document.write(`
+  const handlePrintPreview = async () => {
+    // Load dispatch and patient data if not already loaded
+    if (selectedReport) {
+      if (!dispatchData.timeCallReceived && !dispatchData.receivedBy) {
+        await loadDispatchDataFromDatabase(selectedReport.firestoreId);
+      }
+      if (!patients[0]?.name && patients.length === 1) {
+        await loadPatientDataFromDatabase(selectedReport.firestoreId);
+      }
+    }
+
+    // Helper function to calculate GCS total
+    const calculateGCSTotal = (patient: any) => {
+      const eyes = patient.gcs?.eyes ? parseInt(patient.gcs.eyes) : 0;
+      const verbal = patient.gcs?.verbal ? parseInt(patient.gcs.verbal) : 0;
+      const motor = patient.gcs?.motor ? parseInt(patient.gcs.motor) : 0;
+      return eyes + verbal + motor;
+    };
+
+    // Create comprehensive HTML template
+    const generateHTML = () => {
+      const report = selectedReport;
+      const dispatch = dispatchData;
+      const patientData = patients;
+      
+      return `
+        <!DOCTYPE html>
         <html>
           <head>
-            <title>Report ${selectedReport?.id}</title>
+            <title>Emergency Report - ${report?.id || 'N/A'}</title>
             <style>
-              body { font-family: Arial, sans-serif; padding: 20px; }
-              table { width: 100%; border-collapse: collapse; }
-              td, th { padding: 8px; border: 1px solid #ddd; }
-              th { background-color: #f5f5f5; }
+              @media print {
+                body { margin: 0; padding: 0; }
+                .no-print { display: none; }
+                .page-break { page-break-after: always; }
+              }
+              
+              body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                margin: 0;
+                padding: 20px;
+                color: #333;
+                background: #fff;
+              }
+              
+              .header {
+                border-bottom: 3px solid #f97316;
+                padding-bottom: 15px;
+                margin-bottom: 25px;
+              }
+              
+              .header h1 {
+                color: #f97316;
+                margin: 0 0 5px 0;
+                font-size: 28px;
+              }
+              
+              .header-info {
+                display: flex;
+                justify-content: space-between;
+                margin-top: 10px;
+                font-size: 12px;
+                color: #666;
+              }
+              
+              .section {
+                margin-bottom: 30px;
+                page-break-inside: avoid;
+              }
+              
+              .section-title {
+                background: #f97316;
+                color: white;
+                padding: 10px 15px;
+                margin: 0 0 15px 0;
+                font-size: 18px;
+                font-weight: bold;
+                border-radius: 4px;
+              }
+              
+              table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 20px;
+              }
+              
+              table td, table th {
+                padding: 10px;
+                border: 1px solid #ddd;
+                text-align: left;
+              }
+              
+              table th {
+                background-color: #f8f9fa;
+                font-weight: 600;
+                width: 30%;
+              }
+              
+              .value-cell {
+                background-color: #fff;
+              }
+              
+              .badge {
+                display: inline-block;
+                padding: 4px 8px;
+                border-radius: 4px;
+                font-size: 12px;
+                font-weight: 600;
+              }
+              
+              .status-pending { background-color: #fef3c7; color: #92400e; }
+              .status-ongoing { background-color: #dbeafe; color: #1e40af; }
+              .status-not-responded { background-color: #fee2e2; color: #991b1b; }
+              .status-responded { background-color: #d1fae5; color: #065f46; }
+              .status-false-report { background-color: #f3f4f6; color: #374151; }
+              .status-redundant { background-color: #f3e8ff; color: #6b21a8; }
+              
+              .patient-section {
+                margin-top: 20px;
+                border: 2px solid #e5e7eb;
+                padding: 15px;
+                border-radius: 8px;
+              }
+              
+              .patient-header {
+                background: #f3f4f6;
+                padding: 10px;
+                margin: -15px -15px 15px -15px;
+                border-radius: 6px 6px 0 0;
+                font-weight: bold;
+                color: #1f2937;
+              }
+              
+              .sub-section {
+                margin-top: 15px;
+                margin-left: 20px;
+              }
+              
+              .sub-section-title {
+                font-weight: 600;
+                color: #f97316;
+                margin-bottom: 8px;
+              }
+              
+              .grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+              }
+              
+              .footer {
+                margin-top: 40px;
+                padding-top: 20px;
+                border-top: 2px solid #e5e7eb;
+                text-align: center;
+                font-size: 12px;
+                color: #666;
+              }
             </style>
           </head>
           <body>
-            ${content?.innerHTML || ''}
+            <div class="header">
+              <h1>AcciZard Emergency Report</h1>
+              <div class="header-info">
+                <div>Report ID: <strong>${report?.id || 'N/A'}</strong></div>
+                <div>Generated: ${new Date().toLocaleString()}</div>
+              </div>
+            </div>
+            
+            <!-- Section I: Report Details -->
+            <div class="section">
+              <div class="section-title">I. Report Details</div>
+              <table>
+                <tr>
+                  <th>Report Type</th>
+                  <td class="value-cell">${report?.type || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>Status</th>
+                  <td class="value-cell">
+                    <span class="badge status-${report?.status?.toLowerCase().replace(' ', '-') || 'pending'}">
+                      ${report?.status || 'N/A'}
+                    </span>
+                  </td>
+                </tr>
+                <tr>
+                  <th>Reported By</th>
+                  <td class="value-cell">${report?.reportedBy || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>Date and Time Submitted</th>
+                  <td class="value-cell">
+                    ${report?.dateSubmitted || 'N/A'} ${report?.timeSubmitted ? `at ${report.timeSubmitted}` : ''}
+                  </td>
+                </tr>
+                <tr>
+                  <th>Mobile Number</th>
+                  <td class="value-cell">${report?.mobileNumber || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>Barangay</th>
+                  <td class="value-cell">${report?.barangay || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>Description</th>
+                  <td class="value-cell">${report?.description || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>Location</th>
+                  <td class="value-cell">
+                    ${report?.location || 'N/A'}<br>
+                    <small style="color: #666;">
+                      Coordinates: ${report?.latitude && report?.longitude 
+                        ? `${report.latitude}, ${report.longitude}` 
+                        : 'N/A'}
+                    </small>
+                  </td>
+                </tr>
+              </table>
+            </div>
+            
+            <!-- Section II: Dispatch Form -->
+            <div class="section">
+              <div class="section-title">II. Dispatch Form</div>
+              <table>
+                <tr>
+                  <th>Received By</th>
+                  <td class="value-cell">${dispatch?.receivedBy || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>Responders</th>
+                  <td class="value-cell">
+                    ${dispatch?.responders && dispatch.responders.length > 0
+                      ? dispatch.responders.map((r: any) => 
+                          `${r.team}: ${r.responders ? r.responders.join(', ') : 'N/A'}`
+                        ).join('<br>')
+                      : 'N/A'}
+                  </td>
+                </tr>
+                <tr>
+                  <th>Time Call Received</th>
+                  <td class="value-cell">${dispatch?.timeCallReceived || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>Time of Dispatch</th>
+                  <td class="value-cell">${dispatch?.timeOfDispatch || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>Time of Arrival</th>
+                  <td class="value-cell">${dispatch?.timeOfArrival || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>Response Time</th>
+                  <td class="value-cell">
+                    ${dispatch?.timeOfDispatch && dispatch?.timeOfArrival
+                      ? calculateResponseTime(dispatch.timeOfDispatch, dispatch.timeOfArrival)
+                      : 'N/A'}
+                  </td>
+                </tr>
+                <tr>
+                  <th>Hospital Arrival</th>
+                  <td class="value-cell">${dispatch?.hospitalArrival || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>Returned to OPCEN</th>
+                  <td class="value-cell">${dispatch?.returnedToOpcen || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>Disaster Related</th>
+                  <td class="value-cell">${dispatch?.disasterRelated || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>Agency Present</th>
+                  <td class="value-cell">${dispatch?.agencyPresent || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>Type of Emergency</th>
+                  <td class="value-cell">${dispatch?.typeOfEmergency || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>Vehicle Involved</th>
+                  <td class="value-cell">${dispatch?.vehicleInvolved || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>Classification of Injury</th>
+                  <td class="value-cell">${dispatch?.injuryClassification || 'N/A'}</td>
+                </tr>
+                <tr>
+                  <th>Actions Taken</th>
+                  <td class="value-cell">
+                    ${dispatch?.actionsTaken && dispatch.actionsTaken.length > 0
+                      ? '<ul style="margin: 0; padding-left: 20px;">' + 
+                        dispatch.actionsTaken.map((action: string) => `<li>${action}</li>`).join('') +
+                        '</ul>'
+                      : 'N/A'}
+                  </td>
+                </tr>
+              </table>
+            </div>
+            
+            <!-- Section III: Patient Information -->
+            <div class="section">
+              <div class="section-title">III. Patient Information</div>
+              ${patientData && patientData.length > 0
+                ? patientData.map((patient: any, index: number) => {
+                    const gcsTotal = calculateGCSTotal(patient);
+                    return `
+                      <div class="patient-section ${index > 0 ? 'page-break' : ''}">
+                        <div class="patient-header">Patient ${index + 1}${patient.name ? ` - ${patient.name}` : ''}</div>
+                        
+                        <table>
+                          <tr>
+                            <th>Name</th>
+                            <td class="value-cell">${patient.name || 'N/A'}</td>
+                          </tr>
+                          <tr>
+                            <th>Contact Number</th>
+                            <td class="value-cell">${patient.contactNumber || 'N/A'}</td>
+                          </tr>
+                          <tr>
+                            <th>Address</th>
+                            <td class="value-cell">${patient.address || 'N/A'}</td>
+                          </tr>
+                          <tr>
+                            <th>Religion</th>
+                            <td class="value-cell">${patient.religion || 'N/A'}</td>
+                          </tr>
+                          <tr>
+                            <th>Birthday</th>
+                            <td class="value-cell">${patient.birthday ? new Date(patient.birthday).toLocaleDateString() : 'N/A'}</td>
+                          </tr>
+                          <tr>
+                            <th>Blood Type</th>
+                            <td class="value-cell">${patient.bloodType || 'N/A'}</td>
+                          </tr>
+                          <tr>
+                            <th>Civil Status</th>
+                            <td class="value-cell">${patient.civilStatus || 'N/A'}</td>
+                          </tr>
+                          <tr>
+                            <th>Age</th>
+                            <td class="value-cell">${patient.age ? `${patient.age} years old` : 'N/A'}</td>
+                          </tr>
+                          <tr>
+                            <th>PWD</th>
+                            <td class="value-cell">${patient.pwd || 'N/A'}</td>
+                          </tr>
+                          <tr>
+                            <th>Age Group</th>
+                            <td class="value-cell">${patient.ageGroup || 'N/A'}</td>
+                          </tr>
+                          <tr>
+                            <th>Gender</th>
+                            <td class="value-cell">${patient.gender || 'N/A'}</td>
+                          </tr>
+                          <tr>
+                            <th>Name of Companion/Relative</th>
+                            <td class="value-cell">${patient.companionName || 'N/A'}</td>
+                          </tr>
+                          <tr>
+                            <th>Companion Contact Number</th>
+                            <td class="value-cell">${patient.companionContact || 'N/A'}</td>
+                          </tr>
+                        </table>
+                        
+                        <div class="sub-section">
+                          <div class="sub-section-title">A. Glasgow Coma Scale</div>
+                          <table>
+                            <tr>
+                              <th>Eyes Response</th>
+                              <td class="value-cell">${patient.gcs?.eyes || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                              <th>Verbal Response</th>
+                              <td class="value-cell">${patient.gcs?.verbal || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                              <th>Motor Response</th>
+                              <td class="value-cell">${patient.gcs?.motor || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                              <th>GCS Total Score</th>
+                              <td class="value-cell" style="font-weight: bold; color: #f97316;">${gcsTotal > 0 ? gcsTotal : 'N/A'}</td>
+                            </tr>
+                          </table>
+                        </div>
+                        
+                        <div class="sub-section">
+                          <div class="sub-section-title">B. Pupil Assessment</div>
+                          <table>
+                            <tr>
+                              <th>Pupil</th>
+                              <td class="value-cell">${patient.pupil || 'N/A'}</td>
+                            </tr>
+                          </table>
+                        </div>
+                        
+                        <div class="sub-section">
+                          <div class="sub-section-title">C. Lung Sounds</div>
+                          <table>
+                            <tr>
+                              <th>Lung Sounds</th>
+                              <td class="value-cell">${patient.lungSounds || 'N/A'}</td>
+                            </tr>
+                          </table>
+                        </div>
+                        
+                        <div class="sub-section">
+                          <div class="sub-section-title">D. Perfusion Assessment</div>
+                          <table>
+                            <tr>
+                              <th>Skin</th>
+                              <td class="value-cell">${patient.perfusion?.skin || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                              <th>Pulse</th>
+                              <td class="value-cell">${patient.perfusion?.pulse || 'N/A'}</td>
+                            </tr>
+                          </table>
+                        </div>
+                        
+                        <div class="sub-section">
+                          <div class="sub-section-title">E. Vital Signs</div>
+                          <table>
+                            <tr>
+                              <th>Time Taken</th>
+                              <td class="value-cell">${patient.vitalSigns?.timeTaken || 'N/A'}</td>
+                            </tr>
+                            <tr>
+                              <th>Temperature</th>
+                              <td class="value-cell">${patient.vitalSigns?.temperature ? `${patient.vitalSigns.temperature}°C` : 'N/A'}</td>
+                            </tr>
+                            <tr>
+                              <th>Pulse Rate</th>
+                              <td class="value-cell">${patient.vitalSigns?.pulseRate ? `${patient.vitalSigns.pulseRate} bpm` : 'N/A'}</td>
+                            </tr>
+                            <tr>
+                              <th>Respiratory Rate</th>
+                              <td class="value-cell">${patient.vitalSigns?.respiratoryRate ? `${patient.vitalSigns.respiratoryRate} breaths/min` : 'N/A'}</td>
+                            </tr>
+                            <tr>
+                              <th>Blood Pressure</th>
+                              <td class="value-cell">${patient.vitalSigns?.bloodPressure ? `${patient.vitalSigns.bloodPressure} mmHg` : 'N/A'}</td>
+                            </tr>
+                            <tr>
+                              <th>SPO2</th>
+                              <td class="value-cell">
+                                ${patient.vitalSigns?.spo2 
+                                  ? `${patient.vitalSigns.spo2}%${patient.vitalSigns.spo2WithO2Support ? ' (with O2 support)' : ''}` 
+                                  : 'N/A'}
+                              </td>
+                            </tr>
+                            <tr>
+                              <th>Random Blood Sugar</th>
+                              <td class="value-cell">${patient.vitalSigns?.randomBloodSugar ? `${patient.vitalSigns.randomBloodSugar} mg/dL` : 'N/A'}</td>
+                            </tr>
+                            <tr>
+                              <th>Pain Scale</th>
+                              <td class="value-cell">${patient.vitalSigns?.painScale || 'N/A'}</td>
+                            </tr>
+                          </table>
+                        </div>
+                      </div>
+                    `;
+                  }).join('')
+                : '<p style="color: #666; font-style: italic;">No patient information available</p>'}
+            </div>
+            
+            <div class="footer">
+              <p>AcciZard Emergency Management System</p>
+              <p>Lucban, Quezon - Local Disaster Risk Reduction and Management Office</p>
+            </div>
           </body>
         </html>
-      `);
+      `;
+    };
+
+    // Create and open print window
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(generateHTML());
       printWindow.document.close();
-      printWindow.print();
+      // Don't auto-print, let user preview first
+      // printWindow.print();
     }
   };
 
@@ -1778,7 +2239,7 @@ export function ManageReportsPage() {
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
-                  <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <div className="h-10 w-10 bg-orange-50 border border-orange-200 rounded-lg flex items-center justify-center flex-shrink-0">
                     <FileText className="h-5 w-5 text-brand-orange" />
                   </div>
                   <div className="space-y-0.5">
@@ -1797,7 +2258,7 @@ export function ManageReportsPage() {
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
-                  <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <div className="h-10 w-10 bg-orange-50 border border-orange-200 rounded-lg flex items-center justify-center flex-shrink-0">
                     <Calendar className="h-5 w-5 text-brand-orange" />
                   </div>
                   <div className="space-y-0.5">
@@ -1816,7 +2277,7 @@ export function ManageReportsPage() {
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
-                  <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <div className="h-10 w-10 bg-orange-50 border border-orange-200 rounded-lg flex items-center justify-center flex-shrink-0">
                     <Clock className="h-5 w-5 text-brand-orange" />
                   </div>
                   <div className="space-y-0.5">
@@ -1835,7 +2296,7 @@ export function ManageReportsPage() {
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
-                  <div className="h-10 w-10 bg-orange-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <div className="h-10 w-10 bg-orange-50 border border-orange-200 rounded-lg flex items-center justify-center flex-shrink-0">
                     <Activity className="h-5 w-5 text-brand-orange" />
                   </div>
                   <div className="space-y-0.5">
@@ -4191,14 +4652,14 @@ export function ManageReportsPage() {
                 </div>
               </TabsContent>
 
-              <TabsContent value="patient" className="mt-4 flex-1 min-h-0 flex flex-col">
+              <TabsContent value="patient" className="flex-1 min-h-0 flex flex-col">
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-4 gap-2">
-                  <div className="text-lg font-semibold text-gray-800">Patient Information</div>
+                  <div className="text-lg font-semibold text-brand-orange">Patient Information</div>
                   <div className="flex gap-2 flex-wrap">
                     {isPatientEditMode ? (
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button size="sm" className="bg-brand-red hover:bg-brand-red-700 text-white" onClick={async () => {
+                          <Button size="sm" className="bg-brand-orange hover:bg-brand-orange-400 text-white" onClick={async () => {
                             console.log('Saving patient information:', patients);
                             await savePatientDataToDatabase(selectedReport.firestoreId, patients);
                             setIsPatientEditMode(false);
@@ -4213,7 +4674,7 @@ export function ManageReportsPage() {
                     ) : (
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Button size="sm" variant="outline" className="border-gray-300 text-gray-800 hover:bg-gray-50" onClick={() => {
+                          <Button size="sm" variant="outline" className="border-brand-orange text-brand-orange hover:bg-orange-50" onClick={() => {
                             setIsPatientEditMode(true);
                           }}>
                             <Edit className="h-4 w-4" />
@@ -4230,12 +4691,12 @@ export function ManageReportsPage() {
                 <div className="flex-1 overflow-y-auto border rounded-lg min-h-0 max-h-[400px]">
                   <div className="p-4 space-y-6 pb-8">
                     {/* Patient Management Header */}
-                    <div className="bg-gray-100 p-4 rounded-lg border border-gray-200">
+                    <div className="bg-orange-50 p-4 rounded-lg border border-brand-orange">
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold text-gray-800">Patient Management</h3>
+                        <h3 className="text-lg font-semibold text-brand-orange">Patient Management</h3>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button onClick={addNewPatient} className="bg-brand-red hover:bg-brand-red-700 text-white">
+                            <Button onClick={addNewPatient} className="bg-brand-orange hover:bg-brand-orange-400 text-white">
                               <Plus className="h-4 w-4 mr-2" />
                               Add New Patient
                             </Button>
@@ -4248,7 +4709,7 @@ export function ManageReportsPage() {
                       
                       {patients.length > 1 && (
                         <div className="space-y-2">
-                          <Label className="text-sm font-medium text-gray-800">Select Patient:</Label>
+                          <Label className="text-sm font-medium text-brand-orange">Select Patient:</Label>
                           <div className="flex flex-wrap gap-2">
                             {patients.map((patient, index) => (
                               <div key={patient.id} className="flex items-center gap-2">
@@ -4256,7 +4717,7 @@ export function ManageReportsPage() {
                                   variant={currentPatientIndex === index ? "default" : "outline"}
                                   size="sm"
                                   onClick={() => setCurrentPatientIndex(index)}
-                                  className={`text-xs ${currentPatientIndex === index ? 'bg-brand-red hover:bg-brand-red-700 text-white' : 'border-gray-300 text-gray-800 hover:bg-gray-50'}`}
+                                  className={`text-xs ${currentPatientIndex === index ? 'bg-brand-orange hover:bg-brand-orange-400 text-white' : 'border-brand-orange text-brand-orange hover:bg-orange-50'}`}
                                 >
                                   Patient {index + 1}
                                   {patient.name && ` - ${patient.name}`}
@@ -4266,7 +4727,7 @@ export function ManageReportsPage() {
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => removePatient(index)}
-                                    className="text-brand-red hover:text-brand-red-700 hover:bg-red-50 p-1 h-6 w-6"
+                                    className="text-brand-orange hover:text-brand-orange-700 hover:bg-orange-50 p-1 h-6 w-6"
                                   >
                                     <X className="h-3 w-3" />
                                   </Button>
@@ -4322,7 +4783,7 @@ export function ManageReportsPage() {
                             {isPatientEditMode ? (
                               <Textarea 
                                 value={currentPatient.address} 
-                                onChange={e => updateCurrentPatient(d => ({ ...d, address: e.target.value }))} 
+                                onChange={e => updateCurrentPatient({ address: e.target.value })} 
                                 placeholder="Enter complete address"
                                 className="min-h-[80px] border-gray-300 focus:ring-brand-red focus:border-brand-red"
                               />
@@ -4335,7 +4796,7 @@ export function ManageReportsPage() {
                           <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Religion</TableCell>
                           <TableCell>
                             {isPatientEditMode ? (
-                              <Select value={currentPatient.religion} onValueChange={v => updateCurrentPatient(d => ({ ...d, religion: v }))}>
+                              <Select value={currentPatient.religion} onValueChange={v => updateCurrentPatient({ religion: v })}>
                                 <SelectTrigger className="border-gray-300 focus:ring-brand-red focus:border-brand-red"><SelectValue placeholder="Select religion" /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="Catholic">Catholic</SelectItem>
@@ -4367,7 +4828,7 @@ export function ManageReportsPage() {
                               <Input 
                                 type="date" 
                                 value={currentPatient.birthday} 
-                                onChange={e => updateCurrentPatient(d => ({ ...d, birthday: e.target.value }))} 
+                                onChange={e => updateCurrentPatient({ birthday: e.target.value })} 
                                 className="border-gray-300 focus:ring-brand-red focus:border-brand-red"
                               />
                             ) : (
@@ -4379,7 +4840,7 @@ export function ManageReportsPage() {
                           <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Blood Type</TableCell>
                           <TableCell>
                             {isPatientEditMode ? (
-                              <Select value={currentPatient.bloodType} onValueChange={v => updateCurrentPatient(d => ({ ...d, bloodType: v }))}>
+                              <Select value={currentPatient.bloodType} onValueChange={v => updateCurrentPatient({ bloodType: v })}>
                                 <SelectTrigger className="border-gray-300 focus:ring-brand-red focus:border-brand-red"><SelectValue placeholder="Select blood type" /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="A+">A+</SelectItem>
@@ -4408,7 +4869,7 @@ export function ManageReportsPage() {
                           <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Civil Status</TableCell>
                           <TableCell>
                             {isPatientEditMode ? (
-                              <Select value={currentPatient.civilStatus} onValueChange={v => updateCurrentPatient(d => ({ ...d, civilStatus: v }))}>
+                              <Select value={currentPatient.civilStatus} onValueChange={v => updateCurrentPatient({ civilStatus: v })}>
                                 <SelectTrigger className="border-gray-300 focus:ring-brand-red focus:border-brand-red"><SelectValue placeholder="Select civil status" /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="Single">Single</SelectItem>
@@ -4436,7 +4897,7 @@ export function ManageReportsPage() {
                               <Input 
                                 type="number" 
                                 value={currentPatient.age} 
-                                onChange={e => updateCurrentPatient(d => ({ ...d, age: e.target.value }))} 
+                                onChange={e => updateCurrentPatient({ age: e.target.value })} 
                                 placeholder="Enter age"
                                 min="0"
                                 max="150"
@@ -4451,7 +4912,7 @@ export function ManageReportsPage() {
                           <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">PWD (Person with Disability)</TableCell>
                           <TableCell>
                             {isPatientEditMode ? (
-                              <Select value={currentPatient.pwd} onValueChange={v => updateCurrentPatient(d => ({ ...d, pwd: v }))}>
+                              <Select value={currentPatient.pwd} onValueChange={v => updateCurrentPatient({ pwd: v })}>
                                 <SelectTrigger className="border-gray-300 focus:ring-brand-red focus:border-brand-red"><SelectValue placeholder="Select PWD status" /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="Yes">Yes</SelectItem>
@@ -4473,7 +4934,7 @@ export function ManageReportsPage() {
                           <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Age Group</TableCell>
                           <TableCell>
                             {isPatientEditMode ? (
-                              <Select value={currentPatient.ageGroup} onValueChange={v => updateCurrentPatient(d => ({ ...d, ageGroup: v }))}>
+                              <Select value={currentPatient.ageGroup} onValueChange={v => updateCurrentPatient({ ageGroup: v })}>
                                 <SelectTrigger className="border-gray-300 focus:ring-brand-red focus:border-brand-red"><SelectValue placeholder="Select age group" /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="Infant">Infant (0-2 years)</SelectItem>
@@ -4498,7 +4959,7 @@ export function ManageReportsPage() {
                           <TableCell className="text-sm font-medium text-gray-800 align-top w-1/3 min-w-[150px]">Gender</TableCell>
                           <TableCell>
                             {isPatientEditMode ? (
-                              <Select value={currentPatient.gender} onValueChange={v => updateCurrentPatient(d => ({ ...d, gender: v }))}>
+                              <Select value={currentPatient.gender} onValueChange={v => updateCurrentPatient({ gender: v })}>
                                 <SelectTrigger className="border-gray-300 focus:ring-brand-red focus:border-brand-red"><SelectValue placeholder="Select gender" /></SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="Male">Male</SelectItem>
@@ -4524,11 +4985,12 @@ export function ManageReportsPage() {
                             {isPatientEditMode ? (
                               <Input 
                                 value={currentPatient.companionName} 
-                                onChange={e => updateCurrentPatient(d => ({ ...d, companionName: e.target.value }))} 
+                                onChange={e => updateCurrentPatient({ companionName: e.target.value })} 
                                 placeholder="Enter companion/relative name"
+                                className="border-gray-300 focus:ring-brand-red focus:border-brand-red"
                               />
                             ) : (
-                              currentPatient.companionName || "Not specified"
+                              <span className="text-gray-800">{currentPatient.companionName || <span className="text-gray-400 italic">Not specified</span>}</span>
                             )}
                           </TableCell>
                         </TableRow>
@@ -4538,11 +5000,12 @@ export function ManageReportsPage() {
                             {isPatientEditMode ? (
                               <Input 
                                 value={currentPatient.companionContact} 
-                                onChange={e => updateCurrentPatient(d => ({ ...d, companionContact: e.target.value }))} 
+                                onChange={e => updateCurrentPatient({ companionContact: e.target.value })} 
                                 placeholder="Enter companion contact number"
+                                className="border-gray-300 focus:ring-brand-red focus:border-brand-red"
                               />
                             ) : (
-                              currentPatient.companionContact || "Not specified"
+                              <span className="text-gray-800">{currentPatient.companionContact || <span className="text-gray-400 italic">Not specified</span>}</span>
                             )}
                           </TableCell>
                         </TableRow>
@@ -4550,8 +5013,8 @@ export function ManageReportsPage() {
                     </Table>
                     
                     {/* Glasgow Coma Scale Section */}
-                    <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Glasgow Coma Scale (GCS)</h3>
+                    <div className="mt-6 p-4 bg-orange-50 rounded-lg border border-brand-orange">
+                      <h3 className="text-lg font-semibold text-brand-orange mb-4">Glasgow Coma Scale (GCS)</h3>
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         {/* Eyes Response */}
                         <div>
@@ -4709,8 +5172,8 @@ export function ManageReportsPage() {
                     </div>
 
                     {/* Pupil Assessment Section */}
-                    <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Pupil Assessment</h3>
+                    <div className="mt-6 p-4 bg-orange-50 rounded-lg border border-brand-orange">
+                      <h3 className="text-lg font-semibold text-brand-orange mb-4">Pupil Assessment</h3>
                       <div className="max-w-md">
                         {isPatientEditMode ? (
                           <RadioGroup value={currentPatient.pupil} onValueChange={v => updateCurrentPatient({ pupil: v })}>
@@ -4742,8 +5205,8 @@ export function ManageReportsPage() {
                     </div>
 
                     {/* Lung Sounds Section */}
-                    <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Lung Sounds</h3>
+                    <div className="mt-6 p-4 bg-orange-50 rounded-lg border border-brand-orange">
+                      <h3 className="text-lg font-semibold text-brand-orange mb-4">Lung Sounds</h3>
                       <div className="max-w-md">
                         {isPatientEditMode ? (
                           <RadioGroup value={currentPatient.lungSounds} onValueChange={v => updateCurrentPatient({ lungSounds: v })}>
@@ -4778,8 +5241,8 @@ export function ManageReportsPage() {
                     </div>
 
                     {/* Perfusion Section */}
-                    <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Perfusion Assessment</h3>
+                    <div className="mt-6 p-4 bg-orange-50 rounded-lg border border-brand-orange">
+                      <h3 className="text-lg font-semibold text-brand-orange mb-4">Perfusion Assessment</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Skin Assessment */}
                         <div>
@@ -4858,8 +5321,8 @@ export function ManageReportsPage() {
                     </div>
                     
                     {/* Vital Signs Section */}
-                    <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                      <h3 className="text-lg font-semibold text-gray-800 mb-4">Vital Signs</h3>
+                    <div className="mt-6 p-4 bg-orange-50 rounded-lg border border-brand-orange">
+                      <h3 className="text-lg font-semibold text-brand-orange mb-4">Vital Signs</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {/* Time Taken */}
                         <div>
