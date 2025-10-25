@@ -19,13 +19,11 @@ import { SUPER_ADMIN_EMAIL } from "@/lib/utils";
 interface PageHeaderProps {
   title: string;
   subtitle?: string;
-  icon?: React.ReactNode;
 }
 
 export function PageHeader({
   title,
-  subtitle,
-  icon
+  subtitle
 }: PageHeaderProps) {
   // User info state
   const [user, setUser] = useState({
@@ -92,16 +90,10 @@ export function PageHeader({
   }, []);
 
   return (
-    <div className="bg-white px-8 py-4 border-b border-gray-200 shadow-sm">
+    <div className="px-8 py-4">
       <div className="flex justify-between items-center">
-        <div className="flex items-center space-x-3">
-          {icon && <div className="w-8 h-8 flex items-center justify-center text-orange-600">
-            {icon}
-          </div>}
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
-            {subtitle && <p className="text-sm text-gray-500">{subtitle}</p>}
-          </div>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
         </div>
 
         <div className="flex items-center gap-4">

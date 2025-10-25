@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import ReactCalendar from 'react-calendar';
+import 'react-calendar/dist/Calendar.css';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, LineChart, Line } from "recharts";
-import { AlertTriangle, Users, FileText, MapPin, CloudRain, Clock, TrendingUp, PieChart as PieChartIcon, Building2, Calendar, Download, Maximize2, FileImage, FileType, Facebook, PhoneCall, Wind, Droplets, CloudRain as Precipitation, Car, Layers, Flame, Activity } from "lucide-react";
+import { AlertTriangle, Users, FileText, MapPin, CloudRain, Clock, TrendingUp, PieChart as PieChartIcon, Building2, Calendar, Download, Maximize2, FileImage, FileType, Facebook, PhoneCall, Wind, Droplets, CloudRain as Precipitation, Car, Layers, Flame, Activity, Sun, Cloud, CloudLightning, CloudSnow, CloudDrizzle, CloudFog, RefreshCw, AlertCircle } from "lucide-react";
 import { ResponsiveBar } from '@nivo/bar';
 import { ResponsiveCalendar } from '@nivo/calendar';
 import { ResponsiveLine } from '@nivo/line';
@@ -18,7 +20,8 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { usePins } from "@/hooks/usePins";
 import { Pin } from "@/types/pin";
 import { db } from "@/lib/firebase";
-import { collection, query, orderBy, onSnapshot, where, Timestamp } from "firebase/firestore";
+import { collection, query, orderBy, onSnapshot, where, Timestamp, limit } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 
 // Use the custom Mapbox access token for AcciZard Lucban
 mapboxgl.accessToken = 'pk.eyJ1IjoiYWNjaXphcmQtbHVjYmFuIiwiYSI6ImNtY3VhOHdxODAwcjcya3BzYTR2M25kcTEifQ.aBi4Zmkezyqa7Pfh519KbQ';
@@ -55,6 +58,8 @@ export function DashboardStats() {
   const [mapLayerMode, setMapLayerMode] = useState<'normal' | 'traffic' | 'heatmap'>('normal');
   const [reports, setReports] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [pagasaBulletins, setPagasaBulletins] = useState<any[]>([]);
+  const [isFetchingBulletins, setIsFetchingBulletins] = useState(false);
   const [enabledReportTypes, setEnabledReportTypes] = useState<Record<string, boolean>>({
     'Road Crash': true,
     'Fire': true,
@@ -399,35 +404,35 @@ export function DashboardStats() {
           tempFahrenheit: 88,
           temp: "31°C",
           condition: "Clear Sky",
-          icon: "/weather/clear.svg"
+          icon: "Clear Sky"
         }, {
           day: "Tomorrow",
           tempCelsius: 32,
           tempFahrenheit: 90,
           temp: "32°C",
           condition: "Few Clouds",
-          icon: "/weather/few-clouds.svg"
+          icon: "Few Clouds"
         }, {
           day: "Wednesday",
           tempCelsius: 29,
           tempFahrenheit: 84,
           temp: "29°C",
           condition: "Shower Rain",
-          icon: "/weather/shower-rain.svg"
+          icon: "Shower Rain"
         }, {
           day: "Thursday",
           tempCelsius: 30,
           tempFahrenheit: 86,
           temp: "30°C",
           condition: "Clear Sky",
-          icon: "/weather/clear.svg"
+          icon: "Clear Sky"
         }, {
           day: "Friday",
           tempCelsius: 33,
           tempFahrenheit: 91,
           temp: "33°C",
           condition: "Clear Sky",
-          icon: "/weather/clear.svg"
+          icon: "Clear Sky"
         }]);
         return;
       }
@@ -502,35 +507,35 @@ export function DashboardStats() {
         tempFahrenheit: 88,
         temp: "31°C",
         condition: "Clear Sky",
-        icon: "/weather/clear.svg"
+        icon: "Clear Sky"
       }, {
         day: "Tomorrow",
         tempCelsius: 32,
         tempFahrenheit: 90,
         temp: "32°C",
         condition: "Few Clouds",
-        icon: "/weather/few-clouds.svg"
+        icon: "Few Clouds"
       }, {
         day: "Wednesday",
         tempCelsius: 29,
         tempFahrenheit: 84,
         temp: "29°C",
         condition: "Shower Rain",
-        icon: "/weather/shower-rain.svg"
+        icon: "Shower Rain"
       }, {
         day: "Thursday",
         tempCelsius: 30,
         tempFahrenheit: 86,
         temp: "30°C",
         condition: "Clear Sky",
-        icon: "/weather/clear.svg"
+        icon: "Clear Sky"
       }, {
         day: "Friday",
         tempCelsius: 33,
         tempFahrenheit: 91,
         temp: "33°C",
         condition: "Clear Sky",
-        icon: "/weather/clear.svg"
+        icon: "Clear Sky"
       }]);
     }
   };
@@ -625,22 +630,20 @@ export function DashboardStats() {
                        i === 1 ? 'Tomorrow' : 
                        new Date(today.getTime() + i * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { weekday: 'long' });
         
-        // Get weather icon path based on condition
-        const getWeatherIcon = (condition: string) => {
-          return getWeatherIconPath(condition);
-        };
-        
         // Calculate temperatures in both units
         const tempCelsius = Math.round(dayForecast.main.temp);
         const tempFahrenheit = Math.round((tempCelsius * 9/5) + 32);
+        
+        // Get interpreted weather condition
+        const interpretedCondition = getWeatherInterpretation(dayForecast.weather[0].id, dayForecast.weather[0].description);
         
         processedForecast.push({
           day: dayName,
           tempCelsius: tempCelsius,
           tempFahrenheit: tempFahrenheit,
           temp: `${tempCelsius}°C`, // Default to Celsius
-          condition: getWeatherInterpretation(dayForecast.weather[0].id, dayForecast.weather[0].description),
-          icon: getWeatherIcon(dayForecast.weather[0].description)
+          condition: interpretedCondition,
+          icon: interpretedCondition // Store condition for icon rendering
         });
       }
     }
@@ -737,33 +740,86 @@ export function DashboardStats() {
     return () => unsubscribe();
   }, []);
 
-  // Helper function to get weather icon path
-  const getWeatherIconPath = (condition: string) => {
-    if (!condition) return '/weather/clear.svg';
+  // Subscribe to PAGASA bulletins from Firestore
+  useEffect(() => {
+    const bulletinsQuery = query(
+      collection(db, "pagasa_bulletins"),
+      orderBy("parsedAt", "desc"),
+      limit(5)
+    );
+    
+    const unsubscribe = onSnapshot(bulletinsQuery, (snapshot) => {
+      const fetched = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          parsedAt: data.parsedAt?.toDate() || new Date(),
+          issueDate: data.issueDate?.toDate() || new Date()
+        };
+      });
+      setPagasaBulletins(fetched);
+    }, (erroric) => {
+      console.error("Error fetching PAGASA bulletins:", erroric);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Function to manually fetch PAGASA bulletins
+  const fetchPagasaBulletins = async () => {
+    setIsFetchingBulletins(true);
+    try {
+      const functions = getFunctions();
+      const fetchBulletins = httpsCallable(functions, 'fetchPagasaBulletins');
+      const result = await fetchBulletins();
+      const data = result.data as any;
+      
+      if (data.success) {
+        toast.success(`Successfully fetched ${data.count} bulletins`);
+      } else {
+        toast.error("Failed to fetch bulletins");
+      }
+    } catch (error: any) {
+      console.error("Error fetching PAGASA bulletins:", error);
+      toast.error(error.message || "Failed to fetch bulletins");
+    } finally {
+      setIsFetchingBulletins(false);
+    }
+  };
+
+  // Helper function to get weather icon component
+  const getWeatherIcon = (condition: string, className: string = "w-8 h-8") => {
+    const orangeClass = "text-brand-orange stroke-brand-orange";
+    const combinedClassName = `${className} ${orangeClass}`;
+    const iconProps = { className: combinedClassName, strokeWidth: 1.5 };
+    
+    if (!condition) return <Sun {...iconProps} />;
     
     const conditionLower = condition.toLowerCase();
     
-    // Map weather conditions to SVG files
-    if (conditionLower.includes('clear') || conditionLower.includes('sunny')) {
-      return '/weather/clear.svg';
-    } else if (conditionLower.includes('few clouds') || conditionLower.includes('partly cloudy')) {
-      return '/weather/few-clouds.svg';
+    // Map weather conditions to Lucide React icons
+    // Handle interpreted conditions from getWeatherInterpretation
+    if (conditionLower.includes('clear sky') || conditionLower.includes('clear') || conditionLower.includes('sunny')) {
+      return <Sun {...iconProps} />;
+    } else if (conditionLower.includes('few clouds')) {
+      return <Cloud {...iconProps} />;
     } else if (conditionLower.includes('scattered clouds')) {
-      return '/weather/scattered-clouds.svg';
-    } else if (conditionLower.includes('broken clouds') || conditionLower.includes('cloud')) {
-      return '/weather/broken-clouds.svg';
+      return <Cloud {...iconProps} />;
+    } else if (conditionLower.includes('broken clouds') || conditionLower.includes('overcast')) {
+      return <Cloud {...iconProps} />;
     } else if (conditionLower.includes('shower') || conditionLower.includes('drizzle') || conditionLower.includes('light rain')) {
-      return '/weather/shower-rain.svg';
-    } else if (conditionLower.includes('rain')) {
-      return '/weather/rain.svg';
+      return <CloudDrizzle {...iconProps} />;
+    } else if (conditionLower.includes('rain') || conditionLower.includes('heavy rain') || conditionLower.includes('moderate rain')) {
+      return <CloudRain {...iconProps} />;
     } else if (conditionLower.includes('thunderstorm') || conditionLower.includes('storm')) {
-      return '/weather/thunderstorm.svg';
+      return <CloudLightning {...iconProps} />;
     } else if (conditionLower.includes('snow')) {
-      return '/weather/snow.svg';
-    } else if (conditionLower.includes('mist') || conditionLower.includes('fog') || conditionLower.includes('haze')) {
-      return '/weather/mist.svg';
+      return <CloudSnow {...iconProps} />;
+    } else if (conditionLower.includes('mist') || conditionLower.includes('fog') || conditionLower.includes('haze') || conditionLower.includes('atmospheric')) {
+      return <CloudFog {...iconProps} />;
     } else {
-      return '/weather/clear.svg'; // Default fallback
+      return <Sun {...iconProps} />; // Default fallback
     }
   };
 
@@ -1700,19 +1756,6 @@ export function DashboardStats() {
           useMesh={true}
           colors={['#fcad3e']}
           lineWidth={2}
-          areaBaselineValue={0}
-          areaOpacity={0.15}
-          fill={[{ match: '*', id: 'gradient' }]}
-          defs={[
-            {
-              id: 'gradient',
-              type: 'linearGradient',
-              colors: [
-                { offset: 0, color: '#fcad3e', opacity: 0.2 },
-                { offset: 100, color: '#fcad3e', opacity: 0 }
-              ]
-            }
-          ]}
           tooltip={({ point }) => (
             <div style={{
               background: 'white',
@@ -1812,19 +1855,6 @@ export function DashboardStats() {
           useMesh={true}
           colors={['#fcad3e']}
           lineWidth={3}
-          areaBaselineValue={0}
-          areaOpacity={0.15}
-          fill={[{ match: '*', id: 'gradient' }]}
-          defs={[
-            {
-              id: 'gradient',
-              type: 'linearGradient',
-              colors: [
-                { offset: 0, color: '#fcad3e', opacity: 0.2 },
-                { offset: 100, color: '#fcad3e', opacity: 0 }
-              ]
-            }
-          ]}
           tooltip={({ point }) => (
             <div style={{
               background: 'white',
@@ -1882,65 +1912,94 @@ export function DashboardStats() {
 
   return (
     <div className="space-y-6">
-      {/* LDRRMO Profile, Weather Forecast, Time & Date - 1:2:1 Layout */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        {/* Lucban LDRRMO Profile Card - 1 column */}
-        <Card className="h-full bg-white border">
-          <CardContent className="flex flex-col justify-between h-full">
-            <div className="space-y-4">
-              {/* LDRRMO Logo */}
-              <div className="flex justify-center pt-4">
-                <div className="h-36 w-36 rounded-full flex border-2 border-brand-orange items-center justify-center bg-orange-50">
-                  <img 
-                    src="/accizard-uploads/logo-ldrrmo-png.png" 
-                    alt="Lucban LDRRMO" 
-                    className="h-28 w-auto object-contain"
-                  />
-                </div>
-              </div>
-                
-              {/* Organization Info */}
-              <div className="text-center space-y-2">
-                <div className="text-sm font-semibold text-gray-900 leading-tight">
-                  Lucban Disaster Risk Reduction and Management Office
-                </div>
-              </div>
+      {/* Lucban LDRRMO Profile Card - Full Width */}
+      <Card className="bg-orange-50 border border-brand-orange relative overflow-hidden">
+        {/* Decorative Pattern Background */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          {/* Rippling concentric circles pattern */}
+          <div className="absolute top-1/2 right-20 -translate-y-1/2">
+            {/* Outermost ripple */}
+            <div className="absolute -top-12 -left-12 w-[30rem] h-[30rem] rounded-full border-2 border-brand-orange opacity-[0.04] animate-pulse" style={{
+              animation: 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+            }}></div>
+            {/* Large outer ripple */}
+            <div className="absolute w-96 h-96 rounded-full border-2 border-brand-orange opacity-[0.06] animate-pulse" style={{
+              animation: 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite 0.4s'
+            }}></div>
+            {/* Medium-large ripple */}
+            <div className="absolute top-8 left-8 w-80 h-80 rounded-full border-2 border-brand-orange opacity-[0.07]" style={{
+              animation: 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite 0.8s'
+            }}></div>
+            {/* Medium ripple */}
+            <div className="absolute top-16 left-16 w-64 h-64 rounded-full border-2 border-brand-orange opacity-[0.08]" style={{
+              animation: 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite 1.2s'
+            }}></div>
+            {/* Medium-small ripple */}
+            <div className="absolute top-24 left-24 w-48 h-48 rounded-full border-2 border-brand-orange opacity-[0.09]" style={{
+              animation: 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite 1.6s'
+            }}></div>
+            {/* Small ripple */}
+            <div className="absolute top-32 left-32 w-32 h-32 rounded-full border-2 border-brand-orange opacity-[0.1]" style={{
+              animation: 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite 2s'
+            }}></div>
+            {/* Inner ripple */}
+            <div className="absolute top-40 left-40 w-16 h-16 rounded-full border-2 border-brand-orange opacity-[0.12]" style={{
+              animation: 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite 2.4s'
+            }}></div>
+            {/* Core circle */}
+            <div className="absolute top-44 left-44 w-8 h-8 rounded-full bg-brand-orange opacity-[0.08]"></div>
+          </div>
+          
+          {/* Repeating dots pattern overlay */}
+          <div className="absolute inset-0 opacity-[0.03]" style={{
+            backgroundImage: 'radial-gradient(circle, #f97316 1.5px, transparent 1.5px)',
+            backgroundSize: '24px 24px'
+          }}></div>
+        </div>
+        
+        <CardContent className="p-6 relative z-10">
+          <div className="flex items-center gap-6">
+            {/* Logo */}
+            <div className="flex-shrink-0">
+              <img 
+                src="/accizard-uploads/logo-ldrrmo-png.png" 
+                alt="Lucban LDRRMO" 
+                className="h-24 w-auto object-contain"
+              />
             </div>
+            
+            {/* Organization Info */}
+            <div className="flex-1">
+              <h2 className="text-2xl font-bold text-brand-orange mb-2">
+                Lucban Disaster Risk Reduction and Management Office
+              </h2>
 
-            {/* Contact Information */}
-            <div className="space-y-3 pt-4">
-              {/* Facebook */}
-              <div className="space-y-1 bg-orange-50 border border-brand-orange rounded-lg p-3">
-               
-                <div className="flex items-center justify-center space-x-2">
-                  <Facebook className="h-4 w-4 text-brand-orange stroke-brand-orange" />
-                  <a 
-                    href="https://www.facebook.com/LucbanDRRMO" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-xs font-semibold text-brand-orange hover:text-orange-600 transition-colors"
-                  >
-                    Lucban DRRM Office
-                  </a>
-                </div>
-              </div>
-
-              {/* Contact Numbers */}
-              <div className="space-y-1 bg-orange-50 border border-brand-orange rounded-lg p-3">
               
-                <div className="flex items-center justify-center space-x-2">
-                  <PhoneCall className="h-4 w-4 text-brand-orange stroke-brand-orange" />
-                  <div className="text-xs font-semibold text-brand-orange">
-                    540-1709 or 0917 520 4211
-                  </div>
+              {/* Contact Information */}
+              <div className="flex items-center gap-4">
+                <a 
+                  href="https://www.facebook.com/LucbanDRRMO" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 text-sm font-semibold bg-brand-orange text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors"
+                >
+                  <Facebook className="h-4 w-4" />
+                  <span>Lucban DRRM Office</span>
+                </a>
+                <div className="flex items-center gap-2 text-sm font-semibold bg-brand-orange text-white px-4 py-2 rounded-lg">
+                  <PhoneCall className="h-4 w-4" />
+                  <span>540-1709 or 0917 520 4211</span>
                 </div>
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </CardContent>
+      </Card>
 
-        {/* Weather Forecast Card - 2 columns */}
-        <Card className="md:col-span-2 h-full overflow-hidden relative bg-white border">
+      {/* Weather Forecast, Date, and Time - 4 columns (3:1 ratio) */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        {/* Weather Forecast Card - 3 columns */}
+        <Card className="md:col-span-3 h-full overflow-hidden relative bg-white border">
           {/* Weather Icon - Top Right Corner */}
           <div className="absolute -top-2 -right-2 w-12 h-12 bg-orange-50 border border-brand-orange rounded-full flex items-center justify-center z-10">
             <CloudRain className="h-6 w-6 text-brand-orange" />
@@ -1950,7 +2009,7 @@ export function DashboardStats() {
             {/* Content overlay */}
             <div className="relative z-10">
               <CardHeader className="pb-2">
-                <CardTitle className="text-l text-gray-900">Weather Forecast</CardTitle>
+                <CardTitle>Weather Forecast</CardTitle>
               </CardHeader>
               <CardContent className="h-full flex flex-col">
             <div className="space-y-4 flex-1">
@@ -1964,7 +2023,7 @@ export function DashboardStats() {
                   <div className="flex-1">
                     <div className="flex items-center gap-3">
                        {/* Temperature */}
-                       <div className="text-4xl font-bold text-brand-orange">
+                       <div className="text-4xl font-bold text-black">
                          {weatherData.loading ? "..." : 
                           temperatureUnit === 'celsius' ? 
                             `${weatherData.temperatureCelsius}°` : 
@@ -2004,12 +2063,8 @@ export function DashboardStats() {
                             <span className="text-gray-600 text-lg">⚠</span>
                           </div>
                         ) : (
-                          <div className="w-12 h-12 bg-orange-50 border-2 border-brand-orange rounded-full flex items-center justify-center">
-                            <img 
-                              src={getWeatherIconPath(weatherData.condition)} 
-                              alt={weatherData.condition}
-                              className="w-8 h-8"
-                            />
+                          <div className="flex items-center justify-center">
+                            {getWeatherIcon(weatherData.condition, "w-8 h-8")}
                           </div>
                         )}
                       </div>
@@ -2066,7 +2121,7 @@ export function DashboardStats() {
 
               {/* 5-Day Outlook */}
               <div className="border-t border-gray-200 pt-3">
-                <div className="text-xs font-semibold mb-2">5-Day Outlook</div>
+                <div className="text-sm font-semibold mb-2">5-Day Outlook</div>
                 <div className="grid grid-cols-5 gap-2">
                   {weatherData.loading || weatherOutlook.length === 0 ? (
                     // Loading state
@@ -2089,25 +2144,21 @@ export function DashboardStats() {
                           key={index} 
                           className={`text-center p-2 rounded-lg ${
                             day.day === 'Today' 
-                              ? 'bg-orange-50 border-2 border-brand-orange' 
+                              ? 'bg-orange-50 border border-brand-orange' 
                               : ''
                           }`}
                         >
-                          <div className="text-xs font-semibold mb-1">{day.day}</div>
-                          <div className="flex justify-center mb-1">
-                            <img 
-                              src={day.icon} 
-                              alt={day.condition}
-                              className="w-10 h-10"
-                            />
+                          <div className={`text-xs font-semibold mb-1 ${day.day === 'Today' ? 'text-brand-orange' : ''}`}>{day.day}</div>
+                          <div className={`flex justify-center mb-1 ${day.day === 'Today' ? '[&_svg]:text-brand-orange [&_svg]:stroke-brand-orange' : ''}`}>
+                            {getWeatherIcon(day.icon, "w-10 h-10")}
                           </div>
-                          <div className="text-sm font-bold">
+                          <div className={`text-sm font-bold ${day.day === 'Today' ? 'text-brand-orange' : ''}`}>
                             <div className="leading-tight">
                               <div>{day.tempCelsius}°C</div>
-                              <div className="text-xs font-medium">{day.tempFahrenheit}°F</div>
+                              <div className={`text-xs font-medium ${day.day === 'Today' ? 'text-brand-orange' : ''}`}>{day.tempFahrenheit}°F</div>
                             </div>
                           </div>
-                          <div className="text-xs truncate">{day.condition}</div>
+                          <div className={`text-xs truncate ${day.day === 'Today' ? 'text-brand-orange' : ''}`}>{day.condition}</div>
                         </div>
                     ))
                   )}
@@ -2119,42 +2170,10 @@ export function DashboardStats() {
           </div>
         </Card>
 
-        {/* Time & Date Cards - 1 column with 2 cards stacked */}
-        <div className="h-full flex flex-col gap-6">
-          {/* Date Card - Top */}
-          <Card className="flex-1 relative overflow-hidden bg-white border">
-            {/* Calendar Icon - Top Right Corner */}
-            <div className="absolute -top-2 -right-2 w-12 h-12 bg-orange-50 border border-brand-orange rounded-full flex items-center justify-center z-10">
-              <Calendar className="h-6 w-6 text-brand-orange stroke-brand-orange" />
-            </div>
-            
-            <CardContent className="flex flex-col items-center justify-center h-full p-6">
-              {/* Date Number */}
-              <div className="text-6xl font-black text-black leading-none">
-                {currentTime.toLocaleDateString('en-US', { 
-                  day: 'numeric'
-                })}
-              </div>
-
-              {/* Month and Year */}
-              <div className="text-lg font-semibold text-black mt-3">
-                {currentTime.toLocaleDateString('en-US', { 
-                  month: 'long',
-                  year: 'numeric'
-                })}
-              </div>
-
-              {/* Day of Week */}
-              <div className="text-sm font-medium text-black mt-1">
-                {currentTime.toLocaleDateString('en-US', { 
-                  weekday: 'long'
-                })}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Time Card - Bottom */}
-          <Card className="flex-1 relative overflow-hidden bg-white border">
+        {/* Date and Time Cards - Stacked vertically in 1 column */}
+        <div className="flex flex-col gap-6 h-full">
+          {/* Time Card - 1 part (top) */}
+          <Card className="relative overflow-hidden bg-white border flex-[1]">
             {/* Clock Icon - Top Right Corner */}
             <div className="absolute -top-2 -right-2 w-12 h-12 bg-orange-50 border border-brand-orange rounded-full flex items-center justify-center z-10">
               <Clock className="h-6 w-6 text-brand-orange stroke-brand-orange" />
@@ -2163,7 +2182,7 @@ export function DashboardStats() {
             <CardContent className="flex flex-col items-center justify-center h-full p-6">
               {/* Time Display */}
               <div className="text-center">
-                <div className="text-4xl font-bold text-black tracking-tight">
+                <div className="text-3xl font-semibold tracking-tight">
                   {currentTime.toLocaleTimeString('en-PH', {
                     timeZone: 'Asia/Manila',
                     hour: '2-digit',
@@ -2174,16 +2193,206 @@ export function DashboardStats() {
               </div>
 
               {/* Timezone */}
-              <div className="text-center mt-3">
-                <div className="text-xs font-medium text-black uppercase tracking-wide">
+              <div className="text-center mt-1">
+                <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                   Asia/Manila (GMT+8)
                 </div>
               </div>
             </CardContent>
           </Card>
+
+          {/* Calendar Card - 3 parts (bottom) */}
+          <Card className="relative overflow-hidden bg-white border flex-[3]">
+            <CardContent className="flex flex-col items-center justify-center h-full p-4">
+              <style>{`
+                .react-calendar {
+                  width: 100%;
+                  border: none;
+                  font-family: 'DM Sans', sans-serif;
+                  background: transparent;
+                }
+                .react-calendar__navigation {
+                  display: flex;
+                  margin-bottom: 0.25rem;
+                  padding: 0.25rem 0.5rem;
+                  border-radius: 6px;
+                }
+                .react-calendar__navigation button {
+                  min-width: 32px;
+                  background: none;
+                  font-size: 14px;
+                  font-weight: 600;
+                  color: #111827;
+                }
+                .react-calendar__navigation button:enabled:hover,
+                .react-calendar__navigation button:enabled:focus {
+                  background-color: #fff7ed;
+                  border-radius: 4px;
+                  color: #f97316;
+                }
+                .react-calendar__navigation__label {
+                  color: #111827;
+                  font-weight: 700;
+                  pointer-events: none;
+                  cursor: default;
+                }
+                /* Hide double arrow buttons */
+                .react-calendar__navigation__prev2-button,
+                .react-calendar__navigation__next2-button {
+                  display: none;
+                }
+                .react-calendar__month-view__weekdays {
+                  text-align: center;
+                  font-size: 11px;
+                  font-weight: 600;
+                  color: #6b7280;
+                  text-transform: uppercase;
+                }
+                .react-calendar__month-view__weekdays__weekday {
+                  padding: 0.25rem 0;
+                }
+                .react-calendar__month-view__weekdays__weekday abbr {
+                  text-decoration: none;
+                }
+                .react-calendar__tile {
+                  padding: 0.375rem;
+                  font-size: 12px;
+                  font-weight: 500;
+                  background: none;
+                  border-radius: 6px;
+                  transition: all 0.2s;
+                  color: #111827;
+                }
+                .react-calendar__tile:hover {
+                  background-color: #fff7ed;
+                  color: #f97316;
+                }
+                /* Disable only day tiles, not month/year tiles */
+                .react-calendar__month-view__days__day {
+                  cursor: default;
+                  pointer-events: none;
+                }
+                /* Enable clicking on month and year tiles */
+                .react-calendar__year-view__months__month,
+                .react-calendar__decade-view__years__year,
+                .react-calendar__century-view__decades__decade {
+                  cursor: pointer;
+                  pointer-events: auto;
+                  padding: 0.375rem;
+                }
+                .react-calendar__year-view__months__month:hover,
+                .react-calendar__decade-view__years__year:hover,
+                .react-calendar__century-view__decades__decade:hover {
+                  background-color: #fff7ed;
+                  color: #f97316;
+                }
+                .react-calendar__tile--now {
+                  background: #f97316;
+                  color: white;
+                  font-weight: 700;
+                }
+                .react-calendar__tile--active {
+                  background: #f97316;
+                  color: white;
+                  font-weight: 700;
+                }
+                .react-calendar__month-view__days__day--neighboringMonth {
+                  color: #d1d5db;
+                }
+              `}</style>
+              <ReactCalendar
+                value={currentTime}
+                locale="en-PH"
+                selectRange={false}
+                showNavigation={true}
+                showNeighboringMonth={true}
+                allowPartialRange={false}
+                onClickDay={() => {}} // Disable day selection
+                tileDisabled={() => false} // Keep all tiles enabled for visual purposes
+              />
+            </CardContent>
+          </Card>
         </div>
 
       </div>
+
+      {/* PAGASA Bulletins Section - HIDDEN FOR NOW */}
+      {/* Uncomment below to re-enable PAGASA bulletins */}
+      {/*
+      <Card className="relative overflow-hidden bg-white border">
+        <div className="absolute -top-2 -right-2 w-12 h-12 bg-orange-50 border border-brand-orange rounded-full flex items-center justify-center z-10">
+          <AlertCircle className="h-6 w-6 text-brand-orange stroke-brand-orange" />
+        </div>
+        
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle>PAGASA Weather Bulletins</CardTitle>
+            <Button
+              onClick={fetchPagasaBulletins}
+              disabled={isFetchingBulletins}
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs"
+            >
+              <RefreshCw className={`h-3 w-3 mr-1 ${isFetchingBulletins ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {pagasaBulletins.length === 0 ? (
+            <div className="text-center py-8">
+              <AlertCircle className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+              <p className="text-sm text-gray-500 mb-2">No bulletins available</p>
+              <p className="text-xs text-gray-400">Click Refresh to fetch latest bulletins from PAGASA</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {pagasaBulletins.map((bulletin) => (
+                <div
+                  key={bulletin.id}
+                  className={`p-3 rounded-lg border ${
+                    bulletin.priority === 'high'
+                      ? 'bg-red-50 border-red-200'
+                      : 'bg-blue-50 border-blue-200'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                          bulletin.priority === 'high'
+                            ? 'bg-red-200 text-red-800'
+                            : 'bg-blue-200 text-blue-800'
+                        }`}>
+                          {bulletin.type === 'tropical_cyclone' ? 'Tropical Cyclone' : 'Weather Forecast'}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {bulletin.parsedAt.toLocaleString('en-PH', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                      </div>
+                      <h4 className="text-sm font-semibold text-gray-900 mb-1">
+                        {bulletin.title}
+                      </h4>
+                      {bulletin.content && (
+                        <p className="text-xs text-gray-600 line-clamp-2">
+                          {bulletin.content}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      */}
 
       {/* Calendar Heatmap and Map Snippet */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -2192,8 +2401,8 @@ export function DashboardStats() {
           <CardHeader>
             <CardTitle>Report Activity Calendar</CardTitle>
           </CardHeader>
-          <CardContent className="p-4">
-            <div className="space-y-3">
+          <CardContent className="p-4 py-2">
+            <div className="space-y-2">
               {/* Nivo Calendar Chart */}
               <div style={{ height: '120px', minHeight: '100px' }}>
                 <ResponsiveCalendar
@@ -2202,12 +2411,11 @@ export function DashboardStats() {
                   to="2025-12-31"
                   emptyColor="#f3f4f6"
                   colors={[
-                    '#fed7aa', // orange-200 (very light orange) - Infectious Disease
-                    '#fb923c', // brand-orange-400 (lighter) - Fire
-                    '#f97316', // brand-orange (primary) - Road Crash
-                    '#ea580c', // brand-orange-600 (darker) - Medical Emergency
-                    '#dc2626', // red-600 (medium red) - Earthquake
-                    '#991b1b'  // brand-red (primary) - Flooding
+                    '#FFCD90', // lightest
+                    '#FFB76B', // light
+                    '#FFA652', // medium
+                    '#FF8D21', // medium-dark
+                    '#FF7B00'  // darkest
                   ]}
                   margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
                   yearSpacing={20}
@@ -2253,25 +2461,38 @@ export function DashboardStats() {
                 />
               </div>
 
+              {/* Color Spectrum Legend */}
+              <div className="flex items-center justify-center gap-2 pt-1">
+                <span className="text-xs text-gray-600 font-medium">Less</span>
+                <div className="flex gap-0.5">
+                  <div className="w-5 h-3 rounded" style={{ backgroundColor: '#FFCD90' }}></div>
+                  <div className="w-5 h-3 rounded" style={{ backgroundColor: '#FFB76B' }}></div>
+                  <div className="w-5 h-3 rounded" style={{ backgroundColor: '#FFA652' }}></div>
+                  <div className="w-5 h-3 rounded" style={{ backgroundColor: '#FF8D21' }}></div>
+                  <div className="w-5 h-3 rounded" style={{ backgroundColor: '#FF7B00' }}></div>
+                </div>
+                <span className="text-xs text-gray-600 font-medium">More</span>
+              </div>
+
               {/* Summary Stats */}
-              <div className="grid grid-cols-3 gap-3 pt-3 border-t">
+              <div className="grid grid-cols-3 gap-3 pt-2 border-t">
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-brand-orange">
+                  <div className="text-xl font-bold text-brand-orange">
                     {calendarData2025.reduce((sum, day) => sum + day.value, 0)}
                   </div>
-                  <div className="text-sm text-gray-600">Total Reports</div>
+                  <div className="text-xs text-gray-600">Total Reports</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-brand-red">
+                  <div className="text-xl font-bold text-brand-red">
                     {Math.max(...calendarData2025.map(d => d.value))}
                   </div>
-                  <div className="text-sm text-gray-600">Peak Day</div>
+                  <div className="text-xs text-gray-600">Peak Day</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-gray-700">
+                  <div className="text-xl font-bold text-gray-700">
                     {(calendarData2025.reduce((sum, day) => sum + day.value, 0) / calendarData2025.length).toFixed(1)}
                   </div>
-                  <div className="text-sm text-gray-600">Avg/Day</div>
+                  <div className="text-xs text-gray-600">Avg/Day</div>
                 </div>
               </div>
             </div>
@@ -2279,51 +2500,47 @@ export function DashboardStats() {
         </Card>
 
         {/* Map Snippet */}
-        <Card>
-          <CardContent className="p-4">
-            <div className="relative">
-              <div 
-                ref={mapContainer}
-                className="w-full h-64 rounded-lg border border-gray-200 overflow-hidden"
-                style={{ minHeight: '256px' }}
-              >
-                {/* Map will be rendered here */}
-              </div>
-              {/* Map Layer Toggle Button */}
-              <Button 
-                size="sm" 
-                variant="secondary"
-                className="absolute top-2 right-2 bg-white/90 hover:bg-white text-gray-700 border border-gray-300 shadow-sm"
-                onClick={() => {
-                  // Cycle through layer modes: normal -> traffic -> heatmap -> normal
-                  setMapLayerMode(prev => {
-                    if (prev === 'normal') return 'traffic';
-                    if (prev === 'traffic') return 'heatmap';
-                    return 'normal';
-                  });
-                }}
-              >
-                {mapLayerMode === 'normal' && (
-                  <>
-                    <Layers className="h-3 w-3 mr-1" />
-                    Normal
-                  </>
-                )}
-                {mapLayerMode === 'traffic' && (
-                  <>
-                    <Car className="h-3 w-3 mr-1" />
-                    Traffic
-                  </>
-                )}
-                {mapLayerMode === 'heatmap' && (
-                  <>
-                    <Flame className="h-3 w-3 mr-1" />
-                    Heatmap
-                  </>
-                )}
-              </Button>
-            </div>
-          </CardContent>
+        <Card className="relative overflow-hidden">
+          <div 
+            ref={mapContainer}
+            className="w-full rounded-lg overflow-hidden"
+            style={{ height: '100%' }}
+          >
+            {/* Map will be rendered here */}
+          </div>
+          {/* Map Layer Toggle Button */}
+          <Button 
+            size="sm" 
+            variant="secondary"
+            className="absolute top-2 right-2 bg-brand-orange/90 hover:bg-brand-orange text-white border border-brand-orange shadow-sm"
+            onClick={() => {
+              // Cycle through layer modes: normal -> traffic -> heatmap -> normal
+              setMapLayerMode(prev => {
+                if (prev === 'normal') return 'traffic';
+                if (prev === 'traffic') return 'heatmap';
+                return 'normal';
+              });
+            }}
+          >
+            {mapLayerMode === 'normal' && (
+              <>
+                <Layers className="h-3 w-3 mr-1" />
+                Normal
+              </>
+            )}
+            {mapLayerMode === 'traffic' && (
+              <>
+                <Car className="h-3 w-3 mr-1" />
+                Traffic
+              </>
+            )}
+            {mapLayerMode === 'heatmap' && (
+              <>
+                <Flame className="h-3 w-3 mr-1" />
+                Heatmap
+              </>
+            )}
+          </Button>
         </Card>
       </div>
 
@@ -2534,8 +2751,8 @@ export function DashboardStats() {
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="h-80 pb-3">
-            <div id="pie-chart" style={{ height: '220px', minHeight: '220px' }}>
+          <CardContent className="pb-3">
+            <div id="pie-chart" style={{ height: '200px', minHeight: '200px' }}>
               <ChartContainer config={{
                 reports: {
                   label: "Reports",
@@ -2543,14 +2760,14 @@ export function DashboardStats() {
                 }
               }}>
                 <PieChart>
-                  <Pie data={reportTypeData} cx="50%" cy="50%" innerRadius={50} outerRadius={100} paddingAngle={5} dataKey="value">
+                  <Pie data={reportTypeData} cx="50%" cy="50%" innerRadius={45} outerRadius={85} paddingAngle={5} dataKey="value">
                     {reportTypeData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                   </Pie>
                   <ChartTooltip content={<ChartTooltipContent />} />
                 </PieChart>
               </ChartContainer>
             </div>
-            <div className="flex flex-wrap justify-center gap-3 mt-2">
+            <div className="flex flex-wrap justify-center gap-3 mt-4">
               {reportTypeData.map(item => <div key={item.name} className="flex items-center gap-1.5">
                   <div className="w-3 h-3 rounded-sm" style={{
                     backgroundColor: item.color

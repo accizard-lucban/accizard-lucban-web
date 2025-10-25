@@ -181,7 +181,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
                       className={cn(
                         "w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", 
                         (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "justify-between px-4 py-3", 
-                        (location.pathname === '/chat-support' || location.pathname === '/admin-chat') ? "bg-white text-brand-orange shadow-lg" : "text-white/90 hover:bg-white/20 hover:text-white"
+                        (location.pathname === '/chat-support' || location.pathname === '/admin-chat') ? "bg-white text-brand-orange" : "text-white/90 hover:bg-white/20 hover:text-white"
                       )}
                     >
                       <div className={cn("flex items-center", (isCollapsed && !isMobileOpen) && "justify-center")}>
@@ -257,7 +257,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
                       className={cn(
                         "w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", 
                         (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "justify-between px-4 py-3", 
-                        (isActive(item.path) || location.pathname.startsWith('/manage-users')) ? "bg-white text-brand-orange shadow-lg" : "text-white/90 hover:bg-white/20 hover:text-white"
+                        (isActive(item.path) || location.pathname.startsWith('/manage-users')) ? "bg-white text-brand-orange" : "text-white/90 hover:bg-white/20 hover:text-white"
                       )}
                     >
                       <div className={cn("flex items-center", (isCollapsed && !isMobileOpen) && "justify-center")}>
@@ -326,7 +326,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
                   className={cn(
                     "w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", 
                     (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "justify-between px-4 py-3", 
-                    isActive(item.path) ? "bg-white text-brand-orange shadow-lg" : "text-white/90 hover:bg-white/20 hover:text-white"
+                    isActive(item.path) ? "bg-white text-brand-orange" : "text-white/90 hover:bg-white/20 hover:text-white"
                   )}
                 >
                   <div className={cn("flex items-center", (isCollapsed && !isMobileOpen) && "justify-center")}>
@@ -358,7 +358,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
                 onMouseEnter={() => preloadRoute(item.preload, item.title)}
                 onFocus={() => preloadRoute(item.preload, item.title)}
                 onTouchStart={() => preloadRoute(item.preload, item.title)}
-                className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "px-4 py-3", isActive(item.path) ? "bg-white text-brand-orange shadow-lg" : "text-white/90 hover:bg-white/20 hover:text-white")}>
+                className={cn("w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "px-4 py-3", isActive(item.path) ? "bg-white text-brand-orange" : "text-white/90 hover:bg-white/20 hover:text-white")}>
                 <item.icon className={cn("h-5 w-5 flex-shrink-0", (!isCollapsed || isMobileOpen) && "mr-3")} />
                 {(!isCollapsed || isMobileOpen) && <span>{item.title}</span>}
               </button>)}

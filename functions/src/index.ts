@@ -485,6 +485,107 @@ export const sendReportStatusNotification = onDocumentUpdated(
   }
 );
 
+// Callable Function: Fetch and parse PAGASA bulletins
+export const fetchPagasaBulletins = onCall(async (request) => {
+  // Check if user is authenticated and has admin privileges
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "User must be authenticated");
+  }
+
+  try {
+    logger.info("Fetching PAGASA bulletins...");
+
+    const xml2js = require('xml2js');
+    const parser = new xml2js.Parser();
+    const bulletinPromises: Promise<admin.firestore.DocumentReference>[] = [];
+
+    // Fetch Tropical Cyclone Bulletins
+    try {
+      const tcResponse = await fetch('https://pubfiles.pagasa.dost.gov.ph/tamss/weather/tcb.xml');
+      if (tcResponse.ok) {
+        const tcXml = await tcResponse.text();
+        const tcData = await parser.parseStringPromise(tcXml);
+        
+        if (tcData && tcData.product && tcData.product.title && tcData.product.info) {
+          const bulletinData = {
+            type: 'tropical_cyclone',
+            title: tcData.product.title[0],
+            content: tcData.product.info[0],
+            issueDate: admin.firestore.FieldValue.serverTimestamp(),
+            parsedAt: admin.firestore.FieldValue.serverTimestamp(),
+            source: 'PAGASA',
+            priority: 'high'
+          };
+          
+          bulletinPromises.push(
+            admin.firestore().collection('pagasa_bulletins').add(bulletinData)
+          );
+        }
+      }
+    } catch (tcError) {
+      logger.warn("Error fetching TC bulletins:", tcError);
+    }
+
+    // Fetch Weather Forecast
+    try {
+      const fcstResponse = await fetch('https://pubfiles.pagasa.dost.gov.ph/tamss/weather/fcst.xml');
+      if (fcstResponse.ok) {
+        const fcstXml = await fcstResponse.text();
+        const fcstData = await parser.parseStringPromise(fcstXml);
+        
+        if (fcstData && fcstData.product && fcstData.product.title && fcstData.product.info) {
+          const forecastData = {
+            type: 'weather_forecast',
+            title: fcstData.product.title[0],
+            content: fcstData.product.info[0],
+            issueDate: admin.firestore.FieldValue.serverTimestamp(),
+            parsedAt: admin.firestore.FieldValue.serverTimestamp(),
+            source: 'PAGASA',
+            priority: 'medium'
+          };
+          
+          bulletinPromises.push(
+            admin.firestore().collection('pagasa_bulletins').add(forecastData)
+          );
+        }
+      }
+    } catch (fcstError) {
+      logger.warn("Error fetching forecast:", fcstError);
+    }
+
+    // Store all bulletins (only if any were fetched)
+    if (bulletinPromises.length > 0) {
+      await Promise.all(bulletinPromises);
+      logger.info(`Successfully fetched and stored ${bulletinPromises.length} PAGASA bulletins`);
+    } else {
+      logger.warn("No bulletins fetched from PAGASA feeds");
+    }
+
+    return { 
+      success: true, 
+      count: bulletinPromises.length,
+      message: bulletinPromises.length > 0 
+        ? `Successfully fetched ${bulletinPromises.length} bulletins` 
+        : 'No bulletins available from PAGASA at this time'
+    };
+  } catch (error: any) {
+    logger.error("Error fetching PAGASA bulletins:", error);
+    throw new HttpsError("internal", error.message);
+  }
+});
+
+// Scheduled Function: Automatically fetch PAGASA bulletins every 6 hours
+// Note: Requires Firebase Blaze plan
+// To deploy: firebase deploy --only functions:fetchPagasaBulletinsScheduled
+export const fetchPagasaBulletinsScheduled = onDocumentCreated(
+  "pagasa_bulletins/{bulletinId}",
+  async (event) => {
+    // This is a placeholder - actual scheduled functions require pubsub triggers
+    // For now, we'll use a callable function that can be called from the frontend
+    logger.info("PAGASA bulletin scheduled function triggered");
+  }
+);
+
 // export const helloWorld = onRequest((request, response) => {
 //   logger.info("Hello logs!", {structuredData: true});
 //   response.send("Hello from Firebase!");

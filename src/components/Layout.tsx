@@ -184,9 +184,8 @@ export function Layout({ children }: LayoutProps) {
         <PageHeader
           title={currentPage.title}
           subtitle={currentPage.subtitle}
-          icon={currentPage.icon && <currentPage.icon className="h-6 w-6" />}
         />
-        <main className="p-8">
+        <main className="px-8 pb-8">
           {children}
         </main>
       </div>

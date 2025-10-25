@@ -155,6 +155,15 @@ service cloud.firestore {
       allow create, update, delete: if true;
     }
     
+    // PAGASA Bulletins collection
+    match /pagasa_bulletins/{bulletinId} {
+      // Public read access (anyone can view weather bulletins)
+      allow read: if true;
+      
+      // Only Cloud Functions can write (via Admin SDK)
+      allow write: if false;
+    }
+    
     // ========================================
     // DEFAULT: DENY ALL OTHER ACCESS
     // ========================================
