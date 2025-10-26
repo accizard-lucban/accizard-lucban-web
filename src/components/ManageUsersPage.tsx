@@ -8,12 +8,13 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Search, Plus, Edit, Trash2, Shield, ShieldOff, ShieldCheck, ShieldX, Eye, User, FileText, Calendar, CheckSquare, Square, UserPlus, EyeOff, ChevronUp, ChevronDown, MessageCircle, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { Search, Plus, Edit, Trash2, Shield, ShieldOff, ShieldCheck, ShieldX, Eye, User, FileText, Calendar, CheckSquare, Square, UserPlus, EyeOff, ChevronUp, ChevronDown, MessageCircle, ArrowUp, ArrowDown, ArrowUpDown, Upload, X } from "lucide-react";
 import { Layout } from "./Layout";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { db, deleteResidentUserFunction } from "@/lib/firebase";
+import { db, deleteResidentUserFunction, storage } from "@/lib/firebase";
 import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc } from "firebase/firestore";
+import { ref, getDownloadURL } from "firebase/storage";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/components/ui/use-toast";
 import { useLocation } from "react-router-dom";
@@ -47,9 +48,14 @@ export function ManageUsersPage() {
   const [isAddAdminOpen, setIsAddAdminOpen] = useState(false);
   const [editingAdmin, setEditingAdmin] = useState<any>(null);
   const [isEditResidentOpen, setIsEditResidentOpen] = useState(false);
+  const [isAddResidentOpen, setIsAddResidentOpen] = useState(false);
   const [selectedResident, setSelectedResident] = useState<any>(null);
   const [showResidentPreview, setShowResidentPreview] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<boolean>(false);
+  const [activeResidentTab, setActiveResidentTab] = useState<'profile' | 'reports'>('profile');
+  const [residentReports, setResidentReports] = useState<any[]>([]);
+  const [loadingReports, setLoadingReports] = useState(false);
   const [confirmPermissionChange, setConfirmPermissionChange] = useState<any>(null);
   const [selectedAdmins, setSelectedAdmins] = useState<string[]>([]);
   const [selectedResidents, setSelectedResidents] = useState<string[]>([]);
@@ -64,6 +70,17 @@ export function ManageUsersPage() {
     idNumber: "",
     username: "",
     password: ""
+  });
+  const [newResident, setNewResident] = useState({
+    fullName: "",
+    phoneNumber: "",
+    email: "",
+    barangay: "",
+    cityTown: "",
+    homeAddress: "",
+    validId: "",
+    validIdUrl: "",
+    additionalInfo: ""
   });
   const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [residents, setResidents] = useState<any[]>([]);
@@ -97,6 +114,15 @@ export function ManageUsersPage() {
            newAdmin.username.trim() !== "" && 
            newAdmin.password.trim() !== "" &&
            passwordError === "";
+  };
+
+  // Validation function for new resident
+  const isNewResidentValid = () => {
+    return newResident.fullName.trim() !== "" && 
+           newResident.phoneNumber.trim() !== "" && 
+           newResident.email.trim() !== "" && 
+           newResident.barangay.trim() !== "" && 
+           newResident.cityTown.trim() !== "";
   };
 
   // Add state for residentReportsCount
@@ -153,16 +179,35 @@ export function ManageUsersPage() {
         const querySnapshot = await getDocs(collection(db, "users"));
         console.log("📊 Fetched residents from Firestore:", querySnapshot.size, "documents");
         
-        const users = querySnapshot.docs.map(doc => {
-          const data = doc.data();
+        const usersPromises = querySnapshot.docs.map(async (docSnap) => {
+          const data = docSnap.data();
           
           // Handle different field names for profile picture
           const profilePicture = data.profilePicture || data.profilePictureUrl || data.profile_picture || data.avatar || "";
           
-          console.log("👤 User document:", doc.id);
+          // Handle different field names for valid ID image
+          let validIdImage = data.validIdImage || data.validIdUrl || data.valid_id_image || data.valid_id_url || data.idImage || data.idUrl || "";
+          
+          // If validIdImage is a storage path (not a URL), fetch the download URL
+          if (validIdImage && !validIdImage.startsWith('http') && !validIdImage.startsWith('data:')) {
+            try {
+              console.log("🔄 Converting storage path to download URL:", validIdImage);
+              const storageRef = ref(storage, validIdImage);
+              validIdImage = await getDownloadURL(storageRef);
+              console.log("✅ Successfully fetched download URL:", validIdImage);
+            } catch (storageError) {
+              console.error("❌ Failed to fetch download URL for:", validIdImage, storageError);
+              // Keep the original value if fetch fails
+            }
+          }
+          
+          console.log("👤 User document:", docSnap.id);
           console.log("  - profilePicture field:", data.profilePicture);
           console.log("  - profilePictureUrl field:", data.profilePictureUrl);
           console.log("  - Final profilePicture value:", profilePicture);
+          console.log("  - validIdImage field:", data.validIdImage);
+          console.log("  - validIdUrl field:", data.validIdUrl);
+          console.log("  - Final validIdImage value:", validIdImage);
           
           let userId = data.userId;
           if (typeof userId === 'number') {
@@ -173,22 +218,27 @@ export function ManageUsersPage() {
             if (!isNaN(num)) userId = `RID-${num}`;
           }
           return {
-            id: doc.id,
+            id: docSnap.id,
             ...data,
             verified: data.verified || false,
             createdDate: data.createdDate || new Date().toLocaleDateString(),
             createdTime: data.createdTime || null,
-            userId: userId || `RID-${doc.id.slice(-6)}`,
+            userId: userId || `RID-${docSnap.id.slice(-6)}`,
             fullName: data.fullName || data.name || "Unknown",
             phoneNumber: data.phoneNumber || data.phone || "N/A",
             barangay: data.barangay || "Unknown",
             cityTown: data.cityTown || data.city || "Unknown",
-            profilePicture: profilePicture  // Use the resolved value
+            profilePicture: profilePicture,  // Use the resolved value
+            validIdImage: validIdImage,  // Use the resolved value (now a download URL if it was a path)
+            validIdUrl: validIdImage  // Also set validIdUrl for backward compatibility
           };
         });
         
+        const users = await Promise.all(usersPromises);
+        
         console.log("✅ Processed residents:", users.length);
         console.log("🖼️ Residents with profile pictures:", users.filter(u => u.profilePicture).length);
+        console.log("🆔 Residents with valid ID images:", users.filter(u => u.validIdImage).length);
         setResidents(users);
       } catch (error) {
         console.error("❌ Error fetching residents:", error);
@@ -473,9 +523,72 @@ export function ManageUsersPage() {
     } catch (error) {
       console.error("Error updating resident:", error);
     }
-  };
+    };
 
-  const handleDeleteResident = async (residentId: string) => {
+    const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        toast({
+          title: 'Invalid file type',
+          description: 'Please upload an image file',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast({
+          title: 'File too large',
+          description: 'Please upload an image smaller than 5MB',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      try {
+        // Convert to base64
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const result = e.target?.result as string;
+          setSelectedResident({
+            ...selectedResident,
+            validIdUrl: result,
+            validIdImage: result
+          });
+          
+          toast({
+            title: 'Success',
+            description: 'ID image uploaded successfully'
+          });
+        };
+        reader.readAsDataURL(file);
+      } catch (error) {
+        toast({
+          title: 'Upload failed',
+          description: 'Failed to upload image. Please try again.',
+          variant: 'destructive'
+        });
+      }
+    };
+
+    const handleDeleteId = () => {
+      setSelectedResident({
+        ...selectedResident,
+        validIdUrl: '',
+        validIdImage: ''
+      });
+      setConfirmDeleteId(false);
+      toast({
+        title: 'Success',
+        description: 'Valid ID image removed successfully'
+      });
+    };
+  
+    const handleDeleteResident = async (residentId: string) => {
     setIsDeletingResident(residentId);
     try {
       // Get resident data to retrieve email
@@ -780,6 +893,29 @@ export function ManageUsersPage() {
     if (isNewAdminValid()) setIsAddAdminOpen(true);
   };
 
+  // Add New Resident confirmation
+  const handleAddResidentClick = () => {
+    if (isNewResidentValid()) {
+      handleAddResident(newResident);
+      setIsAddResidentOpen(false);
+      setNewResident({
+        fullName: "",
+        phoneNumber: "",
+        email: "",
+        barangay: "",
+        cityTown: "",
+        homeAddress: "",
+        validId: "",
+        validIdUrl: "",
+        additionalInfo: ""
+      });
+      toast({
+        title: 'Success',
+        description: 'Resident account added successfully!'
+      });
+    }
+  };
+
   // Password validation
   const validatePassword = (password: string) => {
     if (password.length < 8) return "Password must be at least 8 characters.";
@@ -791,26 +927,44 @@ export function ManageUsersPage() {
     setShowAdminPasswords(prev => ({ ...prev, [adminId]: !prev[adminId] }));
   };
 
-  // Fetch report count when previewing a resident
+  // Fetch report count and data when previewing a resident
   useEffect(() => {
-    async function fetchReportCount() {
+    async function fetchReportData() {
       if (showResidentPreview && selectedResident) {
-        // Try to fetch from Firestore if available
+        setLoadingReports(true);
         try {
           const querySnapshot = await getDocs(collection(db, "reports"));
           // Prefer userId if available, else fallback to fullName
-          const count = querySnapshot.docs.filter(doc => {
-            const data = doc.data();
-            return (data.userId && selectedResident.userId && data.userId === selectedResident.userId) ||
-                   (data.reportedBy && selectedResident.fullName && data.reportedBy === selectedResident.fullName);
-          }).length;
-          setResidentReportsCount(count);
+          const reports = querySnapshot.docs
+            .filter(doc => {
+              const data = doc.data();
+              return (data.userId && selectedResident.userId && data.userId === selectedResident.userId) ||
+                     (data.reportedBy && selectedResident.fullName && data.reportedBy === selectedResident.fullName);
+            })
+            .map(doc => ({
+              id: doc.id,
+              ...doc.data(),
+              timestamp: doc.data().timestamp || doc.data().createdAt || doc.data().createdDate
+            }))
+            .sort((a, b) => {
+              // Sort by timestamp descending (newest first)
+              const aTime = a.timestamp?.toDate ? a.timestamp.toDate() : new Date(a.timestamp);
+              const bTime = b.timestamp?.toDate ? b.timestamp.toDate() : new Date(b.timestamp);
+              return bTime.getTime() - aTime.getTime();
+            });
+          
+          setResidentReports(reports);
+          setResidentReportsCount(reports.length);
         } catch (e) {
+          console.error("Error fetching resident reports:", e);
+          setResidentReports([]);
           setResidentReportsCount(0);
+        } finally {
+          setLoadingReports(false);
         }
       }
     }
-    fetchReportCount();
+    fetchReportData();
   }, [showResidentPreview, selectedResident]);
 
   // Admins pagination
@@ -1438,10 +1592,17 @@ export function ManageUsersPage() {
                                   </AlertDialogTrigger>
                                   <AlertDialogContent>
                                     <AlertDialogHeader>
-                                      <AlertDialogTitle>Delete Admin Account</AlertDialogTitle>
-                                      <AlertDialogDescription>
-                                        Are you sure you want to delete {admin.name}'s admin account? This action cannot be undone.
-                                      </AlertDialogDescription>
+                                      <div className="flex items-center gap-3">
+                                        <div className="h-10 w-10 bg-red-100 rounded-full flex items-center justify-center">
+                                          <Trash2 className="h-5 w-5 text-red-600" />
+                                        </div>
+                                        <div>
+                                          <AlertDialogTitle className="text-red-800">Delete Admin Account</AlertDialogTitle>
+                                          <AlertDialogDescription className="text-red-600">
+                                            Are you sure you want to delete {admin.name}'s admin account? This action cannot be undone.
+                                          </AlertDialogDescription>
+                                        </div>
+                                      </div>
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>
                                       <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -1642,6 +1803,159 @@ export function ManageUsersPage() {
               {/* Table Toolbar */}
               <div className="border-b border-gray-200 px-6 py-4">
                 <div className="flex items-center gap-3 flex-wrap">
+                  {/* Add New Resident Button */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Dialog open={isAddResidentOpen} onOpenChange={setIsAddResidentOpen}>
+                        <DialogTrigger asChild>
+                          <Button size="sm" className="bg-brand-orange hover:bg-brand-orange-400 text-white">
+                            <UserPlus className="h-4 w-4 mr-2" />
+                            New Resident
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                          <DialogHeader>
+                            <DialogTitle>Add New Resident Account</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <Label>Full Name *</Label>
+                                <Input 
+                                  value={newResident.fullName} 
+                                  onChange={e => setNewResident({...newResident, fullName: e.target.value})} 
+                                  placeholder="Enter full name"
+                                />
+                              </div>
+                              <div>
+                                <Label>Phone Number *</Label>
+                                <Input 
+                                  value={newResident.phoneNumber} 
+                                  onChange={e => setNewResident({...newResident, phoneNumber: e.target.value})} 
+                                  placeholder="Enter phone number"
+                                />
+                              </div>
+                              <div>
+                                <Label>Email Address *</Label>
+                                <Input 
+                                  value={newResident.email} 
+                                  onChange={e => setNewResident({...newResident, email: e.target.value})} 
+                                  placeholder="Enter email address"
+                                  type="email"
+                                />
+                              </div>
+                              <div>
+                                <Label>Barangay *</Label>
+                                <Select value={newResident.barangay} onValueChange={value => setNewResident({ ...newResident, barangay: value })}>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select barangay" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="Abang">Abang</SelectItem>
+                                    <SelectItem value="Aliliw">Aliliw</SelectItem>
+                                    <SelectItem value="Atulinao">Atulinao</SelectItem>
+                                    <SelectItem value="Ayuti">Ayuti</SelectItem>
+                                    <SelectItem value="Barangay 1">Barangay 1</SelectItem>
+                                    <SelectItem value="Barangay 2">Barangay 2</SelectItem>
+                                    <SelectItem value="Barangay 3">Barangay 3</SelectItem>
+                                    <SelectItem value="Barangay 4">Barangay 4</SelectItem>
+                                    <SelectItem value="Barangay 5">Barangay 5</SelectItem>
+                                    <SelectItem value="Barangay 6">Barangay 6</SelectItem>
+                                    <SelectItem value="Barangay 7">Barangay 7</SelectItem>
+                                    <SelectItem value="Barangay 8">Barangay 8</SelectItem>
+                                    <SelectItem value="Barangay 9">Barangay 9</SelectItem>
+                                    <SelectItem value="Barangay 10">Barangay 10</SelectItem>
+                                    <SelectItem value="Igang">Igang</SelectItem>
+                                    <SelectItem value="Kabatete">Kabatete</SelectItem>
+                                    <SelectItem value="Kakawit">Kakawit</SelectItem>
+                                    <SelectItem value="Kalangay">Kalangay</SelectItem>
+                                    <SelectItem value="Kalyaat">Kalyaat</SelectItem>
+                                    <SelectItem value="Kilib">Kilib</SelectItem>
+                                    <SelectItem value="Kulapi">Kulapi</SelectItem>
+                                    <SelectItem value="Mahabang Parang">Mahabang Parang</SelectItem>
+                                    <SelectItem value="Malupak">Malupak</SelectItem>
+                                    <SelectItem value="Manasa">Manasa</SelectItem>
+                                    <SelectItem value="May-it">May-it</SelectItem>
+                                    <SelectItem value="Nagsinamo">Nagsinamo</SelectItem>
+                                    <SelectItem value="Nalunao">Nalunao</SelectItem>
+                                    <SelectItem value="Palola">Palola</SelectItem>
+                                    <SelectItem value="Piis">Piis</SelectItem>
+                                    <SelectItem value="Samil">Samil</SelectItem>
+                                    <SelectItem value="Tiawe">Tiawe</SelectItem>
+                                    <SelectItem value="Tinamnan">Tinamnan</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div>
+                                <Label>City/Town *</Label>
+                                <Input 
+                                  value={newResident.cityTown} 
+                                  onChange={e => setNewResident({...newResident, cityTown: e.target.value})} 
+                                  placeholder="Enter city/town"
+                                />
+                              </div>
+                              <div className="md:col-span-2">
+                                <Label>Home Address</Label>
+                                <Input 
+                                  value={newResident.homeAddress} 
+                                  onChange={e => setNewResident({...newResident, homeAddress: e.target.value})} 
+                                  placeholder="Enter home address"
+                                />
+                              </div>
+                              <div>
+                                <Label>Valid ID Type</Label>
+                                <Input 
+                                  value={newResident.validId} 
+                                  onChange={e => setNewResident({...newResident, validId: e.target.value})} 
+                                  placeholder="e.g., Driver's License, Passport"
+                                />
+                              </div>
+                              <div>
+                                <Label>Valid ID Image URL</Label>
+                                <Input 
+                                  value={newResident.validIdUrl} 
+                                  onChange={e => setNewResident({...newResident, validIdUrl: e.target.value})} 
+                                  placeholder="Enter image URL"
+                                />
+                              </div>
+                              <div className="md:col-span-2">
+                                <Label>Additional Information</Label>
+                                <Input 
+                                  value={newResident.additionalInfo} 
+                                  onChange={e => setNewResident({...newResident, additionalInfo: e.target.value})} 
+                                  placeholder="Any additional information"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                          <DialogFooter>
+                            <Button 
+                              onClick={handleAddResidentClick} 
+                              disabled={isAddingResident || !isNewResidentValid()}
+                              className="bg-brand-orange hover:bg-brand-orange-400 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {isAddingResident ? (
+                                <div className="flex items-center">
+                                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                  Adding...
+                                </div>
+                              ) : (
+                                "Add New Resident"
+                              )}
+                            </Button>
+                            <Button variant="secondary" onClick={() => setIsAddResidentOpen(false)}>Cancel</Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Add a new resident account</p>
+                    </TooltipContent>
+                  </Tooltip>
+
                   {/* Search Bar */}
                   <div className="flex-1 min-w-[200px] relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -1928,114 +2242,6 @@ export function ManageUsersPage() {
                                 >
                                   <Eye className="h-4 w-4" />
                                 </Button>
-                                <Dialog>
-                                  <DialogTrigger asChild>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => handleEditResident(resident)}
-                                      title="Edit Resident"
-                                    >
-                                      <Edit className="h-4 w-4" />
-                                    </Button>
-                                  </DialogTrigger>
-                                  <DialogContent>
-                                    <DialogHeader>
-                                      <DialogTitle>Edit Resident Information</DialogTitle>
-                                    </DialogHeader>
-                                    {selectedResident && (
-                                      <div className="space-y-4">
-                                        <div>
-                                          <Label>Full Name</Label>
-                                          <Input value={selectedResident.fullName} onChange={e => setSelectedResident({
-                                            ...selectedResident,
-                                            fullName: e.target.value
-                                          })} />
-                                        </div>
-                                        <div>
-                                          <Label>Phone Number</Label>
-                                          <Input value={selectedResident.phoneNumber} onChange={e => setSelectedResident({
-                                            ...selectedResident,
-                                            phoneNumber: e.target.value
-                                          })} />
-                                        </div>
-                                        <div>
-                                          <Label>Barangay</Label>
-                                          <Select value={selectedResident.barangay} onValueChange={value => setSelectedResident({
-                                            ...selectedResident,
-                                            barangay: value
-                                          })}>
-                                            <SelectTrigger>
-                                              <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="Abang">Abang</SelectItem>
-                                              <SelectItem value="Aliliw">Aliliw</SelectItem>
-                                              <SelectItem value="Atulinao">Atulinao</SelectItem>
-                                              <SelectItem value="Ayuti">Ayuti</SelectItem>
-                                              <SelectItem value="Barangay 1">Barangay 1</SelectItem>
-                                              <SelectItem value="Barangay 2">Barangay 2</SelectItem>
-                                              <SelectItem value="Barangay 3">Barangay 3</SelectItem>
-                                              <SelectItem value="Barangay 4">Barangay 4</SelectItem>
-                                              <SelectItem value="Barangay 5">Barangay 5</SelectItem>
-                                              <SelectItem value="Barangay 6">Barangay 6</SelectItem>
-                                              <SelectItem value="Barangay 7">Barangay 7</SelectItem>
-                                              <SelectItem value="Barangay 8">Barangay 8</SelectItem>
-                                              <SelectItem value="Barangay 9">Barangay 9</SelectItem>
-                                              <SelectItem value="Barangay 10">Barangay 10</SelectItem>
-                                              <SelectItem value="Igang">Igang</SelectItem>
-                                              <SelectItem value="Kabatete">Kabatete</SelectItem>
-                                              <SelectItem value="Kakawit">Kakawit</SelectItem>
-                                              <SelectItem value="Kalangay">Kalangay</SelectItem>
-                                              <SelectItem value="Kalyaat">Kalyaat</SelectItem>
-                                              <SelectItem value="Kilib">Kilib</SelectItem>
-                                              <SelectItem value="Kulapi">Kulapi</SelectItem>
-                                              <SelectItem value="Mahabang Parang">Mahabang Parang</SelectItem>
-                                              <SelectItem value="Malupak">Malupak</SelectItem>
-                                              <SelectItem value="Manasa">Manasa</SelectItem>
-                                              <SelectItem value="May-it">May-it</SelectItem>
-                                              <SelectItem value="Nagsinamo">Nagsinamo</SelectItem>
-                                              <SelectItem value="Nalunao">Nalunao</SelectItem>
-                                              <SelectItem value="Palola">Palola</SelectItem>
-                                              <SelectItem value="Piis">Piis</SelectItem>
-                                              <SelectItem value="Samil">Samil</SelectItem>
-                                              <SelectItem value="Tiawe">Tiawe</SelectItem>
-                                              <SelectItem value="Tinamnan">Tinamnan</SelectItem>
-                                            </SelectContent>
-                                          </Select>
-                                        </div>
-                                        <div>
-                                          <Label>City/Town</Label>
-                                          <Input value={selectedResident.cityTown} onChange={e => setSelectedResident({
-                                            ...selectedResident,
-                                            cityTown: e.target.value
-                                          })} />
-                                        </div>
-                                        <div>
-                                          <Label>Home Address</Label>
-                                          <Input value={selectedResident.homeAddress} onChange={e => setSelectedResident({
-                                            ...selectedResident,
-                                            homeAddress: e.target.value
-                                          })} />
-                                        </div>
-                                        <div>
-                                          <Label>Email Address</Label>
-                                          <Input value={selectedResident.email} onChange={e => setSelectedResident({
-                                            ...selectedResident,
-                                            email: e.target.value
-                                          })} />
-                                        </div>
-                                        <div>
-                                          <Label>Valid ID Image URL</Label>
-                                          <Input value={selectedResident.validIdUrl || selectedResident.validIdImage || ''} onChange={e => setSelectedResident({ ...selectedResident, validIdUrl: e.target.value })} />
-                                        </div>
-                                      </div>
-                                    )}
-                                    <DialogFooter>
-                                      <Button onClick={handleSaveResidentEdit}>Save Changes</Button>
-                                    </DialogFooter>
-                                  </DialogContent>
-                                </Dialog>
                                 <AlertDialog>
                                   <AlertDialogTrigger asChild>
                                     <Button size="sm" variant="outline" className="text-red-600" title="Delete Resident">
@@ -2044,10 +2250,17 @@ export function ManageUsersPage() {
                                   </AlertDialogTrigger>
                                   <AlertDialogContent>
                                     <AlertDialogHeader>
-                                      <AlertDialogTitle>Delete Resident Account</AlertDialogTitle>
-                                      <AlertDialogDescription>
-                                        Are you sure you want to delete {resident.fullName}'s account? This action cannot be undone.
-                                      </AlertDialogDescription>
+                                      <div className="flex items-center gap-3">
+                                        <div className="h-10 w-10 bg-red-100 rounded-full flex items-center justify-center">
+                                          <Trash2 className="h-5 w-5 text-red-600" />
+                                        </div>
+                                        <div>
+                                          <AlertDialogTitle className="text-red-800">Delete Resident Account</AlertDialogTitle>
+                                          <AlertDialogDescription className="text-red-600">
+                                            Are you sure you want to delete {resident.fullName}'s account? This action cannot be undone.
+                                          </AlertDialogDescription>
+                                        </div>
+                                      </div>
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>
                                       <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -2178,12 +2391,29 @@ export function ManageUsersPage() {
         >
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>
-                {confirmPermissionChange?.hasEditPermission ? 'Revoke Permission' : 'Grant Permission'}
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                Are you sure you want to {confirmPermissionChange?.hasEditPermission ? 'revoke' : 'grant'} edit permission for {confirmPermissionChange?.name}?
-              </AlertDialogDescription>
+              <div className="flex items-center gap-3">
+                <div className={`h-10 w-10 rounded-full flex items-center justify-center ${
+                  confirmPermissionChange?.hasEditPermission ? 'bg-yellow-100' : 'bg-green-100'
+                }`}>
+                  {confirmPermissionChange?.hasEditPermission ? (
+                    <ShieldOff className="h-5 w-5 text-yellow-600" />
+                  ) : (
+                    <ShieldCheck className="h-5 w-5 text-green-600" />
+                  )}
+                </div>
+                <div>
+                  <AlertDialogTitle className={
+                    confirmPermissionChange?.hasEditPermission ? 'text-yellow-800' : 'text-green-800'
+                  }>
+                    {confirmPermissionChange?.hasEditPermission ? 'Revoke Permission' : 'Grant Permission'}
+                  </AlertDialogTitle>
+                  <AlertDialogDescription className={
+                    confirmPermissionChange?.hasEditPermission ? 'text-yellow-600' : 'text-green-600'
+                  }>
+                    Are you sure you want to {confirmPermissionChange?.hasEditPermission ? 'revoke' : 'grant'} edit permission for {confirmPermissionChange?.name}?
+                  </AlertDialogDescription>
+                </div>
+              </div>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -2204,23 +2434,45 @@ export function ManageUsersPage() {
         >
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>
-                {confirmBatchAction?.type === 'delete'
-                  ? 'Delete Selected Items'
-                  : confirmBatchAction?.type === 'permission'
-                  ? `${confirmBatchAction.value ? 'Grant' : 'Revoke'} Permissions`
-                  : `${confirmBatchAction?.value ? 'Verify' : 'Revoke Verification for'} Selected Accounts`}
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                Are you sure you want to {confirmBatchAction?.type === 'delete'
-                  ? 'delete'
-                  : confirmBatchAction?.type === 'permission'
-                  ? `${confirmBatchAction.value ? 'grant permissions to' : 'revoke permissions from'}`
-                  : `${confirmBatchAction?.value ? 'verify' : 'revoke verification for'}`
-                } the selected {confirmBatchAction?.items.length} {
-                  confirmBatchAction?.items === selectedAdmins ? 'admin' : 'resident'
-                } accounts?
-              </AlertDialogDescription>
+              <div className="flex items-center gap-3">
+                <div className={`h-10 w-10 rounded-full flex items-center justify-center ${
+                  confirmBatchAction?.type === 'delete' ? 'bg-red-100' : 
+                  confirmBatchAction?.value ? 'bg-green-100' : 'bg-yellow-100'
+                }`}>
+                  {confirmBatchAction?.type === 'delete' ? (
+                    <Trash2 className="h-5 w-5 text-red-600" />
+                  ) : confirmBatchAction?.type === 'permission' ? (
+                    confirmBatchAction.value ? <ShieldCheck className="h-5 w-5 text-green-600" /> : <ShieldOff className="h-5 w-5 text-yellow-600" />
+                  ) : (
+                    confirmBatchAction?.value ? <ShieldCheck className="h-5 w-5 text-green-600" /> : <ShieldX className="h-5 w-5 text-yellow-600" />
+                  )}
+                </div>
+                <div>
+                  <AlertDialogTitle className={
+                    confirmBatchAction?.type === 'delete' ? 'text-red-800' : 
+                    confirmBatchAction?.value ? 'text-green-800' : 'text-yellow-800'
+                  }>
+                    {confirmBatchAction?.type === 'delete'
+                      ? 'Delete Selected Items'
+                      : confirmBatchAction?.type === 'permission'
+                      ? `${confirmBatchAction.value ? 'Grant' : 'Revoke'} Permissions`
+                      : `${confirmBatchAction?.value ? 'Verify' : 'Revoke Verification for'} Selected Accounts`}
+                  </AlertDialogTitle>
+                  <AlertDialogDescription className={
+                    confirmBatchAction?.type === 'delete' ? 'text-red-600' : 
+                    confirmBatchAction?.value ? 'text-green-600' : 'text-yellow-600'
+                  }>
+                    Are you sure you want to {confirmBatchAction?.type === 'delete'
+                      ? 'delete'
+                      : confirmBatchAction?.type === 'permission'
+                      ? `${confirmBatchAction.value ? 'grant permissions to' : 'revoke permissions from'}`
+                      : `${confirmBatchAction?.value ? 'verify' : 'revoke verification for'}`
+                    } the selected {confirmBatchAction?.items.length} {
+                      confirmBatchAction?.items === selectedAdmins ? 'admin' : 'resident'
+                    } accounts?
+                  </AlertDialogDescription>
+                </div>
+              </div>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -2248,45 +2500,83 @@ export function ManageUsersPage() {
             </DialogHeader>
             
             {/* Profile Picture at the top - large and clickable */}
-            <div className="flex justify-center py-4">
-              {selectedResident?.profilePicture ? (
+            <div className="flex flex-col items-center py-4">
+              <div className="relative">
+                {selectedResident?.profilePicture ? (
+                  <button
+                    type="button"
+                    onClick={() => window.open(selectedResident.profilePicture, '_blank')}
+                    className="focus:outline-none group relative"
+                    title="Click to view full size"
+                  >
+                    <img 
+                      src={selectedResident.profilePicture} 
+                      alt="Profile" 
+                      className="w-32 h-32 rounded-full object-cover border-4 border-gray-200 group-hover:border-brand-orange transition-all duration-200 shadow-lg group-hover:shadow-xl"
+                      onLoad={() => console.log("✅ Profile picture loaded successfully:", selectedResident.profilePicture)}
+                      onError={(e) => {
+                        console.error("❌ Failed to load profile picture:", selectedResident.profilePicture);
+                        console.log("📋 Selected resident data:", selectedResident);
+                        e.currentTarget.style.display = 'none';
+                        const parent = e.currentTarget.parentElement;
+                        if (parent) {
+                          const fallback = document.createElement('div');
+                          fallback.className = 'w-32 h-32 rounded-full bg-gray-200 flex items-center justify-center border-4 border-gray-200';
+                          fallback.innerHTML = '<svg class="h-16 w-16 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+                          parent.appendChild(fallback);
+                        }
+                      }}
+                    />
+                    <div className="absolute inset-0 rounded-full bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all duration-200 flex items-center justify-center">
+                      <Eye className="h-8 w-8 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                    </div>
+                  </button>
+                ) : (
+                  <div className="w-32 h-32 rounded-full bg-gray-200 flex items-center justify-center border-4 border-gray-200 shadow-lg">
+                    <User className="h-16 w-16 text-gray-400" />
+                  </div>
+                )}
+                
+                {/* Camera Icon Overlay */}
                 <button
                   type="button"
-                  onClick={() => window.open(selectedResident.profilePicture, '_blank')}
-                  className="focus:outline-none group relative"
-                  title="Click to view full size"
+                  className="absolute bottom-0 right-0 h-8 w-8 bg-brand-orange hover:bg-brand-orange-400 text-white rounded-full flex items-center justify-center shadow-lg transition-colors"
+                  title="Change Profile Picture"
                 >
-                  <img 
-                    src={selectedResident.profilePicture} 
-                    alt="Profile" 
-                    className="w-32 h-32 rounded-full object-cover border-4 border-gray-200 group-hover:border-brand-orange transition-all duration-200 shadow-lg group-hover:shadow-xl"
-                    onLoad={() => console.log("✅ Profile picture loaded successfully:", selectedResident.profilePicture)}
-                    onError={(e) => {
-                      console.error("❌ Failed to load profile picture:", selectedResident.profilePicture);
-                      console.log("📋 Selected resident data:", selectedResident);
-                      e.currentTarget.style.display = 'none';
-                      const parent = e.currentTarget.parentElement;
-                      if (parent) {
-                        const fallback = document.createElement('div');
-                        fallback.className = 'w-32 h-32 rounded-full bg-gray-200 flex items-center justify-center border-4 border-gray-200';
-                        fallback.innerHTML = '<svg class="h-16 w-16 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
-                        parent.appendChild(fallback);
-                      }
-                    }}
-                  />
-                  <div className="absolute inset-0 rounded-full bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all duration-200 flex items-center justify-center">
-                    <Eye className="h-8 w-8 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
-                  </div>
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
                 </button>
-              ) : (
-                <div className="w-32 h-32 rounded-full bg-gray-200 flex items-center justify-center border-4 border-gray-200 shadow-lg">
-                  <User className="h-16 w-16 text-gray-400" />
-                </div>
-              )}
+              </div>
             </div>
             
-            <div className="py-4">
-              <Table>
+        {/* Navigation Tabs */}
+        <div className="border-b border-gray-200 mb-4">
+          <nav className="flex">
+            <button
+              onClick={() => setActiveResidentTab('profile')}
+              className={`flex-1 py-2 px-1 border-b-2 font-semibold text-sm transition-colors text-center ${
+                activeResidentTab === 'profile' ? 'border-brand-orange text-brand-orange bg-orange-50' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              View Profile
+            </button>
+            <button
+              onClick={() => setActiveResidentTab('reports')}
+              className={`flex-1 py-2 px-1 border-b-2 font-semibold text-sm transition-colors text-center ${
+                activeResidentTab === 'reports' ? 'border-brand-orange text-brand-orange bg-orange-50' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Submitted Reports
+            </button>
+          </nav>
+        </div>
+            
+            {/* Tab Content */}
+            {activeResidentTab === 'profile' ? (
+              <div>
+                <Table>
                 <TableBody>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">User ID</TableCell>
@@ -2294,50 +2584,227 @@ export function ManageUsersPage() {
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Full Name</TableCell>
-                    <TableCell>{selectedResident?.fullName || 'N/A'}</TableCell>
+                    <TableCell>
+                      <Input 
+                        value={selectedResident?.fullName || ''} 
+                        onChange={e => setSelectedResident({
+                          ...selectedResident,
+                          fullName: e.target.value
+                        })}
+                        className="border-0 bg-transparent p-0 h-auto font-normal"
+                      />
+                    </TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Phone Number</TableCell>
-                    <TableCell>{selectedResident?.phoneNumber || 'N/A'}</TableCell>
+                    <TableCell>
+                      <Input 
+                        value={selectedResident?.phoneNumber || ''} 
+                        onChange={e => setSelectedResident({
+                          ...selectedResident,
+                          phoneNumber: e.target.value
+                        })}
+                        className="border-0 bg-transparent p-0 h-auto font-normal"
+                      />
+                    </TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Email</TableCell>
-                    <TableCell>{selectedResident?.email || 'N/A'}</TableCell>
+                    <TableCell>
+                      <Input 
+                        value={selectedResident?.email || ''} 
+                        onChange={e => setSelectedResident({
+                          ...selectedResident,
+                          email: e.target.value
+                        })}
+                        className="border-0 bg-transparent p-0 h-auto font-normal"
+                        type="email"
+                      />
+                    </TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Barangay</TableCell>
-                    <TableCell>{selectedResident?.barangay || 'N/A'}</TableCell>
+                    <TableCell>
+                      <Select 
+                        value={selectedResident?.barangay || ''} 
+                        onValueChange={value => setSelectedResident({
+                          ...selectedResident,
+                          barangay: value
+                        })}
+                      >
+                        <SelectTrigger className="border-0 bg-transparent p-0 h-auto font-normal shadow-none">
+                          <SelectValue placeholder="Select barangay" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Abang">Abang</SelectItem>
+                          <SelectItem value="Aliliw">Aliliw</SelectItem>
+                          <SelectItem value="Atulinao">Atulinao</SelectItem>
+                          <SelectItem value="Ayuti">Ayuti</SelectItem>
+                          <SelectItem value="Barangay 1">Barangay 1</SelectItem>
+                          <SelectItem value="Barangay 2">Barangay 2</SelectItem>
+                          <SelectItem value="Barangay 3">Barangay 3</SelectItem>
+                          <SelectItem value="Barangay 4">Barangay 4</SelectItem>
+                          <SelectItem value="Barangay 5">Barangay 5</SelectItem>
+                          <SelectItem value="Barangay 6">Barangay 6</SelectItem>
+                          <SelectItem value="Barangay 7">Barangay 7</SelectItem>
+                          <SelectItem value="Barangay 8">Barangay 8</SelectItem>
+                          <SelectItem value="Barangay 9">Barangay 9</SelectItem>
+                          <SelectItem value="Barangay 10">Barangay 10</SelectItem>
+                          <SelectItem value="Igang">Igang</SelectItem>
+                          <SelectItem value="Kabatete">Kabatete</SelectItem>
+                          <SelectItem value="Kakawit">Kakawit</SelectItem>
+                          <SelectItem value="Kalangay">Kalangay</SelectItem>
+                          <SelectItem value="Kalyaat">Kalyaat</SelectItem>
+                          <SelectItem value="Kilib">Kilib</SelectItem>
+                          <SelectItem value="Kulapi">Kulapi</SelectItem>
+                          <SelectItem value="Mahabang Parang">Mahabang Parang</SelectItem>
+                          <SelectItem value="Malupak">Malupak</SelectItem>
+                          <SelectItem value="Manasa">Manasa</SelectItem>
+                          <SelectItem value="May-it">May-it</SelectItem>
+                          <SelectItem value="Nagsinamo">Nagsinamo</SelectItem>
+                          <SelectItem value="Nalunao">Nalunao</SelectItem>
+                          <SelectItem value="Palola">Palola</SelectItem>
+                          <SelectItem value="Piis">Piis</SelectItem>
+                          <SelectItem value="Samil">Samil</SelectItem>
+                          <SelectItem value="Tiawe">Tiawe</SelectItem>
+                          <SelectItem value="Tinamnan">Tinamnan</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">City/Town</TableCell>
-                    <TableCell>{selectedResident?.cityTown || 'N/A'}</TableCell>
+                    <TableCell>
+                      <Input 
+                        value={selectedResident?.cityTown || ''} 
+                        onChange={e => setSelectedResident({
+                          ...selectedResident,
+                          cityTown: e.target.value
+                        })}
+                        className="border-0 bg-transparent p-0 h-auto font-normal"
+                      />
+                    </TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Province</TableCell>
                     <TableCell>{selectedResident?.province || '-'}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell className="font-medium text-gray-700 align-top">Valid ID Image</TableCell>
+                    <TableCell className="font-medium text-gray-700 align-top">Valid ID Type</TableCell>
                     <TableCell>
-                      {selectedResident?.validIdUrl || selectedResident?.validIdImage ? (
-                        <Button 
-                          variant="link" 
-                          className="p-0 h-auto text-blue-600 hover:text-blue-800" 
-                          onClick={() => setPreviewImage(selectedResident.validIdUrl || selectedResident.validIdImage)}
-                        >
-                          View ID Image
-                        </Button>
-                      ) : (
-                        <span className="text-gray-500">No valid ID uploaded</span>
-                      )}
+                      <Input 
+                        value={selectedResident?.validId || ''} 
+                        onChange={e => setSelectedResident({
+                          ...selectedResident,
+                          validId: e.target.value
+                        })}
+                        className="border-0 bg-transparent p-0 h-auto font-normal"
+                        placeholder="e.g., Driver's License, Passport"
+                      />
                     </TableCell>
                   </TableRow>
+                    <TableRow>
+                      <TableCell className="font-medium text-gray-700 align-top">Valid ID Image</TableCell>
+                      <TableCell>
+                        <div className="space-y-3">
+                          {/* Image Recycler View */}
+                          <div className="flex flex-wrap gap-3">
+                            {(selectedResident?.validIdUrl || selectedResident?.validIdImage) && (
+                              <div className="relative group">
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewImage(selectedResident.validIdUrl || selectedResident.validIdImage)}
+                                  className="relative w-24 h-16 bg-gray-100 rounded-lg overflow-hidden border-2 border-gray-200 hover:border-brand-orange transition-all duration-200 shadow-sm hover:shadow-md"
+                                >
+                                  <img
+                                    src={selectedResident.validIdUrl || selectedResident.validIdImage}
+                                    alt="ID Preview"
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                      const target = e.currentTarget as HTMLImageElement;
+                                      const nextElement = target.nextElementSibling as HTMLElement;
+                                      target.style.display = 'none';
+                                      if (nextElement) nextElement.style.display = 'flex';
+                                    }}
+                                  />
+                                  <div className="hidden w-full h-full items-center justify-center bg-gray-100">
+                                    <FileText className="h-6 w-6 text-gray-400" />
+                                  </div>
+                                  
+                                  {/* Hover overlay with view text */}
+                                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-40 transition-all duration-200 flex flex-col items-center justify-center">
+                                    <Eye className="h-4 w-4 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 mb-1" />
+                                    <span className="text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-center px-1">View ID</span>
+                                  </div>
+                                </button>
+                                
+                                {/* Delete button */}
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteId(true)}
+                                  className="absolute -top-2 -right-2 h-5 w-5 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                    </TableRow>
                   <TableRow>
                     <TableCell className="font-medium text-gray-700 align-top">Verification Status</TableCell>
                     <TableCell>
-                      <Badge className={selectedResident?.verified ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>
-                        {selectedResident?.verified ? 'Verified' : 'Pending'}
-                      </Badge>
+                      <Select 
+                        value={
+                          selectedResident?.suspended ? 'Suspended' : 
+                          selectedResident?.verified ? 'Verified' : 
+                          'Pending'
+                        } 
+                        onValueChange={async (newStatus) => {
+                          try {
+                            const updates: any = {};
+                            if (newStatus === 'Verified') {
+                              updates.verified = true;
+                              updates.suspended = false;
+                            } else if (newStatus === 'Pending') {
+                              updates.verified = false;
+                              updates.suspended = false;
+                            } else if (newStatus === 'Suspended') {
+                              updates.suspended = true;
+                              updates.verified = false;
+                            }
+                            
+                            await updateDoc(doc(db, "users", selectedResident.id), updates);
+                            setSelectedResident({ ...selectedResident, ...updates });
+                            toast({
+                              title: 'Success',
+                              description: `Status updated to ${newStatus}`
+                            });
+                          } catch (error) {
+                            console.error("Error updating resident status:", error);
+                            toast({
+                              title: 'Error',
+                              description: 'Failed to update status. Please try again.',
+                              variant: 'destructive'
+                            });
+                          }
+                        }}
+                      >
+                        <SelectTrigger className={cn(
+                          "w-auto border-0 bg-transparent font-medium focus:ring-1 focus:ring-brand-orange",
+                          selectedResident?.suspended && 'text-red-600',
+                          selectedResident?.verified && 'text-green-600',
+                          !selectedResident?.verified && !selectedResident?.suspended && 'text-yellow-600'
+                        )}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Verified">Verified</SelectItem>
+                          <SelectItem value="Pending">Pending</SelectItem>
+                          <SelectItem value="Suspended">Suspended</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </TableCell>
                   </TableRow>
                   <TableRow>
@@ -2356,8 +2823,117 @@ export function ManageUsersPage() {
                   </TableRow>
                 </TableBody>
               </Table>
-            </div>
+              
+              </div>
+            ) : (
+              <div>
+                {loadingReports ? (
+                  <div className="text-center py-8">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brand-orange"></div>
+                    <p className="mt-2 text-gray-500">Loading reports...</p>
+                  </div>
+                ) : residentReports.length === 0 ? (
+                  <div className="text-center py-8">
+                    <div className="text-gray-500 mb-4">
+                      <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No Reports Submitted</h3>
+                    <p className="text-gray-500">This resident hasn't submitted any reports yet.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-medium text-gray-900">
+                        Submitted Reports ({residentReports.length})
+                      </h3>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      {residentReports.map((report) => (
+                        <div key={report.id} className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow">
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                  report.hazardType === 'Fire' ? 'bg-red-100 text-red-800' :
+                                  report.hazardType === 'Flood' ? 'bg-blue-100 text-blue-800' :
+                                  report.hazardType === 'Earthquake' ? 'bg-yellow-100 text-yellow-800' :
+                                  report.hazardType === 'Landslide' ? 'bg-orange-100 text-orange-800' :
+                                  report.hazardType === 'Typhoon' ? 'bg-purple-100 text-purple-800' :
+                                  'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {report.hazardType || 'Unknown'}
+                                </span>
+                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                  report.status === 'Resolved' ? 'bg-green-100 text-green-800' :
+                                  report.status === 'In Progress' ? 'bg-yellow-100 text-yellow-800' :
+                                  report.status === 'Pending' ? 'bg-gray-100 text-gray-800' :
+                                  'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {report.status || 'Pending'}
+                                </span>
+                              </div>
+                              
+                              <h4 className="font-medium text-gray-900 mb-1">
+                                {report.title || report.description || 'Untitled Report'}
+                              </h4>
+                              
+                              {report.description && report.description !== report.title && (
+                                <p className="text-sm text-gray-600 mb-2 line-clamp-2">
+                                  {report.description}
+                                </p>
+                              )}
+                              
+                              <div className="flex items-center gap-4 text-xs text-gray-500">
+                                <span className="flex items-center gap-1">
+                                  <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  </svg>
+                                  {report.location || report.barangay || 'Unknown Location'}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                  {report.timestamp ? (
+                                    report.timestamp.toDate ? 
+                                      report.timestamp.toDate().toLocaleDateString() :
+                                      new Date(report.timestamp).toLocaleDateString()
+                                  ) : 'Unknown Date'}
+                                </span>
+                              </div>
+                            </div>
+                            
+                            {report.imageUrl && (
+                              <div className="ml-4 flex-shrink-0">
+                                <img 
+                                  src={report.imageUrl} 
+                                  alt="Report" 
+                                  className="h-16 w-16 rounded-lg object-cover border border-gray-200"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <DialogFooter>
+              <Button
+                onClick={handleSaveResidentEdit}
+                className="bg-brand-orange hover:bg-brand-orange-400 text-white"
+              >
+                Save Changes
+              </Button>
               <DialogClose asChild>
                 <Button type="button" variant="secondary">
                   Close
@@ -2405,10 +2981,17 @@ export function ManageUsersPage() {
         <AlertDialog open={!!confirmDeletePosition} onOpenChange={() => setConfirmDeletePosition(null)}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete Position</AlertDialogTitle>
-              <AlertDialogDescription>
-                Are you sure you want to delete the position <b>{confirmDeletePosition}</b>? This action cannot be undone.
-              </AlertDialogDescription>
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 bg-red-100 rounded-full flex items-center justify-center">
+                  <Trash2 className="h-5 w-5 text-red-600" />
+                </div>
+                <div>
+                  <AlertDialogTitle className="text-red-800">Delete Position</AlertDialogTitle>
+                  <AlertDialogDescription className="text-red-600">
+                    Are you sure you want to delete the position <b>{confirmDeletePosition}</b>? This action cannot be undone.
+                  </AlertDialogDescription>
+                </div>
+              </div>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -2495,6 +3078,151 @@ export function ManageUsersPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Edit Resident Modal */}
+        <Dialog open={isEditResidentOpen} onOpenChange={setIsEditResidentOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit Resident Information</DialogTitle>
+            </DialogHeader>
+            {selectedResident && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label>Full Name</Label>
+                    <Input value={selectedResident.fullName} onChange={e => setSelectedResident({
+                      ...selectedResident,
+                      fullName: e.target.value
+                    })} />
+                  </div>
+                  <div>
+                    <Label>Phone Number</Label>
+                    <Input value={selectedResident.phoneNumber} onChange={e => setSelectedResident({
+                      ...selectedResident,
+                      phoneNumber: e.target.value
+                    })} />
+                  </div>
+                  <div>
+                    <Label>Email Address</Label>
+                    <Input value={selectedResident.email} onChange={e => setSelectedResident({
+                      ...selectedResident,
+                      email: e.target.value
+                    })} />
+                  </div>
+                  <div>
+                    <Label>Barangay</Label>
+                    <Select value={selectedResident.barangay} onValueChange={value => setSelectedResident({
+                      ...selectedResident,
+                      barangay: value
+                    })}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Abang">Abang</SelectItem>
+                        <SelectItem value="Aliliw">Aliliw</SelectItem>
+                        <SelectItem value="Atulinao">Atulinao</SelectItem>
+                        <SelectItem value="Ayuti">Ayuti</SelectItem>
+                        <SelectItem value="Barangay 1">Barangay 1</SelectItem>
+                        <SelectItem value="Barangay 2">Barangay 2</SelectItem>
+                        <SelectItem value="Barangay 3">Barangay 3</SelectItem>
+                        <SelectItem value="Barangay 4">Barangay 4</SelectItem>
+                        <SelectItem value="Barangay 5">Barangay 5</SelectItem>
+                        <SelectItem value="Barangay 6">Barangay 6</SelectItem>
+                        <SelectItem value="Barangay 7">Barangay 7</SelectItem>
+                        <SelectItem value="Barangay 8">Barangay 8</SelectItem>
+                        <SelectItem value="Barangay 9">Barangay 9</SelectItem>
+                        <SelectItem value="Barangay 10">Barangay 10</SelectItem>
+                        <SelectItem value="Igang">Igang</SelectItem>
+                        <SelectItem value="Kabatete">Kabatete</SelectItem>
+                        <SelectItem value="Kakawit">Kakawit</SelectItem>
+                        <SelectItem value="Kalangay">Kalangay</SelectItem>
+                        <SelectItem value="Kalyaat">Kalyaat</SelectItem>
+                        <SelectItem value="Kilib">Kilib</SelectItem>
+                        <SelectItem value="Kulapi">Kulapi</SelectItem>
+                        <SelectItem value="Mahabang Parang">Mahabang Parang</SelectItem>
+                        <SelectItem value="Malupak">Malupak</SelectItem>
+                        <SelectItem value="Manasa">Manasa</SelectItem>
+                        <SelectItem value="May-it">May-it</SelectItem>
+                        <SelectItem value="Nagsinamo">Nagsinamo</SelectItem>
+                        <SelectItem value="Nalunao">Nalunao</SelectItem>
+                        <SelectItem value="Palola">Palola</SelectItem>
+                        <SelectItem value="Piis">Piis</SelectItem>
+                        <SelectItem value="Samil">Samil</SelectItem>
+                        <SelectItem value="Tiawe">Tiawe</SelectItem>
+                        <SelectItem value="Tinamnan">Tinamnan</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>City/Town</Label>
+                    <Input value={selectedResident.cityTown} onChange={e => setSelectedResident({
+                      ...selectedResident,
+                      cityTown: e.target.value
+                    })} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <Label>Home Address</Label>
+                    <Input value={selectedResident.homeAddress} onChange={e => setSelectedResident({
+                      ...selectedResident,
+                      homeAddress: e.target.value
+                    })} />
+                  </div>
+                  <div>
+                    <Label>Valid ID Type</Label>
+                    <Input value={selectedResident.validId} onChange={e => setSelectedResident({
+                      ...selectedResident,
+                      validId: e.target.value
+                    })} />
+                  </div>
+                  <div>
+                    <Label>Valid ID Image URL</Label>
+                    <Input value={selectedResident.validIdUrl || selectedResident.validIdImage || ''} onChange={e => setSelectedResident({ ...selectedResident, validIdUrl: e.target.value })} />
+                  </div>
+                  <div className="md:col-span-2">
+                    <Label>Additional Information</Label>
+                    <Input value={selectedResident.additionalInfo} onChange={e => setSelectedResident({
+                      ...selectedResident,
+                      additionalInfo: e.target.value
+                    })} />
+                  </div>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button onClick={handleSaveResidentEdit} className="bg-brand-orange hover:bg-brand-orange-400 text-white">Save Changes</Button>
+              <Button variant="secondary" onClick={() => setIsEditResidentOpen(false)}>Cancel</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete ID Confirmation Dialog */}
+        <AlertDialog open={confirmDeleteId} onOpenChange={setConfirmDeleteId}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 bg-red-100 rounded-full flex items-center justify-center">
+                  <Trash2 className="h-5 w-5 text-red-600" />
+                </div>
+                <div>
+                  <AlertDialogTitle className="text-red-800">Delete Valid ID Image</AlertDialogTitle>
+                  <AlertDialogDescription className="text-red-700">
+                    Are you sure you want to delete the valid ID image for {selectedResident?.fullName}? This action cannot be undone.
+                  </AlertDialogDescription>
+                </div>
+              </div>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteId}
+                className="bg-red-600 hover:bg-red-700"
+              >
+                Delete ID Image
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
       </TooltipProvider>
     </Layout>;

@@ -90,18 +90,18 @@ export function PageHeader({
   }, []);
 
   return (
-    <div className="px-8 py-4">
+    <div className="px-8 py-4 bg-brand-orange">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
+          <h1 className="text-2xl font-bold text-white">{title}</h1>
         </div>
 
         <div className="flex items-center gap-4">
           {/* Notifications Button */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="relative p-2 rounded-full hover:bg-gray-100 focus:outline-none">
-                <Bell className="h-6 w-6 text-gray-600" />
+              <button className="relative p-2 rounded-full hover:bg-white/20 focus:outline-none">
+                <Bell className="h-6 w-6 text-white" />
                 {notifications.length > 0 && (
                   <span className="absolute top-1 right-1 block h-2 w-2 rounded-full bg-red-500"></span>
                 )}
@@ -145,10 +145,10 @@ export function PageHeader({
           </DropdownMenu>
 
           <DropdownMenu>
-            <DropdownMenuTrigger className="flex items-center space-x-3 hover:bg-gray-50 rounded-lg px-3 py-2 transition-colors">
+            <DropdownMenuTrigger className="flex items-center space-x-3 hover:bg-white/20 rounded-lg px-3 py-2 transition-colors">
               <div className="text-sm text-right">
-                <div className="font-medium text-gray-900">{user.name}</div>
-                <div className="text-sm text-gray-500">{user.role}</div>
+                <div className="font-medium text-white">{user.name}</div>
+                <div className="text-sm text-white/80">{user.role}</div>
               </div>
               <Avatar className="h-8 w-8">
                 <img src={user.avatarUrl} alt={user.name} onError={(e) => {
@@ -156,7 +156,7 @@ export function PageHeader({
                   target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`;
                 }} />
               </Avatar>
-              <ChevronDown className="h-4 w-4 text-gray-500" />
+              <ChevronDown className="h-4 w-4 text-white" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>My Account</DropdownMenuLabel>

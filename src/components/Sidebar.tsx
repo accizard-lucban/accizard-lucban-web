@@ -211,7 +211,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
                           className={cn(
                             "w-full flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
                             location.pathname === "/chat-support"
-                              ? "bg-orange-400/30 text-white"
+                              ? "bg-white text-brand-orange"
                               : "text-white/90 hover:bg-white/20 hover:text-white"
                           )}
                         >
@@ -225,7 +225,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
                           className={cn(
                             "w-full flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
                             location.pathname === "/admin-chat"
-                              ? "bg-orange-400/30 text-white"
+                              ? "bg-white text-brand-orange"
                               : "text-white/90 hover:bg-white/20 hover:text-white"
                           )}
                         >
@@ -288,7 +288,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
                             className={cn(
                               "w-full flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
                               location.pathname === "/manage-users" && location.state?.tab === "admins"
-                                ? "bg-orange-400/30 text-white"
+                                ? "bg-white text-brand-orange"
                                 : "text-white/90 hover:bg-white/20 hover:text-white"
                             )}
                           >
@@ -303,7 +303,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
                           className={cn(
                             "w-full flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
                             location.pathname === "/manage-users" && location.state?.tab === "residents"
-                              ? "bg-orange-400/30 text-white"
+                              ? "bg-white text-brand-orange"
                               : "text-white/90 hover:bg-white/20 hover:text-white"
                           )}
                         >
@@ -323,7 +323,7 @@ export function Sidebar({ isCollapsed, onCollapse, manageUsersBadge, manageRepor
                   onMouseEnter={() => preloadRoute(item.preload, item.title)}
                   onFocus={() => preloadRoute(item.preload, item.title)}
                   onTouchStart={() => preloadRoute(item.preload, item.title)}
-                  className={cn(
+                                                                             className={cn(
                     "w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200", 
                     (isCollapsed && !isMobileOpen) ? "justify-center px-2 py-3" : "justify-between px-4 py-3", 
                     isActive(item.path) ? "bg-white text-brand-orange" : "text-white/90 hover:bg-white/20 hover:text-white"
