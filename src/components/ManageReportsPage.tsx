@@ -259,14 +259,39 @@ export function ManageReportsPage() {
     reportedBy: "",
     barangay: "",
     description: "",
-    responders: "",
     location: "",
     status: "Pending",
     attachedMedia: [] as File[],
-    attachedDocument: null as File | null,
     timeOfDispatch: "",
-    timeOfArrival: ""
+    timeOfArrival: "",
+    latitude: 14.1139,
+    longitude: 121.5556
   });
+  
+  // State for resident search
+  const [residentSearch, setResidentSearch] = useState("");
+  const [residents, setResidents] = useState<any[]>([]);
+  const [filteredResidents, setFilteredResidents] = useState<any[]>([]);
+  const [showResidentSearch, setShowResidentSearch] = useState(false);
+  const [showAddLocationMap, setShowAddLocationMap] = useState(false);
+  const [addLocationData, setAddLocationData] = useState<{lat: number, lng: number, address: string} | null>(null);
+  
+  // Memoize the single marker to prevent flinching
+  const singleMarkerForMap = useMemo(() => {
+    if (!addLocationData) return undefined;
+    return {
+      id: 'selected-location',
+      type: 'Default',
+      title: formData.location || addLocationData.address,
+      description: formData.location || addLocationData.address,
+      reportId: '',
+      coordinates: [addLocationData.lng, addLocationData.lat] as [number, number],
+      locationName: formData.location || addLocationData.address,
+      latitude: addLocationData.lat,
+      longitude: addLocationData.lng
+    };
+  }, [addLocationData, formData.location]);
+  
   const handleAddReport = async () => {
     setIsAddingReport(true);
     try {
@@ -282,20 +307,112 @@ export function ManageReportsPage() {
         reportedBy: "",
         barangay: "",
         description: "",
-        responders: "",
         location: "",
         status: "Pending",
         attachedMedia: [],
-        attachedDocument: null,
         timeOfDispatch: "",
-        timeOfArrival: ""
+        timeOfArrival: "",
+        latitude: 14.1139,
+        longitude: 121.5556
       });
+      setResidentSearch("");
+      setAddLocationData(null);
       toast.success("Report added successfully!");
     } catch (error) {
       console.error("Error adding report:", error);
       toast.error("Failed to add report. Please try again.");
     } finally {
       setIsAddingReport(false);
+    }
+  };
+  
+  // Fetch residents from database
+  const fetchResidents = async () => {
+    try {
+      const residentsQuery = query(collection(db, "users"), orderBy("name"));
+      const querySnapshot = await getDocs(residentsQuery);
+      const residentsData = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setResidents(residentsData);
+      setFilteredResidents(residentsData);
+    } catch (error) {
+      console.error("Error fetching residents:", error);
+    }
+  };
+  
+  // Filter residents based on search
+  useEffect(() => {
+    if (residentSearch.trim() === "") {
+      setFilteredResidents(residents);
+    } else {
+      const filtered = residents.filter(resident =>
+        resident.name?.toLowerCase().includes(residentSearch.toLowerCase()) ||
+        resident.email?.toLowerCase().includes(residentSearch.toLowerCase()) ||
+        resident.mobileNumber?.includes(residentSearch)
+      );
+      setFilteredResidents(filtered);
+    }
+  }, [residentSearch, residents]);
+  
+  // Fetch residents when modal opens
+  useEffect(() => {
+    if (showAddModal) {
+      fetchResidents();
+    }
+    if (!showAddModal) {
+      setShowResidentSearch(false);
+      setResidentSearch("");
+    }
+  }, [showAddModal]);
+  
+  // Close resident search when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.resident-search-dropdown')) {
+        setShowResidentSearch(false);
+      }
+    };
+    
+    if (showResidentSearch) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showResidentSearch]);
+  
+  // Initialize existing location when map modal opens
+  useEffect(() => {
+    if (showAddLocationMap && !addLocationData && formData.location && formData.latitude && formData.longitude) {
+      setAddLocationData({
+        lat: formData.latitude,
+        lng: formData.longitude,
+        address: formData.location
+      });
+    }
+  }, [showAddLocationMap, formData, addLocationData]);
+  
+  // Handle location map click for add report
+  const handleAddReportMapClick = async (lngLat: { lng: number; lat: number }) => {
+    try {
+      const address = await reverseGeocode(lngLat.lat, lngLat.lng);
+      setAddLocationData({
+        lat: lngLat.lat,
+        lng: lngLat.lng,
+        address: address
+      });
+      setFormData(prev => ({
+        ...prev,
+        location: address,
+        latitude: lngLat.lat,
+        longitude: lngLat.lng
+      }));
+    } catch (error) {
+      console.error('Error getting address for clicked location:', error);
+      toast.error('Failed to get address for selected location');
     }
   };
   const handleDeleteReport = (reportId: string) => {
@@ -2845,15 +2962,50 @@ export function ManageReportsPage() {
                       <SelectItem value="civil-disturbance">Civil Disturbance</SelectItem>
                       <SelectItem value="armed-conflict">Armed Conflict</SelectItem>
                       <SelectItem value="infectious-disease">Infectious Disease</SelectItem>
+                      <SelectItem value="others">Others</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div>
                   <Label htmlFor="reported-by">Reported By</Label>
-                  <Input id="reported-by" value={formData.reportedBy} onChange={e => setFormData({
-                  ...formData,
-                  reportedBy: e.target.value
-                })} placeholder="Enter reporter name" />
+                  <div className="relative">
+                    <Input 
+                      id="reported-by" 
+                      value={formData.reportedBy} 
+                      onChange={e => setFormData({
+                        ...formData,
+                        reportedBy: e.target.value
+                      })} 
+                      onFocus={() => setShowResidentSearch(true)}
+                      placeholder="Search or enter reporter name" 
+                    />
+                    {showResidentSearch && filteredResidents.length > 0 && (
+                      <div className="resident-search-dropdown absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {filteredResidents.map((resident) => (
+                          <div
+                            key={resident.id}
+                            className="px-4 py-2 hover:bg-gray-100 cursor-pointer"
+                            onClick={() => {
+                              setFormData({
+                                ...formData,
+                                reportedBy: resident.name || resident.email || ""
+                              });
+                              setResidentSearch("");
+                              setShowResidentSearch(false);
+                            }}
+                          >
+                            <div className="text-sm font-medium">{resident.name || "No name"}</div>
+                            {resident.email && (
+                              <div className="text-xs text-gray-500">{resident.email}</div>
+                            )}
+                            {resident.mobileNumber && (
+                              <div className="text-xs text-gray-500">{resident.mobileNumber}</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               
@@ -2881,19 +3033,64 @@ export function ManageReportsPage() {
               </div>
 
               <div>
-                <Label htmlFor="responders">Responders</Label>
-                <Input id="responders" value={formData.responders} onChange={e => setFormData({
-                ...formData,
-                responders: e.target.value
-              })} placeholder="List responding teams/units" />
-              </div>
-
-              <div>
-                <Label htmlFor="location">Location</Label>
-                <Input id="location" value={formData.location} onChange={e => setFormData({
-                ...formData,
-                location: e.target.value
-              })} placeholder="Enter specific location" />
+                <div className="flex items-center justify-between mb-2">
+                  <Label htmlFor="location">Location</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setShowAddLocationMap(true)}
+                        className="border-brand-orange text-brand-orange hover:bg-orange-50"
+                      >
+                        <MapPin className="h-4 w-4 mr-1" />
+                        Pin Location
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Select location on map</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <Input 
+                  id="location" 
+                  value={formData.location} 
+                  readOnly
+                  placeholder="Pin location on map to set address" 
+                  className="bg-gray-50 cursor-not-allowed"
+                />
+                {addLocationData && (
+                  <div className="text-xs text-gray-500 mt-1">
+                    Coordinates: {addLocationData.lat}, {addLocationData.lng}
+                  </div>
+                )}
+                <div className="text-xs text-brand-orange mt-1 cursor-pointer hover:underline" 
+                     onClick={async () => {
+                       try {
+                         const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+                           navigator.geolocation.getCurrentPosition(resolve, reject);
+                         });
+                         
+                         const lat = position.coords.latitude;
+                         const lng = position.coords.longitude;
+                         
+                         const address = await reverseGeocode(lat, lng);
+                         setAddLocationData({ lat, lng, address });
+                         setFormData(prev => ({
+                           ...prev,
+                           location: address,
+                           latitude: lat,
+                           longitude: lng
+                         }));
+                         toast.success('Location set to your current location');
+                       } catch (error) {
+                         console.error('Error getting current location:', error);
+                         toast.error('Failed to get current location. Please enable location permissions.');
+                       }
+                     }}>
+                  📍 Get Current Location
+                </div>
               </div>
 
               <div>
@@ -2907,8 +3104,11 @@ export function ManageReportsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Pending">Pending</SelectItem>
-                    <SelectItem value="In Progress">In Progress</SelectItem>
-                    <SelectItem value="Resolved">Resolved</SelectItem>
+                    <SelectItem value="Ongoing">Ongoing</SelectItem>
+                    <SelectItem value="Not Responded">Not Responded</SelectItem>
+                    <SelectItem value="Responded">Responded</SelectItem>
+                    <SelectItem value="False Report">False Report</SelectItem>
+                    <SelectItem value="Redundant">Redundant</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -2919,15 +3119,6 @@ export function ManageReportsPage() {
                   <Upload className="h-8 w-8 mx-auto text-gray-400 mb-2" />
                   <p className="text-sm text-gray-600">Upload photos or videos</p>
                   <Input type="file" multiple accept="image/*,video/*" className="hidden" />
-                </div>
-              </div>
-
-              <div>
-                <Label>Attached Document</Label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
-                  <FileIcon className="h-8 w-8 mx-auto text-gray-400 mb-2" />
-                  <p className="text-sm text-gray-600">Upload document</p>
-                  <Input type="file" accept=".pdf,.doc,.docx" className="hidden" />
                 </div>
               </div>
             </div>
@@ -5719,6 +5910,62 @@ export function ManageReportsPage() {
                 ) : (
                   "Save Location"
                 )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Add Location Map Modal */}
+        <Dialog open={showAddLocationMap} onOpenChange={setShowAddLocationMap}>
+          <DialogContent className="sm:max-w-[600px] max-h-[80vh] bg-white flex flex-col overflow-hidden">
+            <DialogHeader className="pb-2">
+              <DialogTitle className="flex items-center gap-2">
+                <MapPin className="h-5 w-5 text-brand-orange" />
+                Select Location
+              </DialogTitle>
+              <DialogDescription>
+                Click on the map to select the location for this report. The address will be automatically updated.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="flex-1 min-h-0 flex flex-col py-2">
+              <div className="flex-1 min-h-0 border rounded-lg overflow-hidden" style={{ height: '300px' }}>
+                <MapboxMap 
+                  onMapClick={handleAddReportMapClick}
+                  showOnlyCurrentLocation={true}
+                  showGeocoder={true}
+                  showControls={true}
+                  showDirections={true}
+                  onGeocoderResult={handleAddReportMapClick}
+                  singleMarker={singleMarkerForMap}
+                  center={
+                    addLocationData ? [addLocationData.lng, addLocationData.lat] as [number, number] :
+                    formData.latitude && formData.longitude ? 
+                    [formData.longitude, formData.latitude] as [number, number] : 
+                    [121.5556, 14.1139] as [number, number]}
+                  zoom={addLocationData ? 16 : 14}
+                />
+              </div>
+            </div>
+            
+            <DialogFooter className="flex gap-2">
+              <Button variant="outline" onClick={() => {
+                setShowAddLocationMap(false);
+                setAddLocationData(null);
+              }}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={() => {
+                  if (addLocationData) {
+                    setShowAddLocationMap(false);
+                    toast.success('Location pinned successfully!');
+                  }
+                }}
+                disabled={!addLocationData}
+                className="bg-brand-orange hover:bg-brand-orange-400 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Confirm Location
               </Button>
             </DialogFooter>
           </DialogContent>

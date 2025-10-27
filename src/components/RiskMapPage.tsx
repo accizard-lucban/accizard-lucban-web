@@ -1,18 +1,17 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Toggle } from "@/components/ui/toggle";
 import { Switch } from "@/components/ui/switch";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel, SelectSeparator } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Plus, MapPin, Layers, CalendarIcon, Search, Building2, Ambulance, Waves, Mountain, Building, CircleAlert, Users, ShieldAlert, Activity, Flame, Car, Siren, Home, Navigation, RotateCcw, HelpCircle, Info } from "lucide-react";
+import { Plus, MapPin, Layers, CalendarIcon, Search, Building2, Ambulance, Waves, Mountain, Building, CircleAlert, Users, ShieldAlert, Activity, Flame, Car, Siren, Home, Navigation, RotateCcw, HelpCircle, Info, ZoomIn, ZoomOut, LocateFixed, X, Filter } from "lucide-react";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } from "date-fns";
 import { cn, ensureOk } from "@/lib/utils";
 import { Layout } from "./Layout";
@@ -24,10 +23,7 @@ import { Pin, PinType } from "@/types/pin";
 import { toast } from "@/components/ui/sonner";
 import { PinModal, PinFormData } from "./PinModal";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
-import { Filter } from "lucide-react";
 
 // Pin type icons mapping
 const pinTypeIcons: Record<string, any> = {
@@ -87,6 +83,7 @@ export function RiskMapPage() {
   
   // Filters Panel State
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
+  const [mapLayerStyle, setMapLayerStyle] = useState<'streets' | 'satellite'>('streets');
 
   const [accidentFilters, setAccidentFilters] = useState({
     roadCrash: false,
@@ -504,6 +501,37 @@ export function RiskMapPage() {
     return activeTypes;
   };
 
+  // Map reference for controlling zoom and location
+  const mapRef = useRef<{ zoomIn: () => void; zoomOut: () => void; locateUser: () => void } | null>(null);
+
+  // Handler functions for map controls
+  const handleZoomIn = () => {
+    setMapZoom(prev => Math.min(prev + 1, 20));
+  };
+
+  const handleZoomOut = () => {
+    setMapZoom(prev => Math.max(prev - 1, 1));
+  };
+
+  const handleLocateUser = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setMapCenter([longitude, latitude]);
+          setMapZoom(15);
+          toast.success("Location found!");
+        },
+        (error) => {
+          console.error('Error getting location:', error);
+          toast.error("Could not get your location");
+        }
+      );
+    } else {
+      toast.error("Geolocation is not supported by this browser");
+    }
+  };
+
   // Subscribe to pins from database with real-time updates
   useEffect(() => {
     const activeTypes = getActiveFilterTypes();
@@ -547,231 +575,105 @@ export function RiskMapPage() {
       console.log('Unsubscribing from pins');
       unsubscribe();
     };
-  }, [accidentFilters, facilityFilters, date, searchQuery]);
+  }, [accidentFilters, facilityFilters, date, searchQuery, subscribeToPins]);
 
   return (
     <Layout>
       <TooltipProvider>
-        <div className="flex h-[calc(100vh-4rem)] min-h-[400px] md:min-h-[600px]">
+        <div className="flex h-[calc(100vh-12rem)] min-h-[650px] -mx-6 -my-6">
           {/* Map takes full width - no sidebar */}
           <div className="flex-1 flex flex-col min-h-0">
-            {/* Map Toolbar */}
-          <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
-            <div className="flex-1 relative">
-              <Popover open={isSearchOpen} onOpenChange={setIsSearchOpen}>
-                <PopoverTrigger asChild>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500 z-10" />
-                    <Input
-                      type="text"
-                      placeholder="Search for a location..."
-                      value={searchQuery}
-                      onChange={(e) => {
-                        setSearchQuery(e.target.value);
-                        setIsSearchOpen(true);
-                      }}
-                      onFocus={() => {
-                        if (searchSuggestions.length > 0) {
-                          setIsSearchOpen(true);
-                        }
-                      }}
-                      className="pl-9 pr-4 h-9 w-full border-gray-300"
-                    />
-                  </div>
-                </PopoverTrigger>
-                {searchSuggestions.length > 0 && (
-                  <PopoverContent className="w-[400px] p-0" align="start">
-                    <div className="max-h-[300px] overflow-y-auto">
-                      {searchSuggestions.map((suggestion, index) => (
-                        <button
-                          key={index}
-                          className="w-full text-left px-4 py-3 hover:bg-gray-100 border-b border-gray-100 last:border-b-0 transition-colors"
-                          onClick={() => handleSelectSearchResult(suggestion)}
-                        >
-                          <div className="flex items-start gap-2">
-                            <MapPin className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900 truncate">
-                                {suggestion.text}
-                              </p>
-                              <p className="text-xs text-gray-500 truncate">
-                                {suggestion.place_name}
-                              </p>
-                            </div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </PopoverContent>
-                )}
-              </Popover>
+            {/* Map Container */}
+            <div className="flex-1 bg-gray-100 relative overflow-hidden min-h-0 rounded-xl">
+              {/* Map Toolbar - Positioned inside map at top */}
+              <div className="absolute top-4 left-4 right-4 z-10 bg-white border border-gray-200 px-4 py-3 flex items-center gap-3 shadow-lg rounded-lg">
+                <div className="flex-1 relative">
+                  <Popover open={isSearchOpen} onOpenChange={setIsSearchOpen}>
+                    <PopoverTrigger asChild>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500 z-10" />
+                        <Input
+                          type="text"
+                          placeholder="Search for a location..."
+                          value={searchQuery}
+                          onChange={(e) => {
+                            setSearchQuery(e.target.value);
+                            setIsSearchOpen(true);
+                          }}
+                          onFocus={() => {
+                            if (searchSuggestions.length > 0) {
+                              setIsSearchOpen(true);
+                            }
+                          }}
+                          className="pl-9 pr-4 h-9 w-full border-gray-300"
+                        />
+                      </div>
+                    </PopoverTrigger>
+                    {searchSuggestions.length > 0 && (
+                      <PopoverContent className="w-[400px] p-0" align="start">
+                        <div className="max-h-[300px] overflow-y-auto">
+                          {searchSuggestions.map((suggestion, index) => (
+                            <button
+                              key={index}
+                              className="w-full text-left px-4 py-3 hover:bg-gray-100 border-b border-gray-100 last:border-b-0 transition-colors"
+                              onClick={() => handleSelectSearchResult(suggestion)}
+                            >
+                              <div className="flex items-start gap-2">
+                                <MapPin className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-gray-900 truncate">
+                                    {suggestion.text}
+                                  </p>
+                                  <p className="text-xs text-gray-500 truncate">
+                                    {suggestion.place_name}
+                                  </p>
                                 </div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    )}
+                  </Popover>
+                </div>
 
-            {/* Filters Button */}
-            <DropdownMenu>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <DropdownMenuTrigger asChild>
+                {/* Filters Button */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
                     <Button
                       variant="outline"
                       size="sm"
                       className="h-9 px-3"
+                      onClick={() => setIsFiltersOpen(true)}
                     >
                       <Filter className="h-4 w-4 mr-2" />
                       Filters
                     </Button>
-                  </DropdownMenuTrigger>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Filter pins by type and date</p>
-                </TooltipContent>
-              </Tooltip>
-              <DropdownMenuContent className="w-[400px] max-h-[600px] overflow-y-auto p-4" align="end">
-                <div className="space-y-6">
-                  {/* Heatmap Toggle */}
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium">Map Display</Label>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <Layers className="h-4 w-4 text-gray-600" />
-                        <Label htmlFor="heatmap-toggle-dropdown" className="text-sm font-normal">
-                          Show Heatmap
-                        </Label>
-                      </div>
-                      <Switch
-                        id="heatmap-toggle-dropdown"
-                        checked={showHeatmap}
-                        onCheckedChange={(checked) => setShowHeatmap(checked)}
-                        aria-label="Toggle heatmap"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Timeline */}
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium">Timeline</Label>
-                    <div className="flex flex-col space-y-2">
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="outline"
-                            className={cn(
-                              "w-full justify-start text-left font-normal",
-                              !date?.from && "text-muted-foreground"
-                            )}
-                          >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {date?.from ? (
-                              date.to ? (
-                                <>
-                                  {format(date.from, "LLL dd, y")} -{" "}
-                                  {format(date.to, "LLL dd, y")}
-                                </>
-                              ) : (
-                                format(date.from, "LLL dd, y")
-                              )
-                            ) : (
-                              <span>Pick a date range</span>
-                            )}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                            initialFocus
-                            mode="range"
-                            defaultMonth={date?.from}
-                            selected={date}
-                            onSelect={setDate}
-                            numberOfMonths={2}
-                          />
-                        </PopoverContent>
-                      </Popover>
-                      <Select value={quickDateFilter} onValueChange={handleQuickDateFilter}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Quick filters" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">All Time</SelectItem>
-                          <SelectItem value="week">This Week</SelectItem>
-                          <SelectItem value="month">This Month</SelectItem>
-                          <SelectItem value="year">This Year</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {/* Accident/Hazard Types */}
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium">Accident/Hazard Types</Label>
-                    <div className="flex flex-wrap gap-2">
-                      {Object.entries(accidentFilters).map(([key, checked]) => {
-                        const displayName = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-                        const Icon = pinTypeIcons[displayName] || MapPin;
-                        return (
-                          <Badge
-                            key={key}
-                            variant={checked ? "default" : "outline"}
-                            className={cn(
-                              "cursor-pointer hover:bg-primary/90 transition-colors",
-                              checked ? "bg-primary text-primary-foreground" : "hover:bg-muted"
-                            )}
-                            onClick={() => handleAccidentFilterChange(key as keyof typeof accidentFilters)}
-                          >
-                            <Icon className="h-3 w-3 mr-1" />
-                            {displayName}
-                          </Badge>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Emergency Support Facilities */}
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium">Emergency Support Facilities</Label>
-                    <div className="flex flex-wrap gap-2">
-                      {Object.entries(facilityFilters).map(([key, checked]) => {
-                        const displayName = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-                        const Icon = facilityIcons[key] || MapPin;
-                        return (
-                          <Badge
-                            key={key}
-                            variant={checked ? "default" : "outline"}
-                            className={cn(
-                              "cursor-pointer hover:bg-primary/90 transition-colors",
-                              checked ? "bg-primary text-primary-foreground" : "hover:bg-muted"
-                            )}
-                            onClick={() => handleFacilityFilterChange(key as keyof typeof facilityFilters)}
-                          >
-                            <Icon className="h-3 w-3 mr-1" />
-                            {displayName}
-                          </Badge>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            
-            {/* Map Legend Button */}
-            <Dialog>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                  <DialogTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-9 px-3"
-                    >
-                      <Info className="h-4 w-4 mr-2" />
-                      Legend
-                    </Button>
-                  </DialogTrigger>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                  <p>Show map legend</p>
-                        </TooltipContent>
-                      </Tooltip>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Filter pins by type and date</p>
+                  </TooltipContent>
+                </Tooltip>
+                
+                {/* Map Legend Button */}
+                <Dialog>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DialogTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-9 px-3"
+                        >
+                          <Info className="h-4 w-4 mr-2" />
+                          Legend
+                        </Button>
+                      </DialogTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Show map legend</p>
+                    </TooltipContent>
+                  </Tooltip>
               <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle className="text-lg font-bold">Map Legend</DialogTitle>
@@ -780,66 +682,50 @@ export function RiskMapPage() {
                   {/* Accident/Hazard Types Section */}
                   <div className="mb-6">
                     <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b">Accident/Hazard Types</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#EF4444', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                          🚗
-                    </div>
+                        <img src="/markers/road-crash.svg" alt="Road Crash" className="w-10 h-10 flex-shrink-0" />
                         <span className="text-sm text-gray-700">Road Crash</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#F97316', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                          🔥
-                        </div>
+                        <img src="/markers/fire.svg" alt="Fire" className="w-10 h-10 flex-shrink-0" />
                         <span className="text-sm text-gray-700">Fire</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#EC4899', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                          🚑
-                        </div>
+                        <img src="/markers/medical-emergency.svg" alt="Medical Emergency" className="w-10 h-10 flex-shrink-0" />
                         <span className="text-sm text-gray-700">Medical Emergency</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#3B82F6', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                          🌊
-                        </div>
+                        <img src="/markers/flooding.svg" alt="Flooding" className="w-10 h-10 flex-shrink-0" />
                         <span className="text-sm text-gray-700">Flooding</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#F59E0B', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                          🌋
-                        </div>
+                        <img src="/markers/volcano.svg" alt="Volcanic Activity" className="w-10 h-10 flex-shrink-0" />
                         <span className="text-sm text-gray-700">Volcanic Activity</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#78350F', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                          ⛰️
-                        </div>
+                        <img src="/markers/landslide.svg" alt="Landslide" className="w-10 h-10 flex-shrink-0" />
                         <span className="text-sm text-gray-700">Landslide</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#DC2626', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                          ⚠️
-                        </div>
+                        <img src="/markers/earthquake.svg" alt="Earthquake" className="w-10 h-10 flex-shrink-0" />
                         <span className="text-sm text-gray-700">Earthquake</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#7C3AED', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                          👥
-                        </div>
+                        <img src="/markers/civil-disturbance.svg" alt="Civil Disturbance" className="w-10 h-10 flex-shrink-0" />
                         <span className="text-sm text-gray-700">Civil Disturbance</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#991B1B', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                          🛡️
-                        </div>
+                        <img src="/markers/armed-conflict.svg" alt="Armed Conflict" className="w-10 h-10 flex-shrink-0" />
                         <span className="text-sm text-gray-700">Armed Conflict</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#059669', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                          🦠
-                        </div>
+                        <img src="/markers/infectious-disease.svg" alt="Infectious Disease" className="w-10 h-10 flex-shrink-0" />
                         <span className="text-sm text-gray-700">Infectious Disease</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <img src="/markers/default.svg" alt="Others" className="w-10 h-10 flex-shrink-0" />
+                        <span className="text-sm text-gray-700">Others</span>
                       </div>
                     </div>
                   </div>
@@ -847,47 +733,125 @@ export function RiskMapPage() {
                   {/* Emergency Facilities Section */}
                   <div>
                     <h4 className="text-sm font-semibold text-gray-700 mb-3 pb-2 border-b">Emergency Facilities</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#8B5CF6', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                          🏢
-                    </div>
+                        <img src="/markers/evacuation-center.svg" alt="Evacuation Centers" className="w-10 h-10 flex-shrink-0" />
                         <span className="text-sm text-gray-700">Evacuation Centers</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#10B981', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                          🏥
-                        </div>
+                        <img src="/markers/health-facility.svg" alt="Health Facilities" className="w-10 h-10 flex-shrink-0" />
                         <span className="text-sm text-gray-700">Health Facilities</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#3B82F6', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                          🚔
-                        </div>
+                        <img src="/markers/police-station.svg" alt="Police Stations" className="w-10 h-10 flex-shrink-0" />
                         <span className="text-sm text-gray-700">Police Stations</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#DC2626', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                          🚒
-                        </div>
+                        <img src="/markers/fire-station.svg" alt="Fire Stations" className="w-10 h-10 flex-shrink-0" />
                         <span className="text-sm text-gray-700">Fire Stations</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg flex-shrink-0" style={{ backgroundColor: '#6366F1', border: '2px solid white', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                          🏛️
-                        </div>
+                        <img src="/markers/government-office.svg" alt="Government Offices" className="w-10 h-10 flex-shrink-0" />
                         <span className="text-sm text-gray-700">Government Offices</span>
                       </div>
                     </div>
                   </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
+                                    </div>
+                  </DialogContent>
+                </Dialog>
 
-          {/* Map Container */}
-          <div className="flex-1 bg-gray-100 relative overflow-hidden min-h-0">
-            <MapboxMap 
+                {/* Map Layer Button */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 px-3"
+                      onClick={() => setMapLayerStyle(mapLayerStyle === 'streets' ? 'satellite' : 'streets')}
+                    >
+                      <Layers className="h-4 w-4 mr-2" />
+                      {mapLayerStyle === 'streets' ? 'Satellite' : 'Streets'}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Switch to {mapLayerStyle === 'streets' ? 'Satellite' : 'Streets'} view</p>
+                  </TooltipContent>
+                </Tooltip>
+
+                {/* Heatmap Toggle */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={cn(
+                        "h-9 px-3",
+                        showHeatmap && "bg-primary text-primary-foreground"
+                      )}
+                      onClick={() => setShowHeatmap(!showHeatmap)}
+                    >
+                      <Flame className="h-4 w-4 mr-2" />
+                      Heatmap
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Toggle heatmap display</p>
+                  </TooltipContent>
+                </Tooltip>
+
+                {/* Zoom and Location Controls */}
+                <div className="flex items-center border-l border-gray-200 pl-3 gap-1">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 w-9 p-0"
+                        onClick={handleZoomIn}
+                      >
+                        <ZoomIn className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Zoom in</p>
+                    </TooltipContent>
+                  </Tooltip>
+
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 w-9 p-0"
+                        onClick={handleZoomOut}
+                      >
+                        <ZoomOut className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Zoom out</p>
+                    </TooltipContent>
+                  </Tooltip>
+
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9 w-9 p-0"
+                        onClick={handleLocateUser}
+                      >
+                        <LocateFixed className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Show my location</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              </div>
+              
+              <MapboxMap 
               onMapClick={async (lngLat) => {
                 console.log("=== MAP CLICK EVENT ===");
                 console.log("Clicked coordinates:", lngLat);
@@ -946,6 +910,8 @@ export function RiskMapPage() {
               canEdit={true}
               onEditPin={handleEditPin}
               onDeletePin={handleDeletePinClick}
+              hideStyleToggle={true}
+              externalStyle={mapLayerStyle}
                       />
             
             {/* Pin Modal for Create/Edit - positioned within map container */}
@@ -961,9 +927,168 @@ export function RiskMapPage() {
               existingPin={editingPin}
               prefillData={pinModalPrefill}
             />
+            
+            {/* Filters Overlay - positioned within map container */}
+            {isFiltersOpen && (
+              <div
+                className={cn(
+                  "bg-white shadow-2xl transition-transform duration-300 ease-in-out",
+                  "absolute left-0 top-0 h-full w-[450px] z-50 flex flex-col"
+                )}
+              >
+                <style>{`
+                  .filters-scrollable::-webkit-scrollbar {
+                    width: 8px;
+                  }
+                  .filters-scrollable::-webkit-scrollbar-track {
+                    background: #f1f5f9;
+                    border-radius: 4px;
+                  }
+                  .filters-scrollable::-webkit-scrollbar-thumb {
+                    background: #cbd5e1;
+                    border-radius: 4px;
+                  }
+                  .filters-scrollable::-webkit-scrollbar-thumb:hover {
+                    background: #94a3b8;
+                  }
+                `}</style>
+                {/* Header */}
+                <div className="flex-shrink-0 bg-white border-b border-gray-200 px-6 py-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Filter className="h-5 w-5 text-[#FF4F0B]" />
+                      <h2 className="text-lg font-semibold">Map Filters</h2>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      onClick={() => setIsFiltersOpen(false)}
+                      className="h-8 w-8"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Scrollable Content */}
+                <div 
+                  className="flex-1 overflow-y-auto px-6 py-4 filters-scrollable" 
+                  style={{ 
+                    scrollbarWidth: 'thin',
+                    scrollbarColor: '#cbd5e1 #f1f5f9'
+                  }}
+                >
+                  <div className="space-y-6">
+                    {/* Timeline */}
+                    <div className="space-y-3">
+                      <Label className="text-sm font-medium">Timeline</Label>
+                      <div className="flex flex-col space-y-2">
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full justify-start text-left font-normal",
+                                !date?.from && "text-muted-foreground"
+                              )}
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {date?.from ? (
+                                date.to ? (
+                                  <>
+                                    {format(date.from, "LLL dd, y")} -{" "}
+                                    {format(date.to, "LLL dd, y")}
+                                  </>
+                                ) : (
+                                  format(date.from, "LLL dd, y")
+                                )
+                              ) : (
+                                <span>Pick a date range</span>
+                              )}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              initialFocus
+                              mode="range"
+                              defaultMonth={date?.from}
+                              selected={date}
+                              onSelect={setDate}
+                              numberOfMonths={2}
+                            />
+                          </PopoverContent>
+                        </Popover>
+                        <Select onValueChange={(value) => handleQuickDateFilter(value as 'week' | 'month' | 'year')}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Quick filters" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="week">This Week</SelectItem>
+                            <SelectItem value="month">This Month</SelectItem>
+                            <SelectItem value="year">This Year</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {/* Accident/Hazard Types */}
+                    <div className="space-y-3">
+                      <Label className="text-sm font-medium">Accident/Hazard Types</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {Object.entries(accidentFilters).map(([key, checked]) => {
+                          const displayName = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                          const Icon = pinTypeIcons[displayName] || MapPin;
+                          return (
+                            <button
+                              key={key}
+                              onClick={() => handleAccidentFilterChange(key as keyof typeof accidentFilters)}
+                              className={cn(
+                                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors border",
+                                checked 
+                                  ? "bg-primary text-primary-foreground border-primary shadow-sm" 
+                                  : "bg-background text-foreground border-border hover:bg-accent hover:text-accent-foreground"
+                              )}
+                            >
+                              <Icon className="h-3 w-3" />
+                              {displayName}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Emergency Support Facilities */}
+                    <div className="space-y-3">
+                      <Label className="text-sm font-medium">Emergency Support Facilities</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {Object.entries(facilityFilters).map(([key, checked]) => {
+                          const displayName = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                          const Icon = facilityIcons[key] || MapPin;
+                          return (
+                            <button
+                              key={key}
+                              onClick={() => handleFacilityFilterChange(key as keyof typeof facilityFilters)}
+                              className={cn(
+                                "flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded transition-colors border",
+                                checked 
+                                  ? "bg-primary text-primary-foreground border-primary shadow-sm" 
+                                  : "bg-background text-foreground border-border hover:bg-accent hover:text-accent-foreground"
+                              )}
+                            >
+                              <Icon className="h-3 w-3" />
+                              {displayName}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
-                  </div>
+                </div>
+              </div>
+            )}
+            </div>
+          </div>
+        </div>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
@@ -982,159 +1107,6 @@ export function RiskMapPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Filters Sheet */}
-      <Sheet open={isFiltersOpen} onOpenChange={setIsFiltersOpen}>
-        <SheetContent side="right" className="w-[400px] sm:w-[540px] overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>Map Filters</SheetTitle>
-            <SheetDescription>
-              Filter pins by type, date range, and location. Map updates automatically when filters are changed.
-            </SheetDescription>
-          </SheetHeader>
-          
-          <div className="mt-6 space-y-6">
-                  {/* Heatmap Toggle */}
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium">Map Display</Label>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <Layers className="h-4 w-4 text-gray-600" />
-                        <Label htmlFor="heatmap-toggle" className="text-sm font-normal">
-                          Show Heatmap
-                        </Label>
-                      </div>
-                      <Switch
-                        id="heatmap-toggle"
-                        checked={showHeatmap}
-                        onCheckedChange={(checked) => setShowHeatmap(checked)}
-                        aria-label="Toggle heatmap"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Timeline */}
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium">Timeline</Label>
-                    <div className="flex flex-col space-y-2">
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="outline"
-                            className={cn(
-                              "w-full justify-start text-left font-normal",
-                              !date?.from && "text-muted-foreground"
-                            )}
-                          >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {date?.from ? (
-                              date.to ? (
-                                <>
-                                  {format(date.from, "LLL dd, y")} -{" "}
-                                  {format(date.to, "LLL dd, y")}
-                                </>
-                              ) : (
-                                format(date.from, "LLL dd, y")
-                              )
-                            ) : (
-                              <span>Pick a date range</span>
-                            )}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                            initialFocus
-                            mode="range"
-                            defaultMonth={date?.from}
-                            selected={date}
-                            onSelect={setDate}
-                            numberOfMonths={2}
-                          />
-                        </PopoverContent>
-                      </Popover>
-                      <Select onValueChange={(value) => handleQuickDateFilter(value as 'week' | 'month' | 'year')}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Quick filters" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="week">This Week</SelectItem>
-                          <SelectItem value="month">This Month</SelectItem>
-                          <SelectItem value="year">This Year</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {/* Accident/Hazard Types */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-sm font-medium">Accident/Hazard Types</Label>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="all-accidents"
-                          checked={Object.values(accidentFilters).every(Boolean)}
-                          onCheckedChange={(checked) => handleSelectAllAccidents(checked as boolean)}
-                        />
-                        <Label htmlFor="all-accidents" className="text-sm font-normal">
-                          All
-                        </Label>
-                      </div>
-                      {Object.entries(accidentFilters).map(([key, checked]) => {
-                        const Icon = pinTypeIcons[key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())] || MapPin;
-                        return (
-                          <div key={key} className="flex items-center space-x-2">
-                            <Checkbox
-                        id={`sheet-${key}`}
-                              checked={checked}
-                              onCheckedChange={() => handleAccidentFilterChange(key as keyof typeof accidentFilters)}
-                            />
-                      <Label htmlFor={`sheet-${key}`} className="text-sm font-normal flex items-center">
-                              <Icon className="h-4 w-4 mr-2" />
-                              {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-                            </Label>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Emergency Support Facilities */}
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium">Emergency Support Facilities</Label>
-                    <div className="space-y-2">
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                    id="all-facilities-sheet"
-                          checked={Object.values(facilityFilters).every(Boolean)}
-                          onCheckedChange={(checked) => handleSelectAllFacilities(checked as boolean)}
-                        />
-                  <Label htmlFor="all-facilities-sheet" className="text-sm font-normal">
-                          All
-                        </Label>
-                      </div>
-                      {Object.entries(facilityFilters).map(([key, checked]) => {
-                        const Icon = facilityIcons[key] || MapPin;
-                        return (
-                          <div key={key} className="flex items-center space-x-2">
-                            <Checkbox
-                        id={`sheet-facility-${key}`}
-                              checked={checked}
-                              onCheckedChange={() => handleFacilityFilterChange(key as keyof typeof facilityFilters)}
-                            />
-                      <Label htmlFor={`sheet-facility-${key}`} className="text-sm font-normal flex items-center">
-                              <Icon className="h-4 w-4 mr-2" />
-                              {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
-                            </Label>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-        </div>
-        </SheetContent>
-      </Sheet>
 
       </TooltipProvider>
     </Layout>

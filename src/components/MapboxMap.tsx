@@ -76,6 +76,10 @@ interface MapboxMapProps {
   onEditPin?: (pin: Pin) => void; // Callback when edit button is clicked
   onDeletePin?: (pinId: string) => void; // Callback when delete button is clicked
   canEdit?: boolean; // Whether user can edit/delete pins
+  showControls?: boolean; // Show built-in mapbox navigation controls
+  hideStyleToggle?: boolean; // Hide the internal style toggle button (for use in parent toolbars)
+  onStyleChange?: (style: 'streets' | 'satellite') => void; // Callback when style changes
+  externalStyle?: 'streets' | 'satellite'; // External style control
 }
 
 // Sample data for markers - currently empty, will be populated from database
@@ -117,7 +121,11 @@ export function MapboxMap({
   showDirections = true, // Default to true for backward compatibility
   onEditPin,
   onDeletePin,
-  canEdit = false // Default to false for safety
+  canEdit = false, // Default to false for safety
+  showControls = false, // Default to false for backward compatibility
+  hideStyleToggle = false, // Default to false
+  onStyleChange, // Optional callback
+  externalStyle // Optional external control
 }: MapboxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -130,6 +138,18 @@ export function MapboxMap({
   const [travelTime, setTravelTime] = useState<{duration: number, distance: number} | null>(null);
   const [routeData, setRouteData] = useState<any>(null);
   const [showRoute, setShowRoute] = useState(false);
+  const [mapStyle, setMapStyle] = useState<'streets' | 'satellite'>('streets');
+  
+  // Use external style if provided, otherwise use internal state
+  const currentStyle = externalStyle || mapStyle;
+  
+  // Handle style change
+  const handleStyleChange = (newStyle: 'streets' | 'satellite') => {
+    setMapStyle(newStyle);
+    if (onStyleChange) {
+      onStyleChange(newStyle);
+    }
+  };
 
 
   // Function to get marker icon based on type
@@ -616,26 +636,34 @@ export function MapboxMap({
           map.current = null;
         }
 
+        const styleUrl = currentStyle === 'streets' 
+          ? 'mapbox://styles/accizard-lucban/cmh0vikyo00c501st1cprgxwc'
+          : 'mapbox://styles/mapbox/satellite-v9';
+        
         map.current = new mapboxgl.Map({
           container: mapContainer.current,
-          style: 'mapbox://styles/accizard-lucban/cmh0vikyo00c501st1cprgxwc',
+          style: styleUrl,
           center: center,
-          zoom: zoom
+          zoom: zoom  
         });
 
-        // Add geolocate control
-        const geolocate = new mapboxgl.GeolocateControl({
-          positionOptions: {
-            enableHighAccuracy: true
-          },
-          trackUserLocation: true,
-          showUserHeading: true
-        });
-        
-        map.current.addControl(geolocate);
-        
-        // Add navigation controls
-        map.current.addControl(new mapboxgl.NavigationControl());
+        // Add built-in controls if enabled
+        if (showControls) {
+          // Add navigation controls (zoom in/out, rotate, pitch)
+          map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+          
+          // Add geolocate control (current location button)
+          map.current.addControl(
+            new mapboxgl.GeolocateControl({
+              positionOptions: {
+                enableHighAccuracy: true
+              },
+              trackUserLocation: true,
+              showUserHeading: true
+            }),
+            'top-right'
+          );
+        }
 
         // Add geocoder if enabled
         if (showGeocoder) {
@@ -776,7 +804,7 @@ export function MapboxMap({
         map.current = null;
       }
     };
-  }, []); // Remove dependencies to prevent re-initialization
+  }, [currentStyle]); // Re-initialize when map style changes
 
   // Handle center and zoom changes
   useEffect(() => {
@@ -1214,6 +1242,33 @@ export function MapboxMap({
 
   return (
     <div className="w-full h-full relative">
+      {/* Map Toolbar - Style Toggle */}
+      {!hideStyleToggle && (
+        <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+          <button
+            onClick={() => handleStyleChange(currentStyle === 'streets' ? 'satellite' : 'streets')}
+            className="bg-white hover:bg-gray-50 text-gray-700 px-3 py-2 rounded-md shadow-md border border-gray-300 text-sm font-medium transition-colors flex items-center gap-2"
+            title={`Switch to ${currentStyle === 'streets' ? 'Satellite' : 'Streets'} view`}
+          >
+            {currentStyle === 'streets' ? (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h18v18H3zM3 12h18M12 3v18" />
+                </svg>
+                <span className="hidden sm:inline">Satellite</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 9a3 3 0 106 0" />
+                </svg>
+                <span className="hidden sm:inline">Streets</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
+      
       <style>
         {`
           @keyframes pulse {
@@ -1266,7 +1321,7 @@ export function MapboxMap({
       
       <div 
         ref={mapContainer} 
-        className="w-full h-full rounded-lg"
+        className="w-full h-full rounded-xl"
         style={{ width: '100%', height: '100%', minHeight: '300px' }}
       />
       

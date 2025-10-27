@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, PieChart, Pie, Cell, LineChart, Line } from "recharts";
-import { AlertTriangle, Users, FileText, MapPin, CloudRain, Clock, TrendingUp, PieChart as PieChartIcon, Building2, Calendar, Download, Maximize2, FileImage, FileType, Facebook, PhoneCall, Wind, Droplets, CloudRain as Precipitation, Car, Layers, Flame, Activity, Sun, Cloud, CloudLightning, CloudSnow, CloudDrizzle, CloudFog, RefreshCw, AlertCircle } from "lucide-react";
+import { AlertTriangle, Users, FileText, MapPin, CloudRain, Clock, TrendingUp, PieChart as PieChartIcon, Building2, Calendar, Download, Maximize2, FileImage, FileType, Facebook, PhoneCall, Wind, Droplets, CloudRain as Precipitation, Car, Layers, Flame, Activity, Sun, Cloud, CloudLightning, CloudSnow, CloudDrizzle, CloudFog, RefreshCw, AlertCircle, UserCheck } from "lucide-react";
 import { ResponsiveBar } from '@nivo/bar';
 import { ResponsiveCalendar } from '@nivo/calendar';
 import { ResponsiveLine } from '@nivo/line';
@@ -22,6 +22,7 @@ import { Pin } from "@/types/pin";
 import { db } from "@/lib/firebase";
 import { collection, query, orderBy, onSnapshot, where, Timestamp, limit } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
+import html2canvas from 'html2canvas';
 
 // Use the custom Mapbox access token for AcciZard Lucban
 mapboxgl.accessToken = 'pk.eyJ1IjoiYWNjaXphcmQtbHVjYmFuIiwiYSI6ImNtY3VhOHdxODAwcjcya3BzYTR2M25kcTEifQ.aBi4Zmkezyqa7Pfh519KbQ';
@@ -39,15 +40,16 @@ export function DashboardStats() {
   const [isPieChartModalOpen, setIsPieChartModalOpen] = useState(false);
   const [isPeakHoursModalOpen, setIsPeakHoursModalOpen] = useState(false);
   const [isReportsOverTimeModalOpen, setIsReportsOverTimeModalOpen] = useState(false);
+  const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
   const [weatherData, setWeatherData] = useState({
     temperature: "28°C",
     temperatureCelsius: 28,
     temperatureFahrenheit: 82,
     condition: "Scattered Thunderstorms",
     humidity: "75%",
-    rainfall: "Light",
-    precipitation: "35%",
-    windSpeed: "11 km/h",
+    rainfall: "0mm",
+    precipitation: "0mm",
+      windSpeed: "3.1 m/s",
     windDirection: "NE",
     loading: true,
     error: null
@@ -58,6 +60,7 @@ export function DashboardStats() {
   const [mapLayerMode, setMapLayerMode] = useState<'normal' | 'traffic' | 'heatmap'>('normal');
   const [reports, setReports] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
+  const [onlineAdminsCount, setOnlineAdminsCount] = useState(0);
   const [pagasaBulletins, setPagasaBulletins] = useState<any[]>([]);
   const [isFetchingBulletins, setIsFetchingBulletins] = useState(false);
   const [enabledReportTypes, setEnabledReportTypes] = useState<Record<string, boolean>>({
@@ -72,6 +75,14 @@ export function DashboardStats() {
     'Armed Conflict': true,
     'Infectious Disease': true
   });
+  const [selectedChartsForExport, setSelectedChartsForExport] = useState<Record<string, boolean>>({
+    'Reports Over Time': true,
+    'Report Type Distribution': true,
+    'Reports per Barangay': true,
+    'Active Users per Barangay': true,
+    'Peak Reporting Hours': true
+  });
+  const [showChartFilters, setShowChartFilters] = useState(false);
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
@@ -268,7 +279,7 @@ export function DashboardStats() {
     }));
   }, []);
 
-  const reportTypeData = [{
+  const reportTypeData = useMemo(() => [{
     name: "Road Crash",
     value: 25,
     color: "#ff4e3a"
@@ -308,7 +319,7 @@ export function DashboardStats() {
     name: "Infectious Disease",
     value: 1,
     color: "#fcad3e"
-  }];
+  }], []);
   const peakHoursData = [{
     hour: "6AM",
     reports: 2
@@ -369,17 +380,16 @@ export function DashboardStats() {
     return data;
   }, []);
 
-  // Enhanced Weather API integration (similar to Google Weather)
+  // Enhanced Weather API integration with dynamic geolocation
   const fetchWeatherData = async () => {
     try {
-      // You'll need to add your OpenWeatherMap API key to environment variables
       const API_KEY = import.meta.env.VITE_OPENWEATHER_API_KEY;
-      const CITY = "Lucban,PH"; // Lucban, Philippines - fallback location
+      const FALLBACK_CITY = "Lucban,PH"; // Fallback if geolocation fails
       
       console.log("Weather API Debug:", {
         hasApiKey: !!API_KEY,
         apiKeyLength: API_KEY?.length || 0,
-        city: CITY
+        apiKeyPrefix: API_KEY?.substring(0, 8) || "N/A"
       });
       
       if (!API_KEY) {
@@ -387,12 +397,13 @@ export function DashboardStats() {
         setWeatherData(prev => ({ 
           ...prev, 
           loading: false,
-          temperature: "31°C",  // Updated to match Google's temperature
+          temperature: "31°C",
           temperatureCelsius: 31,
           temperatureFahrenheit: 88,
           condition: "Clear Sky",
-          precipitation: "0%",
-          windSpeed: "8 km/h",
+          precipitation: "0mm",
+          rainfall: "0mm",
+          windSpeed: "2.2 m/s",
           windDirection: "NE",
           humidity: "65%"
         }));
@@ -437,53 +448,38 @@ export function DashboardStats() {
         return;
       }
 
-      // Try to get user's precise location
-      let weatherUrl, forecastUrl;
-      
-      if (navigator.geolocation) {
-        // Use geolocation API to get precise location
+      // Try to get user's actual location using browser geolocation API
+      if ('geolocation' in navigator) {
+        console.log("Attempting to get user's location via geolocation...");
+        
         navigator.geolocation.getCurrentPosition(
           async (position) => {
-            const lat = position.coords.latitude;
-            const lon = position.coords.longitude;
+            const { latitude, longitude } = position.coords;
+            console.log("Geolocation success:", { latitude, longitude });
             
-            console.log("Using precise location:", { lat, lon });
-            
-            // Fetch current weather using coordinates
-            weatherUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric`;
-            console.log("Weather API URL:", weatherUrl.replace(API_KEY, "***HIDDEN***"));
-            
-            const weatherResponse = await fetch(weatherUrl);
-            console.log("Weather API Response Status:", weatherResponse.status);
-            
-            if (!weatherResponse.ok) {
-              const errorText = await weatherResponse.text();
-              console.error("Weather API Error Response:", errorText);
-              throw new Error(`Weather API Error: ${weatherResponse.status} - ${errorText}`);
+            try {
+              await fetchWeatherByCoordinatesInternal(latitude, longitude, API_KEY);
+            } catch (error) {
+              console.error("Error fetching weather by coordinates, falling back to city:", error);
+              await fetchWeatherByCityInternal(FALLBACK_CITY, API_KEY);
             }
-            
-            const currentWeather = await weatherResponse.json();
-            console.log("Weather API Success:", currentWeather);
-            console.log("Raw temperature from API:", currentWeather.main?.temp);
-            console.log("Raw weather condition:", currentWeather.weather?.[0]?.description);
-            
-            // Fetch 5-day forecast using coordinates
-            forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric`;
-            console.log("Forecast API URL:", forecastUrl.replace(API_KEY, "***HIDDEN***"));
-            
-            await processWeatherDataInternal(forecastUrl, currentWeather, API_KEY);
           },
           async (error) => {
-            console.warn("Geolocation failed, using city name:", error.message);
-            // Fallback to city name
-            await fetchWeatherByCityInternal(CITY, API_KEY);
+            console.warn("Geolocation failed:", error.message);
+            console.log("Falling back to Lucban, PH");
+            await fetchWeatherByCityInternal(FALLBACK_CITY, API_KEY);
+          },
+          {
+            enableHighAccuracy: false,
+            timeout: 5000,
+            maximumAge: 300000 // Cache position for 5 minutes
           }
         );
       } else {
-        console.warn("Geolocation not supported, using city name");
-        // Fallback to city name
-        await fetchWeatherByCityInternal(CITY, API_KEY);
+        console.log("Geolocation not available, using fallback city:", FALLBACK_CITY);
+        await fetchWeatherByCityInternal(FALLBACK_CITY, API_KEY);
       }
+      
     } catch (error: any) {
       console.error("Error fetching weather data:", error);
       
@@ -496,7 +492,7 @@ export function DashboardStats() {
         loading: false,
         error: message,
         precipitation: "0mm",
-        windSpeed: "0 km/h",
+        windSpeed: "0 m/s",
         windDirection: "N"
       }));
       
@@ -598,8 +594,21 @@ export function DashboardStats() {
     const tempCelsius = Math.round(currentWeather.main.temp);
     const tempFahrenheit = Math.round((tempCelsius * 9/5) + 32);
     
-    console.log("Processed temperature:", tempCelsius, "°C");
+    console.log("Processed temperature:", tempCelsius, "°C =", tempFahrenheit, "°F");
     console.log("Processed condition:", getWeatherInterpretation(currentWeather.weather[0].id, currentWeather.weather[0].description));
+    console.log("Wind data:", currentWeather.wind);
+    console.log("Humidity:", currentWeather.main.humidity);
+    console.log("Rain data:", currentWeather.rain);
+    
+    // Calculate precipitation from rain or snow data
+    let precipAmount = 0;
+    if (currentWeather.rain) {
+      // Rain in last 1 hour or 3 hours
+      precipAmount = currentWeather.rain['1h'] || currentWeather.rain['3h'] || 0;
+    } else if (currentWeather.snow) {
+      // Snow in last 1 hour or 3 hours
+      precipAmount = currentWeather.snow['1h'] || currentWeather.snow['3h'] || 0;
+    }
     
     const processedWeatherData = {
       temperature: `${tempCelsius}°C`,
@@ -607,13 +616,20 @@ export function DashboardStats() {
       temperatureFahrenheit: tempFahrenheit,
       condition: getWeatherInterpretation(currentWeather.weather[0].id, currentWeather.weather[0].description),
       humidity: `${currentWeather.main.humidity}%`,
-      rainfall: currentWeather.rain ? `${currentWeather.rain['1h'] || 0}mm` : "0mm",
-      precipitation: currentWeather.rain ? `${currentWeather.rain['1h'] || 0}mm` : "0mm",
-      windSpeed: `${Math.round(currentWeather.wind.speed * 3.6)} km/h`, // Convert m/s to km/h
+      rainfall: precipAmount > 0 ? `${precipAmount.toFixed(1)}mm` : "0mm",
+      precipitation: precipAmount > 0 ? `${precipAmount.toFixed(1)}mm` : "0mm",
+      windSpeed: `${currentWeather.wind.speed.toFixed(1)} m/s`, // Keep in m/s as provided by API
       windDirection: getWindDirection(currentWeather.wind.deg || 0),
       loading: false,
       error: null
     };
+    
+    console.log("Final processed weather:", {
+      humidity: processedWeatherData.humidity,
+      windSpeed: processedWeatherData.windSpeed,
+      windDirection: processedWeatherData.windDirection,
+      precipitation: processedWeatherData.precipitation
+    });
     
     console.log("Final weather data:", processedWeatherData);
     
@@ -630,9 +646,9 @@ export function DashboardStats() {
                        i === 1 ? 'Tomorrow' : 
                        new Date(today.getTime() + i * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { weekday: 'long' });
         
-        // Calculate temperatures in both units
+        // Calculate temperatures in both units - use proper conversion from actual temp
         const tempCelsius = Math.round(dayForecast.main.temp);
-        const tempFahrenheit = Math.round((tempCelsius * 9/5) + 32);
+        const tempFahrenheit = Math.round((dayForecast.main.temp * 9/5) + 32);
         
         // Get interpreted weather condition
         const interpretedCondition = getWeatherInterpretation(dayForecast.weather[0].id, dayForecast.weather[0].description);
@@ -654,11 +670,49 @@ export function DashboardStats() {
     setWeatherOutlook(processedForecast);
   };
 
+  // Helper function to fetch weather by coordinates (internal function inside component)
+  const fetchWeatherByCoordinatesInternal = async (lat: number, lon: number, apiKey: string) => {
+    try {
+      // Fetch current weather by coordinates
+      const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`;
+      console.log("Weather API URL (by coordinates):", weatherUrl.replace(apiKey, "***HIDDEN***"));
+      
+      const weatherResponse = await fetch(weatherUrl);
+      console.log("Weather API Response Status:", weatherResponse.status);
+      
+      if (!weatherResponse.ok) {
+        const errorText = await weatherResponse.text();
+        console.error("Weather API Error Response:", errorText);
+        throw new Error(`Weather API Error: ${weatherResponse.status} - ${errorText}`);
+      }
+      
+      const currentWeather = await weatherResponse.json();
+      console.log("Weather API Success (coordinates):", currentWeather);
+      console.log("Location:", currentWeather.name, currentWeather.sys?.country);
+      console.log("Raw temperature from API:", currentWeather.main?.temp);
+      console.log("Raw weather condition:", currentWeather.weather?.[0]?.description);
+      
+      // Fetch 5-day forecast by coordinates
+      const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`;
+      console.log("Forecast API URL (by coordinates):", forecastUrl.replace(apiKey, "***HIDDEN***"));
+      
+      await processWeatherDataInternal(forecastUrl, currentWeather, apiKey);
+    } catch (error: any) {
+      console.error("Error fetching weather by coordinates:", error);
+      console.error("Error details:", {
+        name: error?.name,
+        message: error?.message,
+        stack: error?.stack
+      });
+      throw error;
+    }
+  };
+
   // Helper function to fetch weather by city name (internal function inside component)
   const fetchWeatherByCityInternal = async (city: string, apiKey: string) => {
     try {
       // Fetch current weather
-      const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${apiKey}&units=metric`;
+      const weatherUrl = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&appid=${apiKey}&units=metric`;
       console.log("Weather API URL:", weatherUrl.replace(apiKey, "***HIDDEN***"));
       
       const weatherResponse = await fetch(weatherUrl);
@@ -676,12 +730,17 @@ export function DashboardStats() {
       console.log("Raw weather condition:", currentWeather.weather?.[0]?.description);
       
       // Fetch 5-day forecast
-      const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?q=${city}&appid=${apiKey}&units=metric`;
+      const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?q=${encodeURIComponent(city)}&appid=${apiKey}&units=metric`;
       console.log("Forecast API URL:", forecastUrl.replace(apiKey, "***HIDDEN***"));
       
       await processWeatherDataInternal(forecastUrl, currentWeather, apiKey);
     } catch (error: any) {
       console.error("Error fetching weather by city:", error);
+      console.error("Error details:", {
+        name: error?.name,
+        message: error?.message,
+        stack: error?.stack
+      });
       throw error;
     }
   };
@@ -730,9 +789,14 @@ export function DashboardStats() {
         return {
           id: doc.id,
           ...data
-        };
+        } as any; // Type assertion to handle dynamic Firestore data
       });
       setUsers(fetched);
+      
+      // Count online admins
+      const adminUsers = fetched.filter(user => user.role === 'admin');
+      const onlineAdmins = adminUsers.filter(admin => admin.isOnline === true || admin.isOnline === 'true');
+      setOnlineAdminsCount(onlineAdmins.length);
     }, (error) => {
       console.error("Error fetching users:", error);
     });
@@ -1135,6 +1199,19 @@ export function DashboardStats() {
     exportChart(chartId, 'reports-per-barangay', 'pdf');
   };
 
+  // Export functions for Calendar chart
+  const exportCalendarAsPNG = () => {
+    exportChart('#calendar-chart', 'calendar-activity', 'png');
+  };
+
+  const exportCalendarAsSVG = () => {
+    exportChart('#calendar-chart', 'calendar-activity', 'svg');
+  };
+
+  const exportCalendarAsPDF = () => {
+    exportChart('#calendar-chart', 'calendar-activity', 'pdf');
+  };
+
   // Export functions for Users chart
   const exportUsersChartAsPNG = () => {
     const chartId = isUsersChartModalOpen ? '#users-chart-modal' : '#users-chart';
@@ -1197,6 +1274,431 @@ export function DashboardStats() {
   const exportReportsOverTimeChartAsPDF = () => {
     const chartId = isReportsOverTimeModalOpen ? '#reports-over-time-chart-modal' : '#reports-over-time-chart';
     exportChart(chartId, 'reports-over-time', 'pdf');
+  };
+
+  // Export entire dashboard as printable HTML
+  const exportDashboardAsHTML = async () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast.error('Unable to open print window. Please allow popups.');
+      return;
+    }
+
+    toast.success('Generating report with chart screenshots...');
+
+    // Get current date and time
+    const now = new Date();
+    const dateString = now.toLocaleDateString('en-PH', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+    const timeString = now.toLocaleTimeString('en-PH', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    // Get statistics
+    const totalReports = getTotalReports();
+
+    // Capture chart screenshots
+    const captureChartAsBase64 = (selector: string): Promise<string> => {
+      return new Promise((resolve) => {
+        const element = document.querySelector(selector);
+        if (!element) {
+          resolve('');
+          return;
+        }
+        
+        html2canvas(element as HTMLElement, {
+          backgroundColor: '#ffffff',
+          logging: false,
+          useCORS: true
+        } as any).then(canvas => {
+          resolve(canvas.toDataURL('image/png'));
+        }).catch(() => {
+          resolve('');
+        });
+      });
+    };
+
+    try {
+      // Only capture charts that are selected for export
+      const chartPromises = [];
+      if (selectedChartsForExport['Reports Over Time']) {
+        chartPromises.push(captureChartAsBase64('#reports-over-time-chart').then(result => ({ key: 'reportsOverTimeChart', value: result })));
+      }
+      if (selectedChartsForExport['Report Type Distribution']) {
+        chartPromises.push(captureChartAsBase64('#pie-chart').then(result => ({ key: 'pieChart', value: result })));
+      }
+      if (selectedChartsForExport['Reports per Barangay']) {
+        chartPromises.push(captureChartAsBase64('#nivo-chart').then(result => ({ key: 'barangayChart', value: result })));
+      }
+      if (selectedChartsForExport['Active Users per Barangay']) {
+        chartPromises.push(captureChartAsBase64('#users-chart').then(result => ({ key: 'usersChart', value: result })));
+      }
+      if (selectedChartsForExport['Peak Reporting Hours']) {
+        chartPromises.push(captureChartAsBase64('#peak-hours-chart').then(result => ({ key: 'peakHoursChart', value: result })));
+      }
+      if (selectedChartsForExport['Report Activity Calendar']) {
+        chartPromises.push(captureChartAsBase64('#calendar-chart').then(result => ({ key: 'calendarChart', value: result })));
+      }
+
+      const chartResults = await Promise.all(chartPromises);
+      
+      // Create a map of captured charts
+      const capturedCharts: Record<string, string> = {};
+      chartResults.forEach(result => {
+        if (result) {
+          capturedCharts[result.key] = result.value;
+        }
+      });
+      
+      const reportsOverTimeChart = capturedCharts['reportsOverTimeChart'] || '';
+      const pieChart = capturedCharts['pieChart'] || '';
+      const barangayChart = capturedCharts['barangayChart'] || '';
+      const usersChart = capturedCharts['usersChart'] || '';
+      const peakHoursChart = capturedCharts['peakHoursChart'] || '';
+      const calendarChart = capturedCharts['calendarChart'] || '';
+
+      // Create HTML content with actual chart screenshots
+      const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AcciZard Dashboard Report</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'DM Sans', sans-serif;
+      padding: 20px;
+      background: white;
+      color: #111827;
+    }
+    
+    .header {
+      border-bottom: 2px solid #f97316;
+      padding-bottom: 12px;
+      margin-bottom: 15px;
+    }
+    
+    .header h1 {
+      color: #f97316;
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    
+    .header-info {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 15px;
+      font-size: 12px;
+      color: #6b7280;
+    }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    
+    .stat-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 12px;
+      background: #fff;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+    
+    .stat-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+    
+    .stat-value {
+      font-size: 24px;
+      font-weight: 700;
+      color: #111827;
+    }
+    
+    .stat-description {
+      font-size: 10px;
+      color: #f97316;
+      margin-top: 2px;
+    }
+    
+    .section {
+      margin-bottom: 25px;
+    }
+    
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #111827;
+      margin-bottom: 10px;
+      border-bottom: 2px solid #f97316;
+      padding-bottom: 8px;
+    }
+    
+    .section-content {
+      font-size: 12px;
+      color: #6b7280;
+      font-style: italic;
+      margin-bottom: 10px;
+    }
+    
+    .charts-container {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 25px;
+      margin-bottom: 30px;
+    }
+    
+    .charts-container [style*="grid-column: 2"] {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+    
+    .chart-item {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    
+    .chart-item img {
+      max-width: 100%;
+      height: auto;
+      max-height: 600px;
+      object-fit: contain;
+    }
+    
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    
+    .chart-placeholder {
+      height: 400px;
+      border: 2px dashed #e5e7eb;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f9fafb;
+      color: #9ca3af;
+      font-size: 14px;
+    }
+    
+    @media print {
+      body {
+        padding: 10px;
+      }
+      
+      .section {
+        page-break-inside: avoid;
+        margin-bottom: 20px;
+      }
+      
+      .chart-item {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      
+      .stat-card {
+        page-break-inside: avoid;
+      }
+      
+      .header {
+        page-break-after: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>AcciZard Dashboard Report</h1>
+    <div class="header-info">
+      <div>
+        <strong>Generated:</strong> ${dateString} at ${timeString}
+      </div>
+      <div>
+        <strong>Location:</strong> Lucban, Quezon, Philippines
+      </div>
+    </div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Most Common Type</div>
+      <div class="stat-value">${mostCommonType.count}</div>
+      <div class="stat-description">${mostCommonType.type} - ${mostCommonType.percentage}%</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">This Week</div>
+      <div class="stat-value">${weeklyReports}</div>
+      <div class="stat-description">Last 7 days</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Active Users</div>
+      <div class="stat-value">${activeUsers.toLocaleString()}</div>
+      <div class="stat-description">Registered</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Avg Response Time</div>
+      <div class="stat-value">8.5</div>
+      <div class="stat-description">minutes</div>
+    </div>
+  </div>
+
+${reportsOverTimeChart || pieChart ? `
+  <div class="charts-container">
+${reportsOverTimeChart ? `
+    <div class="chart-item">
+      <div class="section-title">Reports Over Time</div>
+      <div class="section-content">Chart showing report trends across different time periods</div>
+      <div style="margin-bottom: 8px; padding: 8px; background: #f9fafb; border-radius: 4px; font-size: 11px;">
+        <strong>Filter:</strong> ${reportTypeFilter}
+      </div>
+      <img src="${reportsOverTimeChart}" alt="Reports Over Time Chart" style="border: 1px solid #e5e7eb; border-radius: 8px; width: 100%;" />
+    </div>
+` : ''}
+${pieChart ? `
+    <div class="chart-item">
+      <div class="section-title">Report Type Distribution</div>
+      <div class="section-content">Breakdown of reports by type</div>
+      <div style="margin-bottom: 8px; padding: 8px; background: #f9fafb; border-radius: 4px; font-size: 11px;">
+        <strong>Filter:</strong> ${reportTypeFilter}
+      </div>
+      <img src="${pieChart}" alt="Report Type Distribution" style="border: 1px solid #e5e7eb; border-radius: 8px; width: 100%;" />
+    </div>
+` : ''}
+  </div>
+` : ''}
+
+${barangayChart && (usersChart || peakHoursChart) ? `
+  <div class="charts-container" style="page-break-inside: avoid;">
+    ${barangayChart ? `
+      <div class="chart-item" style="grid-column: 1;">
+        <div class="section-title">Reports per Barangay</div>
+        <div class="section-content">Geographic distribution of reports across barangays</div>
+        <div style="margin-bottom: 8px; padding: 8px; background: #f9fafb; border-radius: 4px; font-size: 11px;">
+          <strong>Filter:</strong> ${barangayReportsFilter}
+        </div>
+        <img src="${barangayChart}" alt="Barangay Reports Chart" style="border: 1px solid #e5e7eb; border-radius: 8px; width: 100%;" />
+      </div>
+    ` : ''}
+    ${usersChart || peakHoursChart ? `
+      <div style="grid-column: 2; display: flex; flex-direction: column; gap: 15px;">
+${usersChart ? `
+        <div class="chart-item">
+          <div class="section-title">Active Users per Barangay</div>
+          <div class="section-content">User distribution across different barangays</div>
+          <div style="margin-bottom: 8px; padding: 8px; background: #f9fafb; border-radius: 4px; font-size: 11px;">
+            <strong>Filter:</strong> ${usersBarangayFilter}
+          </div>
+          <img src="${usersChart}" alt="Users per Barangay Chart" style="border: 1px solid #e5e7eb; border-radius: 8px; width: 100%;" />
+        </div>
+` : ''}
+${peakHoursChart ? `
+        <div class="chart-item">
+          <div class="section-title">Peak Reporting Hours</div>
+          <div class="section-content">Time-based analysis of report submission patterns</div>
+          <div style="margin-bottom: 8px; padding: 8px; background: #f9fafb; border-radius: 4px; font-size: 11px;">
+            <strong>Filter:</strong> ${peakHoursFilter}
+          </div>
+          <img src="${peakHoursChart}" alt="Peak Hours Chart" style="border: 1px solid #e5e7eb; border-radius: 8px; width: 100%;" />
+        </div>
+` : ''}
+      </div>
+    ` : ''}
+  </div>
+` : ''}
+
+${barangayChart && !usersChart && !peakHoursChart ? `
+  <div class="chart-item" style="width: 100%; margin-bottom: 30px;">
+    <div class="section-title">Reports per Barangay</div>
+    <div class="section-content">Geographic distribution of reports across barangays</div>
+    <div style="margin-bottom: 8px; padding: 8px; background: #f9fafb; border-radius: 4px; font-size: 11px;">
+      <strong>Filter:</strong> ${barangayReportsFilter}
+    </div>
+    <img src="${barangayChart}" alt="Barangay Reports Chart" style="border: 1px solid #e5e7eb; border-radius: 8px; width: 100%;" />
+  </div>
+` : ''}
+${(!barangayChart || (!usersChart && !peakHoursChart)) && (usersChart || peakHoursChart) ? `
+  <div style="margin-bottom: 30px;">
+${usersChart ? `
+    <div class="chart-item" style="width: 100%; margin-bottom: 15px;">
+      <div class="section-title">Active Users per Barangay</div>
+      <div class="section-content">User distribution across different barangays</div>
+      <div style="margin-bottom: 8px; padding: 8px; background: #f9fafb; border-radius: 4px; font-size: 11px;">
+        <strong>Filter:</strong> ${usersBarangayFilter}
+      </div>
+      <img src="${usersChart}" alt="Users per Barangay Chart" style="border: 1px solid #e5e7eb; border-radius: 8px; width: 100%;" />
+    </div>
+` : ''}
+${peakHoursChart ? `
+    <div class="chart-item" style="width: 100%;">
+      <div class="section-title">Peak Reporting Hours</div>
+      <div class="section-content">Time-based analysis of report submission patterns</div>
+      <div style="margin-bottom: 8px; padding: 8px; background: #f9fafb; border-radius: 4px; font-size: 11px;">
+        <strong>Filter:</strong> ${peakHoursFilter}
+      </div>
+      <img src="${peakHoursChart}" alt="Peak Hours Chart" style="border: 1px solid #e5e7eb; border-radius: 8px; width: 100%;" />
+    </div>
+` : ''}
+  </div>
+` : ''}
+
+${calendarChart ? `
+  <div class="chart-item" style="width: 100%; margin-bottom: 30px;">
+    <div class="section-title">Report Activity Calendar</div>
+    <div class="section-content">Daily report activity heatmap for 2025</div>
+    <img src="${calendarChart}" alt="Calendar Heatmap" style="border: 1px solid #e5e7eb; border-radius: 8px; width: 100%;" />
+  </div>
+` : ''}
+
+  <div style="margin-top: 50px; padding-top: 20px; border-top: 2px solid #e5e7eb; text-align: center; font-size: 12px; color: #6b7280;">
+    <p>AcciZard - Lucban Disaster Risk Reduction and Management Office</p>
+    <p>This report was generated automatically on ${dateString} at ${timeString}</p>
+  </div>
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() {
+        window.print();
+      }, 500);
+    };
+    </script>
+</body>
+</html>
+    `;
+
+      // Write and print
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+      
+      toast.success('Dashboard exported as printable HTML. The print dialog will open shortly.');
+    } catch (error) {
+      console.error('Error generating report:', error);
+      toast.error('Failed to generate report. Please try again.');
+    }
   };
 
   // Memoized Nivo theme to match DM Sans font
@@ -1970,7 +2472,7 @@ export function DashboardStats() {
             
             {/* Organization Info */}
             <div className="flex-1">
-              <h2 className="text-2xl font-bold text-brand-orange mb-2">
+              <h2 className="text-2xl font-bold mb-2">
                 Lucban Disaster Risk Reduction and Management Office
               </h2>
 
@@ -1981,15 +2483,23 @@ export function DashboardStats() {
                   href="https://www.facebook.com/LucbanDRRMO" 
                   target="_blank" 
                   rel="noopener noreferrer"
-                  className="flex items-center gap-2 text-sm font-semibold bg-brand-orange text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors"
+                  className="flex items-center gap-2 text-sm bg-brand-orange text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors"
                 >
                   <Facebook className="h-4 w-4" />
                   <span>Lucban DRRM Office</span>
                 </a>
-                <div className="flex items-center gap-2 text-sm font-semibold bg-brand-orange text-white px-4 py-2 rounded-lg">
+                <div className="flex items-center gap-2 text-sm bg-brand-orange text-white px-4 py-2 rounded-lg">
                   <PhoneCall className="h-4 w-4" />
                   <span>540-1709 or 0917 520 4211</span>
                 </div>
+              </div>
+              
+              {/* Online Admins Indicator */}
+              <div className="flex items-center gap-2 mt-4">
+                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                <span className="text-sm text-gray-700">
+                  {onlineAdminsCount} Admin{onlineAdminsCount !== 1 ? 's' : ''} Online
+                </span>
               </div>
             </div>
           </div>
@@ -2398,13 +2908,42 @@ export function DashboardStats() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* Calendar Heatmap - Report Activity */}
         <Card className="relative overflow-hidden">
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Report Activity Calendar</CardTitle>
+            <div className="flex items-center gap-2">
+              {/* Export Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <Download className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={exportCalendarAsPNG}>
+                    <FileImage className="h-4 w-4 mr-2" />
+                    Export as PNG
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={exportCalendarAsSVG}>
+                    <FileType className="h-4 w-4 mr-2" />
+                    Export as SVG
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={exportCalendarAsPDF}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Export as PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Expand Button */}
+              <Button size="sm" variant="outline" onClick={() => setIsCalendarModalOpen(true)}>
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="p-4 py-2">
             <div className="space-y-2">
               {/* Nivo Calendar Chart */}
-              <div style={{ height: '120px', minHeight: '100px' }}>
+              <div id="calendar-chart" style={{ height: '120px', minHeight: '100px' }}>
                 <ResponsiveCalendar
                   data={calendarData2025}
                   from="2025-01-01"
@@ -2624,6 +3163,85 @@ export function DashboardStats() {
         </Card>
       </div>
 
+      {/* Filter and Export Section */}
+      <Card className="shadow-sm bg-gradient-to-r from-orange-50 to-red-50 border-brand-orange">
+        <CardContent className="p-6 space-y-4">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <FileText className="h-6 w-6 text-brand-orange" />
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Export Dashboard Report</h3>
+                <p className="text-sm text-gray-600">Generate a printable summary of all dashboard charts and statistics</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => setShowChartFilters(!showChartFilters)}
+                className="bg-orange-50 border border-brand-orange hover:bg-brand-orange hover:text-white text-brand-orange"
+                size="lg"
+              >
+                {showChartFilters ? (
+                  <>
+                    <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Hide Filters
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                    </svg>
+                    Filter Charts
+                  </>
+                )}
+              </Button>
+              <Button 
+                onClick={exportDashboardAsHTML}
+                className="bg-brand-orange hover:bg-orange-600 text-white"
+                size="lg"
+              >
+                <Download className="h-5 w-5 mr-2" />
+                Export as HTML
+              </Button>
+            </div>
+          </div>
+
+          {/* Chart Selection Filters - Rectangular Token Style (Shown when toggled) */}
+          {showChartFilters && (
+            <div className="space-y-2 pt-2 border-t border-brand-orange/30">
+              <label className="text-sm font-semibold text-gray-700">Select Charts to Include:</label>
+              <div className="flex flex-wrap gap-2">
+                {Object.keys(selectedChartsForExport).map((chartName) => (
+                  <button
+                    key={chartName}
+                    onClick={() => setSelectedChartsForExport(prev => ({
+                      ...prev,
+                      [chartName]: !prev[chartName]
+                    }))}
+                    className={`px-3 py-1.5 text-xs font-medium transition-all duration-200 flex items-center gap-2 ${
+                      selectedChartsForExport[chartName]
+                        ? 'bg-brand-orange text-white shadow-sm'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                    style={{
+                      borderRadius: '4px', // Rectangular with small border radius
+                    }}
+                  >
+                    {selectedChartsForExport[chartName] && (
+                      <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                    <span>{chartName}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Reports Over Time and Report Type Distribution - Side by Side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Reports Over Time Chart */}
@@ -2751,8 +3369,8 @@ export function DashboardStats() {
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="pb-3">
-            <div id="pie-chart" style={{ height: '200px', minHeight: '200px' }}>
+          <CardContent className="space-y-4">
+            <div id="pie-chart" style={{ height: '256px', minHeight: '256px' }}>
               <ChartContainer config={{
                 reports: {
                   label: "Reports",
@@ -2760,20 +3378,47 @@ export function DashboardStats() {
                 }
               }}>
                 <PieChart>
-                  <Pie data={reportTypeData} cx="50%" cy="50%" innerRadius={45} outerRadius={85} paddingAngle={5} dataKey="value">
+                  <Pie 
+                    data={reportTypeData} 
+                    cx="50%" 
+                    cy="50%" 
+                    innerRadius={55} 
+                    outerRadius={105} 
+                    paddingAngle={5} 
+                    dataKey="value"
+                  >
                     {reportTypeData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                   </Pie>
                   <ChartTooltip content={<ChartTooltipContent />} />
                 </PieChart>
               </ChartContainer>
             </div>
-            <div className="flex flex-wrap justify-center gap-3 mt-4">
-              {reportTypeData.map(item => <div key={item.name} className="flex items-center gap-1.5">
-                  <div className="w-3 h-3 rounded-sm" style={{
-                    backgroundColor: item.color
-                  }}></div>
-                  <span className="text-xs font-medium text-gray-700">{item.name} ({item.value}%)</span>
-                </div>)}
+            {/* Custom Legend with Filter */}
+            <div className="pt-3 border-t border-gray-200">
+              <div className="flex flex-wrap gap-3 justify-center">
+                {reportTypeData.map((item, index) => {
+                  const isEnabled = enabledReportTypes[item.name] !== false;
+                  return (
+                    <div 
+                      key={index} 
+                      className={`flex items-center gap-1.5 cursor-pointer transition-opacity ${
+                        isEnabled ? 'opacity-100' : 'opacity-40'
+                      }`}
+                      onClick={() => toggleReportType(item.name)}
+                    >
+                      <div 
+                        className="w-3 h-3 rounded-sm" 
+                        style={{
+                          backgroundColor: item.color
+                        }}
+                      />
+                      <span className="text-xs font-medium text-gray-700">
+                        {item.name} ({item.value}%)
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -3124,8 +3769,8 @@ export function DashboardStats() {
               </div>
             </div>
           </DialogHeader>
-          <div className="flex-1 min-h-0 mt-4">
-            <div id="pie-chart-modal" style={{ height: 'calc(90vh - 200px)', minHeight: '400px' }}>
+          <div className="flex-1 min-h-0 mt-4 space-y-4">
+            <div id="pie-chart-modal" style={{ height: 'calc(90vh - 340px)', minHeight: '500px' }}>
             <ChartContainer config={{
               reports: {
                 label: "Reports",
@@ -3133,20 +3778,47 @@ export function DashboardStats() {
               }
             }}>
               <PieChart>
-                <Pie data={reportTypeData} cx="50%" cy="50%" innerRadius={100} outerRadius={200} paddingAngle={5} dataKey="value" label>
+                <Pie 
+                  data={reportTypeData} 
+                  cx="50%" 
+                  cy="50%" 
+                  innerRadius={110} 
+                  outerRadius={220} 
+                  paddingAngle={5} 
+                  dataKey="value"
+                >
                   {reportTypeData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                 </Pie>
                 <ChartTooltip content={<ChartTooltipContent />} />
               </PieChart>
             </ChartContainer>
-            <div className="flex flex-wrap justify-center gap-3 mt-4">
-              {reportTypeData.map(item => <div key={item.name} className="flex items-center gap-1.5">
-                  <div className="w-3 h-3 rounded-sm" style={{
-                    backgroundColor: item.color
-                  }}></div>
-                  <span className="text-xs font-medium text-gray-700">{item.name} ({item.value}%)</span>
-                </div>)}
             </div>
+            {/* Custom Legend with Filter for Modal */}
+            <div className="pt-3 border-t border-gray-200">
+              <div className="flex flex-wrap gap-3 justify-center">
+                {reportTypeData.map((item, index) => {
+                  const isEnabled = enabledReportTypes[item.name] !== false;
+                  return (
+                    <div 
+                      key={index} 
+                      className={`flex items-center gap-1.5 cursor-pointer transition-opacity ${
+                        isEnabled ? 'opacity-100' : 'opacity-40'
+                      }`}
+                      onClick={() => toggleReportType(item.name)}
+                    >
+                      <div 
+                        className="w-3 h-3 rounded-sm" 
+                        style={{
+                          backgroundColor: item.color
+                        }}
+                      />
+                      <span className="text-xs font-medium text-gray-700">
+                        {item.name} ({item.value}%)
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </DialogContent>
@@ -3274,6 +3946,95 @@ export function DashboardStats() {
                     <span className="text-xs font-medium text-gray-700">{key}</span>
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Expanded Calendar Modal */}
+      <Dialog open={isCalendarModalOpen} onOpenChange={setIsCalendarModalOpen}>
+        <DialogContent className="max-w-7xl h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Report Activity Calendar - Detailed View</DialogTitle>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 mt-4">
+            <div id="calendar-chart-modal" style={{ height: 'calc(90vh - 140px)', minHeight: '500px' }}>
+              <ResponsiveCalendar
+                data={calendarData2025}
+                from="2025-01-01"
+                to="2025-12-31"
+                emptyColor="#f3f4f6"
+                colors={[
+                  '#FFCD90', // lightest
+                  '#FFB76B', // light
+                  '#FFA652', // medium
+                  '#FF8D21', // medium-dark
+                  '#FF7B00'  // darkest
+                ]}
+                margin={{ top: 40, right: 40, bottom: 40, left: 40 }}
+                yearSpacing={40}
+                monthBorderColor="#ffffff"
+                dayBorderWidth={2}
+                dayBorderColor="#ffffff"
+                legends={[
+                  {
+                    anchor: 'bottom-right',
+                    direction: 'row',
+                    translateY: 30,
+                    itemCount: 4,
+                    itemWidth: 40,
+                    itemHeight: 36,
+                    itemsSpacing: 15,
+                    itemDirection: 'right-to-left'
+                  }
+                ]}
+                theme={nivoTheme}
+                tooltip={({ day, value }) => (
+                  <div style={{
+                    background: 'white',
+                    padding: '10px 14px',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '6px',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                    fontFamily: 'DM Sans, sans-serif',
+                    fontSize: '13px'
+                  }}>
+                    <div style={{ fontWeight: 600, color: '#111827' }}>
+                      {new Date(day).toLocaleDateString('en-US', { 
+                        weekday: 'long', 
+                        year: 'numeric', 
+                        month: 'long', 
+                        day: 'numeric' 
+                      })}
+                    </div>
+                    <div style={{ color: '#f97316', fontWeight: 500 }}>
+                      {value} reports
+                    </div>
+                  </div>
+                )}
+              />
+            </div>
+
+            {/* Summary Stats */}
+            <div className="grid grid-cols-3 gap-4 pt-6 border-t border-gray-200 mt-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-brand-orange">
+                  {calendarData2025.reduce((sum, day) => sum + day.value, 0)}
+                </div>
+                <div className="text-sm text-gray-600 mt-1">Total Reports</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-brand-red">
+                  {Math.max(...calendarData2025.map(d => d.value))}
+                </div>
+                <div className="text-sm text-gray-600 mt-1">Peak Day</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-gray-700">
+                  {(calendarData2025.reduce((sum, day) => sum + day.value, 0) / calendarData2025.length).toFixed(1)}
+                </div>
+                <div className="text-sm text-gray-600 mt-1">Avg/Day</div>
               </div>
             </div>
           </div>
