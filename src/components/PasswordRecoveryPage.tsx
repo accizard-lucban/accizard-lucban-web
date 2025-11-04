@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Lock } from "lucide-react";
 import { auth } from "@/lib/firebase";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { toast } from "@/components/ui/sonner";
@@ -66,27 +66,36 @@ export function PasswordRecoveryPage() {
 
   return <div className="min-h-screen bg-white flex items-center justify-center p-4 sm:p-8">
       {/* Floating Container */}
-      <div className="w-full max-w-6xl bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
-        <div className="flex flex-col lg:flex-row min-h-[600px]">
+      <div className="w-full max-w-5xl bg-white rounded-2xl shadow-md overflow-hidden border border-gray-200">
+        <div className="flex flex-col lg:flex-row min-h-[500px]">
           {/* Left Side - Logo and Branding */}
-          <div className="flex-1 bg-[url('/accizard-uploads/login-signup-cover.png')] bg-cover bg-center min-h-[300px] lg:min-h-auto">
+          <div className="flex-1 bg-[url('/accizard-uploads/login-image.png')] bg-cover bg-center min-h-[250px] lg:min-h-auto">
             <div className="text-center">
               
             </div>
           </div>
 
           {/* Right Side - Recovery Form */}
-          <div className="flex-1 bg-white flex items-center justify-center p-4 sm:p-8 lg:p-12">
-            <Card className="w-full max-w-md border-0 shadow-none">
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl sm:text-3xl font-bold text-gray-800 mb-2">Password Recovery</CardTitle>
-            
+          <div className="flex-1 bg-white flex items-center justify-center p-4 sm:p-6 lg:p-8">
+            <Card className="w-full max-w-sm border-0 shadow-none">
+          <CardHeader className="text-center pb-3 sm:pb-6">
+            <div className="flex flex-col items-center justify-center mb-4">
+              <div className="flex flex-col items-center space-y-2">
+                <div className="h-12 w-12 bg-brand-orange/10 rounded-full flex items-center justify-center">
+                  <Lock className="h-6 w-6 text-brand-orange" />
+                </div>
+                <div className="text-center">
+                  <CardTitle className="text-2xl sm:text-3xl font-bold text-gray-800 mb-0">Password Recovery</CardTitle>
+                  <p className="text-sm text-gray-600 mt-1">Enter your email to reset your password</p>
+                </div>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
-            {!isSubmitted ? <form onSubmit={handleSubmit} className="space-y-6">
+            {!isSubmitted ? <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="email" className="text-gray-800 font-medium text-sm sm:text-base">Email Address</Label>
-                  <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Enter your email" required className="h-10 sm:h-12 border-gray-300 focus:border-gray-300 focus:ring-[#1f2937] text-sm sm:text-base" />
+                  <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Enter your email" required className="h-10 sm:h-12 border-gray-300 focus:border-gray-300 focus:ring-0 text-sm sm:text-base" />
                 </div>
                 <Button 
                   type="submit" 

@@ -1,11 +1,11 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Eye, Edit, Trash2, Plus, FileText, Calendar, Clock, MapPin, Upload, FileIcon, Image, Printer, Download, X, Search, FileDown, Car, Flame, Ambulance, Waves, Mountain, CircleAlert, Users, ShieldAlert, Activity, ArrowUpRight, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Eye, Edit, Trash2, Plus, FileText, Calendar, Clock, MapPin, Upload, FileIcon, Image, Printer, Download, X, Search, FileDown, Car, Flame, Ambulance, Waves, Mountain, CircleAlert, Users, ShieldAlert, Activity, ArrowUpRight, ArrowUpDown, ArrowUp, ArrowDown, Layers, ZoomIn, ZoomOut, LocateFixed } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -28,6 +28,8 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebase";
 import { auth } from "@/lib/firebase";
 import { toast } from "@/components/ui/sonner";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 // Helper function to get icon for report type
 const getReportTypeIcon = (type: string) => {
@@ -64,6 +66,66 @@ export function ManageReportsPage() {
   });
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [reportToDelete, setReportToDelete] = useState<string | null>(null);
+  
+  // Preview Map (Report Modal - Directions Tab) state
+  const [previewMapCenter, setPreviewMapCenter] = useState<[number, number]>([121.5556, 14.1139]);
+  const [previewMapZoom, setPreviewMapZoom] = useState(14);
+  const [previewMapStyle, setPreviewMapStyle] = useState<'streets' | 'satellite'>('streets');
+  const [previewSearchQuery, setPreviewSearchQuery] = useState("");
+  const [previewSearchSuggestions, setPreviewSearchSuggestions] = useState<any[]>([]);
+  const [isPreviewSearchOpen, setIsPreviewSearchOpen] = useState(false);
+  
+  // Initialize preview map center when a report is selected
+  useEffect(() => {
+    if (selectedReport && selectedReport.latitude && selectedReport.longitude) {
+      const lat = Number(selectedReport.latitude);
+      const lng = Number(selectedReport.longitude);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        setPreviewMapCenter([lng, lat]);
+        setPreviewMapZoom(14);
+      }
+    }
+  }, [selectedReport]);
+
+  // Preview: Locate user helper
+  const handlePreviewLocateUser = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setPreviewMapCenter([longitude, latitude]);
+          setPreviewMapZoom(15);
+        },
+        () => {}
+      );
+    }
+  };
+
+  // Preview: Geocoding search
+  const handlePreviewGeocodingSearch = useCallback(async (query: string) => {
+    if (query.length < 3) {
+      setPreviewSearchSuggestions([]);
+      setIsPreviewSearchOpen(false);
+      return;
+    }
+    try {
+      const accessToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
+      if (!accessToken) return;
+      // Philippines bbox: 116.0,4.0,127.0,21.5
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${accessToken}&limit=5&proximity=121.5569,14.1133&country=PH&bbox=116,4,127,21.5`;
+      const data = await ensureOk(await fetch(url)).then(r => r.json());
+      setPreviewSearchSuggestions(data.features || []);
+      setIsPreviewSearchOpen(data.features && data.features.length > 0);
+    } catch {
+      setPreviewSearchSuggestions([]);
+      setIsPreviewSearchOpen(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => handlePreviewGeocodingSearch(previewSearchQuery), 300);
+    return () => clearTimeout(t);
+  }, [previewSearchQuery, handlePreviewGeocodingSearch]);
   const [showBatchDeleteDialog, setShowBatchDeleteDialog] = useState(false);
   
   // Loading states
@@ -75,6 +137,7 @@ export function ManageReportsPage() {
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [isLoadingReports, setIsLoadingReports] = useState(true);
   
   // Sort state for Date Submitted column
   const [dateSort, setDateSort] = useState<'asc' | 'desc' | null>('desc'); // Default to descending (newest first)
@@ -82,11 +145,125 @@ export function ManageReportsPage() {
   // Sort state for Report ID column
   const [idSort, setIdSort] = useState<'asc' | 'desc' | null>(null);
   
+  // New report alert state (moved before useEffect to ensure availability)
+  const [showNewReportAlert, setShowNewReportAlert] = useState(false);
+  const [newReportData, setNewReportData] = useState<any>(null);
+  const previousReportCountRef = useRef<number>(0);
+  const alarmIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
   // Sync viewed reports to localStorage
   useEffect(() => {
     localStorage.setItem("viewedReports", JSON.stringify(Array.from(viewedReports)));
   }, [viewedReports]);
   
+  // Fallback function using Web Audio API (defined before useCallback dependencies)
+  const playWebAudioAlarm = useCallback(() => {
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      // More attention-grabbing alarm pattern
+      oscillator.frequency.setValueAtTime(1000, audioContext.currentTime);
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.2);
+      oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.4);
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.6);
+      
+      gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 1.0);
+      
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + 1.0);
+    } catch (error) {
+      console.log("Web Audio API also failed:", error);
+      // Final fallback: try to play a simple beep using a data URL
+      try {
+        const fallbackAudio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmGgU7k9n1unEiBC13yO/eizEIHWq+8+OWT');
+        fallbackAudio.volume = 0.3;
+        fallbackAudio.play().catch(() => console.log("Final fallback audio also failed"));
+      } catch (finalError) {
+        console.log("All audio playback methods failed:", finalError);
+      }
+    }
+  }, []);
+
+  // Function to play a single alarm sound
+  const playSingleAlarm = useCallback(() => {
+    try {
+      // Play the custom alarm sound from the uploaded MP3 file
+      const audio = new Audio('/accizard-uploads/alarmsoundfx.mp3');
+      audio.volume = 0.8; // Increased volume for better attention
+      
+      // Set a timeout to fall back to Web Audio API if MP3 fails to load
+      const fallbackTimeout = setTimeout(() => {
+        console.log("MP3 loading too slow, falling back to Web Audio API");
+        playWebAudioAlarm();
+      }, 1500); // Reduced timeout for faster fallback
+      
+      audio.addEventListener('canplaythrough', () => {
+        clearTimeout(fallbackTimeout); // Cancel fallback if MP3 loads successfully
+        audio.play().catch((error) => {
+          console.log("MP3 playback failed, using fallback:", error);
+          playWebAudioAlarm();
+        });
+      });
+      
+      audio.addEventListener('error', () => {
+        clearTimeout(fallbackTimeout);
+        console.log("MP3 file error, using fallback");
+        playWebAudioAlarm();
+      });
+      
+      // Start loading the audio
+      audio.load();
+      
+    } catch (error) {
+      console.log("Error initializing MP3 alarm, using fallback:", error);
+      playWebAudioAlarm();
+    }
+  }, [playWebAudioAlarm]);
+
+  // Function to play alarming sound for new reports (continuous until dismissed)
+  const playAlarmSound = useCallback(() => {
+    // Clear any existing alarm interval
+    if (alarmIntervalRef.current) {
+      clearInterval(alarmIntervalRef.current);
+      alarmIntervalRef.current = null;
+    }
+    
+    // Play alarm immediately
+    playSingleAlarm();
+    
+    // Set up continuous alarm every 3 seconds
+    const interval = setInterval(() => {
+      playSingleAlarm();
+    }, 3000);
+    
+    alarmIntervalRef.current = interval;
+  }, [playSingleAlarm]);
+
+  // Function to stop the alarm
+  const stopAlarm = useCallback(() => {
+    if (alarmIntervalRef.current) {
+      clearInterval(alarmIntervalRef.current);
+      alarmIntervalRef.current = null;
+      console.log("Alarm stopped");
+    }
+  }, []);
+
+  // Cleanup alarm interval on component unmount
+  useEffect(() => {
+    return () => {
+      if (alarmIntervalRef.current) {
+        clearInterval(alarmIntervalRef.current);
+        alarmIntervalRef.current = null;
+      }
+    };
+  }, []);
+
   // Fetch current user information
   useEffect(() => {
     async function fetchCurrentUser() {
@@ -148,6 +325,7 @@ export function ManageReportsPage() {
       const reportsQuery = query(collection(db, "reports"), orderBy("timestamp", "desc"));
       const unsubscribe = onSnapshot(reportsQuery, (snapshot) => {
         console.log("Snapshot received:", snapshot.docs.length, "documents");
+        setIsLoadingReports(false);
         
         const fetched = snapshot.docs.map((doc, index) => {
           const data: any = doc.data() || {};
@@ -223,8 +401,9 @@ export function ManageReportsPage() {
         });
         
         // Check for new reports and trigger alert (only if count increased)
-        if (previousReportCount > 0 && fetched.length > previousReportCount) {
-          const newReportCount = fetched.length - previousReportCount;
+        const previousCount = previousReportCountRef.current;
+        if (previousCount > 0 && fetched.length > previousCount) {
+          const newReportCount = fetched.length - previousCount;
           
           if (newReportCount > 0) {
             // Get the newest report (first in the array since we order by timestamp desc)
@@ -239,15 +418,15 @@ export function ManageReportsPage() {
           }
         }
         
-        // Always update the reports state (this handles deletions automatically)
-        setPreviousReportCount(fetched.length);
+        // Always update the reports state and ref (this handles deletions automatically)
+        previousReportCountRef.current = fetched.length;
         setReports(fetched);
       });
       return () => unsubscribe();
     } catch (err) {
       console.error("Error subscribing to reports:", err);
     }
-  }, []);
+  }, [playAlarmSound]);
 
   // Fetch team members from database
   useEffect(() => {
@@ -430,6 +609,439 @@ export function ManageReportsPage() {
     console.log("Attempting to delete report:", reportToDelete);
 
     try {
+      // Find the report data to generate PDF
+      const reportToDeleteData = reports.find(r => r.firestoreId === reportToDelete);
+      
+      if (reportToDeleteData) {
+        // Load dispatch and patient data if available
+        let dispatchDataForPDF = dispatchData;
+        let patientsDataForPDF = patients;
+        
+        try {
+          const loadedDispatch = await loadDispatchDataFromDatabase(reportToDelete);
+          if (loadedDispatch) dispatchDataForPDF = loadedDispatch;
+          
+          const loadedPatients = await loadPatientDataFromDatabase(reportToDelete);
+          if (loadedPatients && loadedPatients.patients) patientsDataForPDF = loadedPatients.patients;
+        } catch (error) {
+          console.log("Error loading additional data for PDF:", error);
+        }
+
+        // Helper function to calculate GCS total
+        const calculateGCSTotal = (patient: any) => {
+          const eyes = patient.gcs?.eyes ? parseInt(patient.gcs.eyes) : 0;
+          const verbal = patient.gcs?.verbal ? parseInt(patient.gcs.verbal) : 0;
+          const motor = patient.gcs?.motor ? parseInt(patient.gcs.motor) : 0;
+          return eyes + verbal + motor;
+        };
+
+        // Generate PDF HTML content
+        const generatePDFHTML = () => {
+          const report = reportToDeleteData;
+          const dispatch = dispatchDataForPDF;
+          const patientData = patientsDataForPDF;
+          
+          return `
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <title>Emergency Report - ${report?.id || 'N/A'}</title>
+                <style>
+                  body {
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    margin: 0;
+                    padding: 20px;
+                    color: #333;
+                    background: #fff;
+                  }
+                  
+                  .header {
+                    border-bottom: 3px solid #f97316;
+                    padding-bottom: 15px;
+                    margin-bottom: 25px;
+                  }
+                  
+                  .header h1 {
+                    color: #f97316;
+                    margin: 0 0 5px 0;
+                    font-size: 28px;
+                  }
+                  
+                  .header-info {
+                    display: flex;
+                    justify-content: space-between;
+                    margin-top: 10px;
+                    font-size: 12px;
+                    color: #666;
+                  }
+                  
+                  .section {
+                    margin-bottom: 30px;
+                    page-break-inside: avoid;
+                  }
+                  
+                  .section-title {
+                    background: #f97316;
+                    color: white;
+                    padding: 10px 15px;
+                    margin: 0 0 15px 0;
+                    font-size: 18px;
+                    font-weight: bold;
+                    border-radius: 4px;
+                  }
+                  
+                  table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-bottom: 20px;
+                  }
+                  
+                  table td, table th {
+                    padding: 10px;
+                    border: 1px solid #ddd;
+                    text-align: left;
+                  }
+                  
+                  table th {
+                    background-color: #f8f9fa;
+                    font-weight: 600;
+                    width: 30%;
+                  }
+                  
+                  .value-cell {
+                    background-color: #fff;
+                  }
+                  
+                  .badge {
+                    display: inline-block;
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    font-size: 12px;
+                    font-weight: 600;
+                  }
+                  
+                  .status-pending { background-color: #fef3c7; color: #92400e; }
+                  .status-ongoing { background-color: #dbeafe; color: #1e40af; }
+                  .status-not-responded { background-color: #fee2e2; color: #991b1b; }
+                  .status-responded { background-color: #d1fae5; color: #065f46; }
+                  .status-false-report { background-color: #f3f4f6; color: #374151; }
+                  .status-redundant { background-color: #f3e8ff; color: #6b21a8; }
+                  
+                  .patient-section {
+                    margin-top: 20px;
+                    border: 2px solid #e5e7eb;
+                    padding: 15px;
+                    border-radius: 8px;
+                  }
+                  
+                  .patient-header {
+                    background: #f3f4f6;
+                    padding: 10px;
+                    margin: -15px -15px 15px -15px;
+                    border-radius: 6px 6px 0 0;
+                    font-weight: bold;
+                    color: #1f2937;
+                  }
+                  
+                  .sub-section {
+                    margin-top: 15px;
+                    margin-left: 20px;
+                  }
+                  
+                  .sub-section-title {
+                    font-weight: 600;
+                    color: #f97316;
+                    margin-bottom: 8px;
+                  }
+                  
+                  .footer {
+                    margin-top: 40px;
+                    padding-top: 20px;
+                    border-top: 2px solid #e5e7eb;
+                    text-align: center;
+                    font-size: 12px;
+                    color: #666;
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="header">
+                  <h1>AcciZard Emergency Report</h1>
+                  <div class="header-info">
+                    <div>Report ID: <strong>${report?.id || 'N/A'}</strong></div>
+                    <div>Generated: ${new Date().toLocaleString()}</div>
+                  </div>
+                </div>
+                
+                <!-- Section I: Report Details -->
+                <div class="section">
+                  <div class="section-title">I. Report Details</div>
+                  <table>
+                    <tr>
+                      <th>Report Type</th>
+                      <td class="value-cell">${report?.type || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                      <th>Status</th>
+                      <td class="value-cell">
+                        <span class="badge status-${report?.status?.toLowerCase().replace(' ', '-') || 'pending'}">
+                          ${report?.status || 'N/A'}
+                        </span>
+                      </td>
+                    </tr>
+                    <tr>
+                      <th>Reported By</th>
+                      <td class="value-cell">${report?.reportedBy || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                      <th>Date and Time Submitted</th>
+                      <td class="value-cell">
+                        ${report?.dateSubmitted || 'N/A'} ${report?.timeSubmitted ? `at ${report.timeSubmitted}` : ''}
+                      </td>
+                    </tr>
+                    <tr>
+                      <th>Mobile Number</th>
+                      <td class="value-cell">${report?.mobileNumber || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                      <th>Barangay</th>
+                      <td class="value-cell">${report?.barangay || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                      <th>Description</th>
+                      <td class="value-cell">${report?.description || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                      <th>Location</th>
+                      <td class="value-cell">
+                        ${report?.location || 'N/A'}<br>
+                        <small style="color: #666;">
+                          Coordinates: ${report?.latitude && report?.longitude 
+                            ? `${report.latitude}, ${report.longitude}` 
+                            : 'N/A'}
+                        </small>
+                      </td>
+                    </tr>
+                  </table>
+                </div>
+                
+                <!-- Section II: Dispatch Form -->
+                <div class="section">
+                  <div class="section-title">II. Dispatch Form</div>
+                  <table>
+                    <tr>
+                      <th>Received By</th>
+                      <td class="value-cell">${dispatch?.receivedBy || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                      <th>Responders</th>
+                      <td class="value-cell">
+                        ${dispatch?.responders && dispatch.responders.length > 0
+                          ? dispatch.responders.map((r: any) => 
+                              `${r.team}: ${r.responders ? r.responders.join(', ') : 'N/A'}`
+                            ).join('<br>')
+                          : 'N/A'}
+                      </td>
+                    </tr>
+                    <tr>
+                      <th>Time Call Received</th>
+                      <td class="value-cell">${dispatch?.timeCallReceived || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                      <th>Time of Dispatch</th>
+                      <td class="value-cell">${dispatch?.timeOfDispatch || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                      <th>Time of Arrival</th>
+                      <td class="value-cell">${dispatch?.timeOfArrival || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                      <th>Response Time</th>
+                      <td class="value-cell">
+                        ${dispatch?.timeOfDispatch && dispatch?.timeOfArrival
+                          ? calculateResponseTime(dispatch.timeOfDispatch, dispatch.timeOfArrival)
+                          : 'N/A'}
+                      </td>
+                    </tr>
+                    <tr>
+                      <th>Hospital Arrival</th>
+                      <td class="value-cell">${dispatch?.hospitalArrival || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                      <th>Returned to OPCEN</th>
+                      <td class="value-cell">${dispatch?.returnedToOpcen || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                      <th>Disaster Related</th>
+                      <td class="value-cell">${dispatch?.disasterRelated || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                      <th>Agency Present</th>
+                      <td class="value-cell">${dispatch?.agencyPresent || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                      <th>Type of Emergency</th>
+                      <td class="value-cell">${dispatch?.typeOfEmergency || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                      <th>Vehicle Involved</th>
+                      <td class="value-cell">${dispatch?.vehicleInvolved || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                      <th>Classification of Injury</th>
+                      <td class="value-cell">${dispatch?.injuryClassification || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                      <th>Actions Taken</th>
+                      <td class="value-cell">
+                        ${dispatch?.actionsTaken && dispatch.actionsTaken.length > 0
+                          ? '<ul style="margin: 0; padding-left: 20px;">' + 
+                            dispatch.actionsTaken.map((action: string) => `<li>${action}</li>`).join('') +
+                            '</ul>'
+                          : 'N/A'}
+                      </td>
+                    </tr>
+                  </table>
+                </div>
+                
+                <!-- Section III: Patient Information -->
+                <div class="section">
+                  <div class="section-title">III. Patient Information</div>
+                  ${patientData && patientData.length > 0
+                    ? patientData.map((patient: any, index: number) => {
+                        const gcsTotal = calculateGCSTotal(patient);
+                        return `
+                          <div class="patient-section">
+                            <div class="patient-header">Patient ${index + 1}${patient.name ? ` - ${patient.name}` : ''}</div>
+                            
+                            <table>
+                              <tr>
+                                <th>Name</th>
+                                <td class="value-cell">${patient.name || 'N/A'}</td>
+                              </tr>
+                              <tr>
+                                <th>Contact Number</th>
+                                <td class="value-cell">${patient.contactNumber || 'N/A'}</td>
+                              </tr>
+                              <tr>
+                                <th>Address</th>
+                                <td class="value-cell">${patient.address || 'N/A'}</td>
+                              </tr>
+                              <tr>
+                                <th>Age</th>
+                                <td class="value-cell">${patient.age ? `${patient.age} years old` : 'N/A'}</td>
+                              </tr>
+                              <tr>
+                                <th>Gender</th>
+                                <td class="value-cell">${patient.gender || 'N/A'}</td>
+                              </tr>
+                            </table>
+                            
+                            <div class="sub-section">
+                              <div class="sub-section-title">A. Glasgow Coma Scale</div>
+                              <table>
+                                <tr>
+                                  <th>Eyes Response</th>
+                                  <td class="value-cell">${patient.gcs?.eyes || 'N/A'}</td>
+                                </tr>
+                                <tr>
+                                  <th>Verbal Response</th>
+                                  <td class="value-cell">${patient.gcs?.verbal || 'N/A'}</td>
+                                </tr>
+                                <tr>
+                                  <th>Motor Response</th>
+                                  <td class="value-cell">${patient.gcs?.motor || 'N/A'}</td>
+                                </tr>
+                                <tr>
+                                  <th>GCS Total Score</th>
+                                  <td class="value-cell" style="font-weight: bold; color: #f97316;">${gcsTotal > 0 ? gcsTotal : 'N/A'}</td>
+                                </tr>
+                              </table>
+                            </div>
+                            
+                            <div class="sub-section">
+                              <div class="sub-section-title">E. Vital Signs</div>
+                              <table>
+                                <tr>
+                                  <th>Temperature</th>
+                                  <td class="value-cell">${patient.vitalSigns?.temperature ? `${patient.vitalSigns.temperature}°C` : 'N/A'}</td>
+                                </tr>
+                                <tr>
+                                  <th>Pulse Rate</th>
+                                  <td class="value-cell">${patient.vitalSigns?.pulseRate ? `${patient.vitalSigns.pulseRate} bpm` : 'N/A'}</td>
+                                </tr>
+                                <tr>
+                                  <th>Respiratory Rate</th>
+                                  <td class="value-cell">${patient.vitalSigns?.respiratoryRate ? `${patient.vitalSigns.respiratoryRate} breaths/min` : 'N/A'}</td>
+                                </tr>
+                                <tr>
+                                  <th>Blood Pressure</th>
+                                  <td class="value-cell">${patient.vitalSigns?.bloodPressure ? `${patient.vitalSigns.bloodPressure} mmHg` : 'N/A'}</td>
+                                </tr>
+                              </table>
+                            </div>
+                          </div>
+                        `;
+                      }).join('')
+                    : '<p style="color: #666; font-style: italic;">No patient information available</p>'}
+              </div>
+              
+              <div class="footer">
+                <p>AcciZard Emergency Management System</p>
+                <p>Lucban, Quezon - Local Disaster Risk Reduction and Management Office</p>
+              </div>
+            </body>
+          </html>
+        `;
+        };
+
+        // Generate and download PDF
+        const htmlContent = generatePDFHTML();
+        const pdfContent = document.createElement('div');
+        pdfContent.innerHTML = htmlContent;
+        pdfContent.style.position = 'absolute';
+        pdfContent.style.left = '-9999px';
+        pdfContent.style.width = '210mm';
+        document.body.appendChild(pdfContent);
+        
+        try {
+          const canvas = await html2canvas(pdfContent, {
+            allowTaint: true,
+            logging: false,
+            useCORS: true,
+            scale: 2 as any
+          } as any);
+          
+          const imgData = canvas.toDataURL('image/png');
+          const pdf = new jsPDF('p', 'mm', 'a4');
+          const imgWidth = 210;
+          const pageHeight = 297;
+          const imgHeight = (canvas.height * imgWidth) / canvas.width;
+          let heightLeft = imgHeight;
+          let position = 0;
+          
+          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+          heightLeft -= pageHeight;
+          
+          while (heightLeft >= 0) {
+            position = heightLeft - imgHeight;
+            pdf.addPage();
+            pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+            heightLeft -= pageHeight;
+          }
+          
+          pdf.save(`Report_${reportToDeleteData.id}_${new Date().getTime()}.pdf`);
+          toast.success("PDF downloaded successfully");
+        } catch (error) {
+          console.error("Error generating PDF:", error);
+          toast.error("Failed to generate PDF");
+        } finally {
+          document.body.removeChild(pdfContent);
+        }
+      } else {
+        console.log("Report data not found for PDF generation");
+      }
+
       // Delete the report from Firestore
       await deleteDoc(doc(db, "reports", reportToDelete));
       console.log("Successfully deleted report from Firestore:", reportToDelete);
@@ -820,6 +1432,354 @@ export function ManageReportsPage() {
     console.log("Attempting to delete reports:", selectedReports);
 
     try {
+      // Generate PDFs for each report before deletion
+      for (const reportId of selectedReports) {
+        const reportData = reports.find(r => r.firestoreId === reportId);
+        if (reportData) {
+          try {
+            // Load dispatch and patient data if available
+            let dispatchDataForPDF = dispatchData;
+            let patientsDataForPDF = patients;
+            
+            try {
+              const loadedDispatch = await loadDispatchDataFromDatabase(reportId);
+              if (loadedDispatch) dispatchDataForPDF = loadedDispatch;
+              
+              const loadedPatients = await loadPatientDataFromDatabase(reportId);
+              if (loadedPatients && loadedPatients.patients) patientsDataForPDF = loadedPatients.patients;
+            } catch (error) {
+              console.log("Error loading additional data for PDF:", error);
+            }
+
+            // Helper function to calculate GCS total
+            const calculateGCSTotal = (patient: any) => {
+              const eyes = patient.gcs?.eyes ? parseInt(patient.gcs.eyes) : 0;
+              const verbal = patient.gcs?.verbal ? parseInt(patient.gcs.verbal) : 0;
+              const motor = patient.gcs?.motor ? parseInt(patient.gcs.motor) : 0;
+              return eyes + verbal + motor;
+            };
+
+            // Generate PDF HTML content
+            const generatePDFHTML = () => {
+              const report = reportData;
+              const dispatch = dispatchDataForPDF;
+              const patientData = patientsDataForPDF;
+              
+              return `
+                <!DOCTYPE html>
+                <html>
+                  <head>
+                    <title>Emergency Report - ${report?.id || 'N/A'}</title>
+                    <style>
+                      body {
+                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                        margin: 0;
+                        padding: 20px;
+                        color: #333;
+                        background: #fff;
+                      }
+                      
+                      .header {
+                        border-bottom: 3px solid #f97316;
+                        padding-bottom: 15px;
+                        margin-bottom: 25px;
+                      }
+                      
+                      .header h1 {
+                        color: #f97316;
+                        margin: 0 0 5px 0;
+                        font-size: 28px;
+                      }
+                      
+                      .header-info {
+                        display: flex;
+                        justify-content: space-between;
+                        margin-top: 10px;
+                        font-size: 12px;
+                        color: #666;
+                      }
+                      
+                      .section {
+                        margin-bottom: 30px;
+                        page-break-inside: avoid;
+                      }
+                      
+                      .section-title {
+                        background: #f97316;
+                        color: white;
+                        padding: 10px 15px;
+                        margin: 0 0 15px 0;
+                        font-size: 18px;
+                        font-weight: bold;
+                        border-radius: 4px;
+                      }
+                      
+                      table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin-bottom: 20px;
+                      }
+                      
+                      table td, table th {
+                        padding: 10px;
+                        border: 1px solid #ddd;
+                        text-align: left;
+                      }
+                      
+                      table th {
+                        background-color: #f8f9fa;
+                        font-weight: 600;
+                        width: 30%;
+                      }
+                      
+                      .value-cell {
+                        background-color: #fff;
+                      }
+                      
+                      .badge {
+                        display: inline-block;
+                        padding: 4px 8px;
+                        border-radius: 4px;
+                        font-size: 12px;
+                        font-weight: 600;
+                      }
+                      
+                      .status-pending { background-color: #fef3c7; color: #92400e; }
+                      .status-ongoing { background-color: #dbeafe; color: #1e40af; }
+                      .status-not-responded { background-color: #fee2e2; color: #991b1b; }
+                      .status-responded { background-color: #d1fae5; color: #065f46; }
+                      .status-false-report { background-color: #f3f4f6; color: #374151; }
+                      .status-redundant { background-color: #f3e8ff; color: #6b21a8; }
+                      
+                      .patient-section {
+                        margin-top: 20px;
+                        border: 2px solid #e5e7eb;
+                        padding: 15px;
+                        border-radius: 8px;
+                      }
+                      
+                      .patient-header {
+                        background: #f3f4f6;
+                        padding: 10px;
+                        margin: -15px -15px 15px -15px;
+                        border-radius: 6px 6px 0 0;
+                        font-weight: bold;
+                        color: #1f2937;
+                      }
+                      
+                      .sub-section {
+                        margin-top: 15px;
+                        margin-left: 20px;
+                      }
+                      
+                      .sub-section-title {
+                        font-weight: 600;
+                        color: #f97316;
+                        margin-bottom: 8px;
+                      }
+                      
+                      .footer {
+                        margin-top: 40px;
+                        padding-top: 20px;
+                        border-top: 2px solid #e5e7eb;
+                        text-align: center;
+                        font-size: 12px;
+                        color: #666;
+                      }
+                    </style>
+                  </head>
+                  <body>
+                    <div class="header">
+                      <h1>AcciZard Emergency Report</h1>
+                      <div class="header-info">
+                        <div>Report ID: <strong>${report?.id || 'N/A'}</strong></div>
+                        <div>Generated: ${new Date().toLocaleString()}</div>
+                      </div>
+                    </div>
+                    
+                    <!-- Section I: Report Details -->
+                    <div class="section">
+                      <div class="section-title">I. Report Details</div>
+                      <table>
+                        <tr>
+                          <th>Report Type</th>
+                          <td class="value-cell">${report?.type || 'N/A'}</td>
+                        </tr>
+                        <tr>
+                          <th>Status</th>
+                          <td class="value-cell">
+                            <span class="badge status-${report?.status?.toLowerCase().replace(' ', '-') || 'pending'}">
+                              ${report?.status || 'N/A'}
+                            </span>
+                          </td>
+                        </tr>
+                        <tr>
+                          <th>Reported By</th>
+                          <td class="value-cell">${report?.reportedBy || 'N/A'}</td>
+                        </tr>
+                        <tr>
+                          <th>Date and Time Submitted</th>
+                          <td class="value-cell">
+                            ${report?.dateSubmitted || 'N/A'} ${report?.timeSubmitted ? `at ${report.timeSubmitted}` : ''}
+                          </td>
+                        </tr>
+                        <tr>
+                          <th>Mobile Number</th>
+                          <td class="value-cell">${report?.mobileNumber || 'N/A'}</td>
+                        </tr>
+                        <tr>
+                          <th>Description</th>
+                          <td class="value-cell">${report?.description || 'N/A'}</td>
+                        </tr>
+                        <tr>
+                          <th>Location</th>
+                          <td class="value-cell">
+                            ${report?.location || 'N/A'}<br>
+                            <small style="color: #666;">
+                              Coordinates: ${report?.latitude && report?.longitude 
+                                ? `${report.latitude}, ${report.longitude}` 
+                                : 'N/A'}
+                            </small>
+                          </td>
+                        </tr>
+                      </table>
+                    </div>
+                    
+                    <!-- Section II: Dispatch Form -->
+                    <div class="section">
+                      <div class="section-title">II. Dispatch Form</div>
+                      <table>
+                        <tr>
+                          <th>Received By</th>
+                          <td class="value-cell">${dispatch?.receivedBy || 'N/A'}</td>
+                        </tr>
+                        <tr>
+                          <th>Responders</th>
+                          <td class="value-cell">
+                            ${dispatch?.responders && dispatch.responders.length > 0
+                              ? dispatch.responders.map((r: any) => 
+                                  `${r.team}: ${r.responders ? r.responders.join(', ') : 'N/A'}`
+                                ).join('<br>')
+                              : 'N/A'}
+                          </td>
+                        </tr>
+                        <tr>
+                          <th>Time Call Received</th>
+                          <td class="value-cell">${dispatch?.timeCallReceived || 'N/A'}</td>
+                        </tr>
+                        <tr>
+                          <th>Time of Dispatch</th>
+                          <td class="value-cell">${dispatch?.timeOfDispatch || 'N/A'}</td>
+                        </tr>
+                        <tr>
+                          <th>Time of Arrival</th>
+                          <td class="value-cell">${dispatch?.timeOfArrival || 'N/A'}</td>
+                        </tr>
+                        <tr>
+                          <th>Response Time</th>
+                          <td class="value-cell">
+                            ${dispatch?.timeOfDispatch && dispatch?.timeOfArrival
+                              ? calculateResponseTime(dispatch.timeOfDispatch, dispatch.timeOfArrival)
+                              : 'N/A'}
+                          </td>
+                        </tr>
+                      </table>
+                    </div>
+                    
+                    <!-- Section III: Patient Information -->
+                    <div class="section">
+                      <div class="section-title">III. Patient Information</div>
+                      ${patientData && patientData.length > 0
+                        ? patientData.map((patient: any, index: number) => {
+                            const gcsTotal = calculateGCSTotal(patient);
+                            return `
+                              <div class="patient-section">
+                                <div class="patient-header">Patient ${index + 1}${patient.name ? ` - ${patient.name}` : ''}</div>
+                                
+                                <table>
+                                  <tr>
+                                    <th>Name</th>
+                                    <td class="value-cell">${patient.name || 'N/A'}</td>
+                                  </tr>
+                                  <tr>
+                                    <th>Contact Number</th>
+                                    <td class="value-cell">${patient.contactNumber || 'N/A'}</td>
+                                  </tr>
+                                  <tr>
+                                    <th>Address</th>
+                                    <td class="value-cell">${patient.address || 'N/A'}</td>
+                                  </tr>
+                                  <tr>
+                                    <th>Age</th>
+                                    <td class="value-cell">${patient.age ? `${patient.age} years old` : 'N/A'}</td>
+                                  </tr>
+                                  <tr>
+                                    <th>Gender</th>
+                                    <td class="value-cell">${patient.gender || 'N/A'}</td>
+                                  </tr>
+                                </table>
+                              </div>
+                            `;
+                          }).join('')
+                        : '<p style="color: #666; font-style: italic;">No patient information available</p>'}
+                  </div>
+                  
+                  <div class="footer">
+                    <p>AcciZard Emergency Management System</p>
+                    <p>Lucban, Quezon - Local Disaster Risk Reduction and Management Office</p>
+                  </div>
+                </body>
+              </html>
+            `;
+            };
+
+            // Generate and download PDF
+            const htmlContent = generatePDFHTML();
+            const pdfContent = document.createElement('div');
+            pdfContent.innerHTML = htmlContent;
+            pdfContent.style.position = 'absolute';
+            pdfContent.style.left = '-9999px';
+            pdfContent.style.width = '210mm';
+            document.body.appendChild(pdfContent);
+            
+            try {
+              const canvas = await html2canvas(pdfContent, {
+                allowTaint: true,
+                logging: false,
+                useCORS: true,
+                scale: 2 as any
+              } as any);
+              
+              const imgData = canvas.toDataURL('image/png');
+              const pdf = new jsPDF('p', 'mm', 'a4');
+              const imgWidth = 210;
+              const pageHeight = 297;
+              const imgHeight = (canvas.height * imgWidth) / canvas.width;
+              let heightLeft = imgHeight;
+              let position = 0;
+              
+              pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+              heightLeft -= pageHeight;
+              
+              while (heightLeft >= 0) {
+                position = heightLeft - imgHeight;
+                pdf.addPage();
+                pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                heightLeft -= pageHeight;
+              }
+              
+              pdf.save(`Report_${reportData.id}_${new Date().getTime()}.pdf`);
+            } catch (error) {
+              console.error("Error generating PDF:", error);
+            } finally {
+              document.body.removeChild(pdfContent);
+            }
+          } catch (pdfError) {
+            console.error("Error generating PDF:", pdfError);
+          }
+        }
+      }
+
       // Delete all selected reports from Firestore
       const deletePromises = selectedReports.map(reportId => {
         console.log("Deleting report:", reportId);
@@ -842,7 +1802,7 @@ export function ManageReportsPage() {
       // Clear selected reports
       setSelectedReports([]);
       
-      toast.success(`Successfully deleted ${selectedReports.length} report(s)`);
+      toast.success(`PDFs downloaded and ${selectedReports.length} report(s) deleted successfully`);
       setShowBatchDeleteDialog(false);
       
       // Force a small delay to ensure Firestore listener has processed the changes
@@ -1539,22 +2499,6 @@ export function ManageReportsPage() {
   const [previewImageName, setPreviewImageName] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
-  // New report alert state
-  const [showNewReportAlert, setShowNewReportAlert] = useState(false);
-  const [newReportData, setNewReportData] = useState<any>(null);
-  const [previousReportCount, setPreviousReportCount] = useState(0);
-  const [alarmInterval, setAlarmInterval] = useState<NodeJS.Timeout | null>(null);
-
-  // Cleanup alarm interval on component unmount
-  useEffect(() => {
-    return () => {
-      if (alarmInterval) {
-        clearInterval(alarmInterval);
-        setAlarmInterval(null);
-      }
-    };
-  }, [alarmInterval]);
-
   // Helper function to get current time in HH:MM AM/PM format
   const getCurrentTime = () => {
     const now = new Date();
@@ -1574,103 +2518,6 @@ export function ManageReportsPage() {
     return `${hours}:${minutes}`;
   };
 
-  // Function to play alarming sound for new reports (continuous until dismissed)
-  const playAlarmSound = () => {
-    // Clear any existing alarm interval
-    if (alarmInterval) {
-      clearInterval(alarmInterval);
-    }
-    
-    // Play alarm immediately
-    playSingleAlarm();
-    
-    // Set up continuous alarm every 3 seconds
-    const interval = setInterval(() => {
-      playSingleAlarm();
-    }, 3000);
-    
-    setAlarmInterval(interval);
-  };
-
-  // Function to play a single alarm sound
-  const playSingleAlarm = () => {
-    try {
-      // Play the custom alarm sound from the uploaded MP3 file
-      const audio = new Audio('/accizard-uploads/alarmsoundfx.mp3');
-      audio.volume = 0.8; // Increased volume for better attention
-      
-      // Set a timeout to fall back to Web Audio API if MP3 fails to load
-      const fallbackTimeout = setTimeout(() => {
-        console.log("MP3 loading too slow, falling back to Web Audio API");
-        playWebAudioAlarm();
-      }, 1500); // Reduced timeout for faster fallback
-      
-      audio.addEventListener('canplaythrough', () => {
-        clearTimeout(fallbackTimeout); // Cancel fallback if MP3 loads successfully
-        audio.play().catch((error) => {
-          console.log("MP3 playback failed, using fallback:", error);
-          playWebAudioAlarm();
-        });
-      });
-      
-      audio.addEventListener('error', () => {
-        clearTimeout(fallbackTimeout);
-        console.log("MP3 file error, using fallback");
-        playWebAudioAlarm();
-      });
-      
-      // Start loading the audio
-      audio.load();
-      
-    } catch (error) {
-      console.log("Error initializing MP3 alarm, using fallback:", error);
-      playWebAudioAlarm();
-    }
-  };
-
-  // Function to stop the alarm
-  const stopAlarm = () => {
-    if (alarmInterval) {
-      clearInterval(alarmInterval);
-      setAlarmInterval(null);
-      console.log("Alarm stopped");
-    }
-  };
-
-
-  // Fallback function using Web Audio API
-  const playWebAudioAlarm = () => {
-    try {
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-      
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      
-      // More attention-grabbing alarm pattern
-      oscillator.frequency.setValueAtTime(1000, audioContext.currentTime);
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.2);
-      oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.4);
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime + 0.6);
-      
-      gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 1.0);
-      
-      oscillator.start(audioContext.currentTime);
-      oscillator.stop(audioContext.currentTime + 1.0);
-    } catch (error) {
-      console.log("Web Audio API also failed:", error);
-      // Final fallback: try to play a simple beep using a data URL
-      try {
-        const fallbackAudio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmGgU7k9n1unEiBC13yO/eizEIHWq+8+OWT');
-        fallbackAudio.volume = 0.3;
-        fallbackAudio.play().catch(() => console.log("Final fallback audio also failed"));
-      } catch (finalError) {
-        console.log("All audio playback methods failed:", finalError);
-      }
-    }
-  };
 
   // Function to automatically assign responders based on alternating teams starting from October 1, 2025
   const getAutoAssignedResponders = () => {
@@ -2352,7 +3199,7 @@ export function ManageReportsPage() {
       <TooltipProvider>
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-          <Card className="shadow-sm hover:shadow-md transition-shadow">
+          <Card className="shadow-sm">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
@@ -2371,7 +3218,7 @@ export function ManageReportsPage() {
             </CardContent>
           </Card>
 
-          <Card className="shadow-sm hover:shadow-md transition-shadow">
+          <Card className="shadow-sm">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
@@ -2390,7 +3237,7 @@ export function ManageReportsPage() {
             </CardContent>
           </Card>
 
-          <Card className="shadow-sm hover:shadow-md transition-shadow">
+          <Card className="shadow-sm">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
@@ -2409,7 +3256,7 @@ export function ManageReportsPage() {
             </CardContent>
           </Card>
 
-          <Card className="shadow-sm hover:shadow-md transition-shadow">
+          <Card className="shadow-sm">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
@@ -2487,15 +3334,64 @@ export function ManageReportsPage() {
                     )}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <CalendarComponent
-                    initialFocus
-                    mode="range"
-                    defaultMonth={date?.from}
-                    selected={date}
-                    onSelect={setDate}
-                    numberOfMonths={2}
-                  />
+                <PopoverContent className="w-auto p-4" align="start">
+                  <div className="space-y-4">
+                    {/* Date Inputs */}
+                    <div className="flex items-center gap-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-gray-700">From</label>
+                        <Input
+                          type="date"
+                          value={date?.from ? format(date.from, "yyyy-MM-dd") : ""}
+                          onChange={(e) => {
+                            const newDate = e.target.value ? new Date(e.target.value) : undefined;
+                            setDate(prev => ({
+                              from: newDate,
+                              to: prev?.to
+                            }));
+                          }}
+                          className="w-36 h-9 text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-gray-700">To</label>
+                        <Input
+                          type="date"
+                          value={date?.to ? format(date.to, "yyyy-MM-dd") : ""}
+                          onChange={(e) => {
+                            const newDate = e.target.value ? new Date(e.target.value) : undefined;
+                            setDate(prev => ({
+                              from: prev?.from,
+                              to: newDate
+                            }));
+                          }}
+                          className="w-36 h-9 text-sm"
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* Calendar */}
+                    <CalendarComponent
+                      mode="range"
+                      defaultMonth={date?.from}
+                      selected={date}
+                      onSelect={setDate}
+                      numberOfMonths={2}
+                    />
+                    
+                    {/* Clear Button */}
+                    {(date?.from || date?.to) && (
+                      <div className="flex justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setDate(undefined)}
+                        >
+                          Clear
+                        </Button>
+                      </div>
+                    )}
+                  </div>
                 </PopoverContent>
               </Popover>
 
@@ -2633,7 +3529,21 @@ export function ManageReportsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {paginatedReports.length === 0 ? (
+                  {isLoadingReports ? (
+                    // Loading skeleton
+                    Array.from({ length: itemsPerPage }).map((_, index) => (
+                      <TableRow key={`loading-${index}`}>
+                        <TableCell><div className="h-4 w-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                        <TableCell><div className="h-4 w-24 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                        <TableCell><div className="h-4 w-32 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                        <TableCell><div className="h-4 w-28 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                        <TableCell><div className="h-4 w-40 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                        <TableCell><div className="h-4 w-20 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                        <TableCell><div className="h-4 w-16 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                        <TableCell><div className="h-4 w-20 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                      </TableRow>
+                    ))
+                  ) : paginatedReports.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center py-8">
                         <div className="flex flex-col items-center justify-center text-gray-500">
@@ -3033,19 +3943,25 @@ export function ManageReportsPage() {
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <Label htmlFor="location">Location</Label>
+                <Label htmlFor="location">Location</Label>
+                <div className="flex gap-2">
+                  <Input 
+                    id="location" 
+                    value={formData.location} 
+                    readOnly
+                    placeholder="Pin location on map to set address" 
+                    className="bg-gray-50 cursor-not-allowed flex-1"
+                  />
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
                         type="button"
-                        size="sm"
+                        size="icon"
                         variant="outline"
                         onClick={() => setShowAddLocationMap(true)}
                         className="border-brand-orange text-brand-orange hover:bg-orange-50"
                       >
-                        <MapPin className="h-4 w-4 mr-1" />
-                        Pin Location
+                        <MapPin className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
@@ -3053,13 +3969,6 @@ export function ManageReportsPage() {
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <Input 
-                  id="location" 
-                  value={formData.location} 
-                  readOnly
-                  placeholder="Pin location on map to set address" 
-                  className="bg-gray-50 cursor-not-allowed"
-                />
                 {addLocationData && (
                   <div className="text-xs text-gray-500 mt-1">
                     Coordinates: {addLocationData.lat}, {addLocationData.lng}
@@ -3115,10 +4024,46 @@ export function ManageReportsPage() {
 
               <div>
                 <Label>Attached Media</Label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                <div 
+                  className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center relative"
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.currentTarget.classList.add('border-brand-orange', 'bg-orange-50');
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.currentTarget.classList.remove('border-brand-orange', 'bg-orange-50');
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.currentTarget.classList.remove('border-brand-orange', 'bg-orange-50');
+                    const files = e.dataTransfer.files;
+                    if (files.length > 0) {
+                      handleFileSelection(files);
+                    }
+                  }}
+                >
+                  <input 
+                    type="file" 
+                    id="file-upload-input"
+                    multiple 
+                    accept="image/*,video/*" 
+                    className="hidden"
+                    onChange={(e) => handleFileSelection(e.target.files)}
+                  />
                   <Upload className="h-8 w-8 mx-auto text-gray-400 mb-2" />
-                  <p className="text-sm text-gray-600">Upload photos or videos</p>
-                  <Input type="file" multiple accept="image/*,video/*" className="hidden" />
+                  <p className="text-sm text-gray-600 mb-3">Drag & drop files here or</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => document.getElementById('file-upload-input')?.click()}
+                  >
+                    Browse Files
+                  </Button>
                 </div>
               </div>
             </div>
@@ -3278,17 +4223,117 @@ export function ManageReportsPage() {
               </TabsList>
 
               <TabsContent value="directions" className="mt-4 flex-1 min-h-0 flex flex-col">
-                <div className="flex-1 w-full relative" style={{ minHeight: '800px', maxHeight: 'calc(90vh - 200px)' }}>
+                <div className="flex-1 w-full relative min-h-0" style={{ height: 'calc(90vh - 200px)' }}>
                   {selectedReport ? (
                     <div 
                       id="report-map-container"
-                      className="w-full h-full rounded-lg overflow-hidden"
+                      className="w-full h-full rounded-lg overflow-hidden relative"
                     >
+                      {/* Preview Map Toolbar (matches RiskMap style but simplified) */}
+                      <div className="absolute top-3 left-3 right-3 z-10 bg-white border border-gray-200 px-4 py-3 flex items-center gap-3 shadow-lg rounded-lg">
+                        {/* Search */}
+                        <div className="flex-1 relative">
+                          <Popover open={isPreviewSearchOpen} onOpenChange={setIsPreviewSearchOpen}>
+                            <PopoverTrigger asChild>
+                              <div className="relative">
+                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500 z-10" />
+                                <Input
+                                  type="text"
+                                  placeholder="Search for a location..."
+                                  value={previewSearchQuery}
+                                  onChange={(e) => {
+                                    setPreviewSearchQuery(e.target.value);
+                                    setIsPreviewSearchOpen(true);
+                                  }}
+                                  onFocus={() => {
+                                    if (previewSearchSuggestions.length > 0) setIsPreviewSearchOpen(true);
+                                  }}
+                                  className="pl-9 pr-4 h-9 w-full border-gray-300"
+                                />
+                              </div>
+                            </PopoverTrigger>
+                            {previewSearchSuggestions.length > 0 && (
+                              <PopoverContent className="w-[400px] p-0" align="start">
+                                <div className="max-h-[300px] overflow-y-auto">
+                                  {previewSearchSuggestions.map((s: any, idx: number) => (
+                                    <button
+                                      key={idx}
+                                      className="w-full text-left px-4 py-3 hover:bg-gray-100 border-b border-gray-100 last:border-b-0 transition-colors"
+                                      onClick={() => {
+                                        const [lng, lat] = s.geometry.coordinates;
+                                        setPreviewMapCenter([lng, lat]);
+                                        setPreviewMapZoom(15);
+                                        setPreviewSearchQuery(s.place_name || s.text || 'Selected location');
+                                        setIsPreviewSearchOpen(false);
+                                      }}
+                                    >
+                                      <div className="flex items-start gap-2">
+                                        <MapPin className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                          <p className="text-sm font-medium text-gray-900 truncate">{s.text}</p>
+                                          <p className="text-xs text-gray-500 truncate">{s.place_name}</p>
+                                        </div>
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
+                              </PopoverContent>
+                            )}
+                          </Popover>
+                        </div>
+
+                        {/* Layer Toggle */}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-9 px-3"
+                              onClick={() => setPreviewMapStyle(previewMapStyle === 'streets' ? 'satellite' : 'streets')}
+                            >
+                              <Layers className="h-4 w-4 mr-2" />
+                              {previewMapStyle === 'streets' ? 'Satellite' : 'Streets'}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Switch to {previewMapStyle === 'streets' ? 'Satellite' : 'Streets'} view</p>
+                          </TooltipContent>
+                        </Tooltip>
+
+                        {/* Zoom and Location Controls */}
+                        <div className="flex items-center border-l border-gray-200 pl-3 gap-1">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="outline" size="sm" className="h-9 w-9 p-0" onClick={() => setPreviewMapZoom(z => Math.min(z + 1, 20))}>
+                                <ZoomIn className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent><p>Zoom in</p></TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="outline" size="sm" className="h-9 w-9 p-0" onClick={() => setPreviewMapZoom(z => Math.max(z - 1, 1))}>
+                                <ZoomOut className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent><p>Zoom out</p></TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="outline" size="sm" className="h-9 w-9 p-0" onClick={handlePreviewLocateUser}>
+                                <LocateFixed className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent><p>Show my location</p></TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </div>
+
                       <MapboxMap 
-                        center={selectedReport.latitude && selectedReport.longitude ? 
-                          [selectedReport.longitude, selectedReport.latitude] as [number, number] : 
-                          [121.5556, 14.1139] as [number, number]}
-                        zoom={14}
+                        center={previewMapCenter}
+                        zoom={previewMapZoom}
+                        showControls={false}
+                        showGeocoder={false}
                         singleMarker={selectedReport.latitude && selectedReport.longitude ? 
                           {
                             id: selectedReport.id || 'report-marker',
@@ -3296,13 +4341,16 @@ export function ManageReportsPage() {
                             title: selectedReport.location || 'Report Location',
                             description: selectedReport.description || 'Emergency report location',
                             reportId: selectedReport.id,
-                            coordinates: [selectedReport.longitude, selectedReport.latitude] as [number, number],
+                            coordinates: [Number(selectedReport.longitude), Number(selectedReport.latitude)] as [number, number],
                             status: selectedReport.status,
                             locationName: selectedReport.location,
-                            latitude: selectedReport.latitude,
-                            longitude: selectedReport.longitude
+                            latitude: Number(selectedReport.latitude),
+                            longitude: Number(selectedReport.longitude)
                           } : 
                           undefined}
+                disableSingleMarkerPulse={true}
+                        hideStyleToggle={true}
+                        externalStyle={previewMapStyle}
                       />
                     </div>
                   ) : (

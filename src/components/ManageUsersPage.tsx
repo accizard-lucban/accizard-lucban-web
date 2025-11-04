@@ -101,6 +101,8 @@ export function ManageUsersPage() {
   const [showAllAdminPasswords, setShowAllAdminPasswords] = useState(false);
   const [showAdminFormErrors, setShowAdminFormErrors] = useState(false);
   const [showEditAdminErrors, setShowEditAdminErrors] = useState(false);
+  const [isLoadingAdmins, setIsLoadingAdmins] = useState(true);
+  const [isLoadingResidents, setIsLoadingResidents] = useState(true);
 
   const { toast } = useToast();
 
@@ -169,8 +171,10 @@ export function ManageUsersPage() {
           };
         });
         setAdminUsers(admins);
+        setIsLoadingAdmins(false);
       } catch (error) {
         console.error("Error fetching admins:", error);
+        setIsLoadingAdmins(false);
       }
     }
     
@@ -240,10 +244,12 @@ export function ManageUsersPage() {
         console.log("🖼️ Residents with profile pictures:", users.filter(u => u.profilePicture).length);
         console.log("🆔 Residents with valid ID images:", users.filter(u => u.validIdImage).length);
         setResidents(users);
+        setIsLoadingResidents(false);
       } catch (error) {
         console.error("❌ Error fetching residents:", error);
         // If users collection doesn't exist, set empty array
         setResidents([]);
+        setIsLoadingResidents(false);
       }
     }
 
@@ -1031,7 +1037,7 @@ export function ManageUsersPage() {
 
             {/* Admin Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-              <Card className="shadow-sm hover:shadow-md transition-shadow">
+              <Card className="shadow-sm">
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-3">
@@ -1050,7 +1056,7 @@ export function ManageUsersPage() {
                 </CardContent>
               </Card>
 
-              <Card className="shadow-sm hover:shadow-md transition-shadow">
+              <Card className="shadow-sm">
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-3">
@@ -1069,7 +1075,7 @@ export function ManageUsersPage() {
                 </CardContent>
               </Card>
 
-              <Card className="shadow-sm hover:shadow-md transition-shadow">
+              <Card className="shadow-sm">
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-3">
@@ -1088,7 +1094,7 @@ export function ManageUsersPage() {
                 </CardContent>
               </Card>
 
-              <Card className="shadow-sm hover:shadow-md transition-shadow">
+              <Card className="shadow-sm">
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-3">
@@ -1456,7 +1462,22 @@ export function ManageUsersPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {pagedAdmins.length === 0 ? (
+                      {isLoadingAdmins ? (
+                        // Loading skeleton
+                        Array.from({ length: adminRowsPerPage }).map((_, index) => (
+                          <TableRow key={`loading-admin-${index}`}>
+                            <TableCell><div className="h-4 w-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                            <TableCell><div className="h-4 w-24 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                            <TableCell><div className="h-4 w-32 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                            <TableCell><div className="h-4 w-28 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                            <TableCell><div className="h-4 w-24 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                            <TableCell><div className="h-4 w-28 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                            <TableCell><div className="h-4 w-20 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                            <TableCell><div className="h-8 w-16 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                            <TableCell><div className="h-8 w-20 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                          </TableRow>
+                        ))
+                      ) : pagedAdmins.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={9} className="text-center text-gray-500 py-8">
                             No results found.
@@ -1720,7 +1741,7 @@ export function ManageUsersPage() {
             
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-              <Card className="shadow-sm hover:shadow-md transition-shadow">
+              <Card className="shadow-sm">
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-3">
@@ -1739,7 +1760,7 @@ export function ManageUsersPage() {
                 </CardContent>
               </Card>
 
-              <Card className="shadow-sm hover:shadow-md transition-shadow">
+              <Card className="shadow-sm">
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-3">
@@ -1758,7 +1779,7 @@ export function ManageUsersPage() {
                 </CardContent>
               </Card>
 
-              <Card className="shadow-sm hover:shadow-md transition-shadow">
+              <Card className="shadow-sm">
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-3">
@@ -1776,7 +1797,7 @@ export function ManageUsersPage() {
                   </div>
                 </CardContent>                
               </Card>
-              <Card className="shadow-sm hover:shadow-md transition-shadow">
+              <Card className="shadow-sm">
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-3">
@@ -2148,7 +2169,22 @@ export function ManageUsersPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {pagedResidents.length === 0 ? (
+                      {isLoadingResidents ? (
+                        // Loading skeleton
+                        Array.from({ length: residentRowsPerPage }).map((_, index) => (
+                          <TableRow key={`loading-resident-${index}`}>
+                            <TableCell><div className="h-4 w-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                            <TableCell><div className="h-4 w-28 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                            <TableCell><div className="h-4 w-32 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                            <TableCell><div className="h-4 w-40 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                            <TableCell><div className="h-4 w-28 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                            <TableCell><div className="h-4 w-28 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                            <TableCell><div className="h-4 w-28 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                            <TableCell><div className="h-8 w-20 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                            <TableCell><div className="h-8 w-20 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                          </TableRow>
+                        ))
+                      ) : pagedResidents.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={9} className="text-center text-gray-500 py-8">
                             No residents found. {residents.length === 0 ? "No residents have been registered yet." : "No residents match your search criteria."}

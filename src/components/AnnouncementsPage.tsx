@@ -84,6 +84,7 @@ export function AnnouncementsPage() {
   const [isAddingAnnouncement, setIsAddingAnnouncement] = useState(false);
   const [isEditingAnnouncement, setIsEditingAnnouncement] = useState(false);
   const [isDeletingAnnouncement, setIsDeletingAnnouncement] = useState<string | null>(null);
+  const [isLoadingAnnouncements, setIsLoadingAnnouncements] = useState(true);
 
   const today = new Date();
   // For dual calendar date range picker
@@ -129,8 +130,10 @@ export function AnnouncementsPage() {
         const querySnapshot = await getDocs(collection(db, "announcements"));
         const fetched = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setAnnouncements(fetched);
+        setIsLoadingAnnouncements(false);
       } catch (error) {
         console.error("Error fetching announcements:", error);
+        setIsLoadingAnnouncements(false);
       }
     }
     fetchAnnouncements();
@@ -370,7 +373,7 @@ export function AnnouncementsPage() {
       <div className="">
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <Card className="shadow-sm hover:shadow-md transition-shadow">
+          <Card className="shadow-sm">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
@@ -389,7 +392,7 @@ export function AnnouncementsPage() {
             </CardContent>
           </Card>
 
-          <Card className="shadow-sm hover:shadow-md transition-shadow">
+          <Card className="shadow-sm">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
@@ -408,7 +411,7 @@ export function AnnouncementsPage() {
             </CardContent>
           </Card>
 
-          <Card className="shadow-sm hover:shadow-md transition-shadow">
+          <Card className="shadow-sm">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
@@ -568,7 +571,19 @@ export function AnnouncementsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {pagedAnnouncements.length === 0 ? (
+                  {isLoadingAnnouncements ? (
+                    // Loading skeleton
+                    Array.from({ length: announcementRowsPerPage }).map((_, index) => (
+                      <TableRow key={`loading-${index}`}>
+                        <TableCell><div className="h-4 w-4 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                        <TableCell><div className="h-4 w-32 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                        <TableCell><div className="h-4 w-48 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                        <TableCell><div className="h-4 w-20 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                        <TableCell><div className="h-4 w-28 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                        <TableCell><div className="h-8 w-20 bg-gray-200 rounded animate-pulse"></div></TableCell>
+                      </TableRow>
+                    ))
+                  ) : pagedAnnouncements.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center text-gray-500 py-8">
                         No announcements found.

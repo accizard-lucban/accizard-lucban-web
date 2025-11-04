@@ -80,6 +80,8 @@ interface MapboxMapProps {
   hideStyleToggle?: boolean; // Hide the internal style toggle button (for use in parent toolbars)
   onStyleChange?: (style: 'streets' | 'satellite') => void; // Callback when style changes
   externalStyle?: 'streets' | 'satellite'; // External style control
+  // When true, removes glow/pulse from single marker
+  disableSingleMarkerPulse?: boolean;
 }
 
 // Sample data for markers - currently empty, will be populated from database
@@ -125,7 +127,8 @@ export function MapboxMap({
   showControls = false, // Default to false for backward compatibility
   hideStyleToggle = false, // Default to false
   onStyleChange, // Optional callback
-  externalStyle // Optional external control
+  externalStyle, // Optional external control
+  disableSingleMarkerPulse = false
 }: MapboxMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -237,7 +240,7 @@ export function MapboxMap({
   };
 
   // Function to create a marker element with icon
-  const createMarkerElement = (type: string, isSingleMarker = false) => {
+  const createMarkerElement = (type: string, isSingleMarker = false, enablePulse: boolean = true) => {
     const el = document.createElement('div');
     el.className = 'custom-marker';
     
@@ -279,7 +282,7 @@ export function MapboxMap({
     // No hover effects to prevent positioning issues
     
     // Add a pulsing animation for single markers
-    if (isSingleMarker) {
+    if (isSingleMarker && enablePulse) {
       el.style.animation = 'pulse 2s infinite';
       el.style.filter = 'drop-shadow(0 0 8px rgba(255, 79, 11, 0.6))';
     }
@@ -672,12 +675,13 @@ export function MapboxMap({
             mapboxgl: mapboxgl,
             marker: false, // We'll handle markers ourselves
             placeholder: 'Search for a location, institution, or facility...',
-            bbox: [120.0, 14.0, 122.0, 15.0], // Focus on Philippines area
-            proximity: { longitude: 121.5556, latitude: 14.1139 }, // Center on Lucban, Quezon
+            // Philippines bounding box: minLon, minLat, maxLon, maxLat
+            bbox: [116.0, 4.0, 127.0, 21.5],
+            proximity: { longitude: 121.5569, latitude: 14.1133 }, // Lucban, Quezon
             countries: 'ph', // Limit to Philippines
             types: 'place,locality,neighborhood,address,poi,region,district',
             language: 'en',
-            limit: 10,
+            limit: 5,
             minLength: 2,
             autocomplete: true,
             fuzzyMatch: true
@@ -858,7 +862,7 @@ export function MapboxMap({
       console.log('✅ Coordinates valid, creating custom marker...');
       
       // Create custom marker element
-      const el = createMarkerElement(singleMarker.type, true);
+      const el = createMarkerElement(singleMarker.type, true, !disableSingleMarkerPulse);
       
       // Create Mapbox marker with custom element
       const markerInstance = new mapboxgl.Marker({
@@ -1036,7 +1040,7 @@ export function MapboxMap({
       
       pins.forEach(pin => {
         // Create marker element
-        const el = createMarkerElement(pin.type, false);
+        const el = createMarkerElement(pin.type, false, false);
         
         // Create marker instance
         const markerInstance = new mapboxgl.Marker({
@@ -1322,7 +1326,7 @@ export function MapboxMap({
       <div 
         ref={mapContainer} 
         className="w-full h-full rounded-xl"
-        style={{ width: '100%', height: '100%', minHeight: '300px' }}
+        style={{ width: '100%', height: '100%', minHeight: '480px' }}
       />
       
       {!mapLoaded && !mapError && (

@@ -355,6 +355,149 @@ When implementing a new component or page:
 </div>
 ```
 
+### Input Field States
+
+Input fields have different visual states that provide feedback to users about the field's current status. Each state should be clearly distinguishable and follow accessibility guidelines.
+
+#### Default State
+The initial, non-interactive state of an input field.
+- **Border:** `border-gray-300` (#d1d5db)
+- **Background:** `bg-white` (white)
+- **Appearance:** Normal, ready for user interaction
+
+```tsx
+<Input className="border-gray-300 bg-white text-sm sm:text-base h-10 sm:h-12" />
+```
+
+#### Focus State
+When the input field is active and receiving user input.
+- **Border:** `focus:border-brand-orange` (primary brand color)
+- **Ring:** `focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`
+- **Ring Opacity:** `focus:ring-brand-orange/20` (20% opacity for subtle effect)
+- **Outline:** Removed (using ring instead for better accessibility)
+- **Appearance:** Clear indication that the field is active
+
+```tsx
+<Input className="border-gray-300 focus:border-brand-orange focus:ring-brand-orange/20 bg-white text-sm sm:text-base h-10 sm:h-12" />
+```
+
+#### Error State
+Indicates validation failure or invalid input.
+- **Border:** `border-red-300` (default) or `border-red-500` (on focus)
+- **Background:** `bg-red-50` (light red background)
+- **Ring:** `focus:ring-red-500/20` (subtle red ring on focus)
+- **Usage:** Show validation errors with descriptive error messages below the field
+
+```tsx
+<div className="space-y-2">
+  <Input 
+    className="border-red-300 focus:border-red-500 focus:ring-red-500/20 bg-red-50 text-sm sm:text-base h-10 sm:h-12" 
+  />
+  <span className="text-xs text-red-600">Email must include @ symbol</span>
+</div>
+```
+
+#### Success/Valid State
+Indicates the input has passed validation.
+- **Border:** `border-green-300` (default) or `border-green-500` (on focus)
+- **Background:** `bg-green-50` (light green background)
+- **Ring:** `focus:ring-green-500/20` (subtle green ring on focus)
+- **Usage:** Show positive validation feedback when input is correct
+
+```tsx
+<div className="space-y-2">
+  <Input 
+    className="border-green-300 focus:border-green-500 focus:ring-green-500/20 bg-green-50 text-sm sm:text-base h-10 sm:h-12" 
+  />
+  <span className="text-xs text-green-600">Email format is valid</span>
+</div>
+```
+
+#### Disabled State
+When the input field is non-interactive and cannot receive input.
+- **Background:** `bg-gray-100` (light gray)
+- **Opacity:** `disabled:opacity-50` or `disabled:opacity-60` (50-60% opacity)
+- **Cursor:** `disabled:cursor-not-allowed` (indicates non-interactive)
+- **Appearance:** Visually muted to indicate it cannot be used
+
+```tsx
+<Input 
+  disabled 
+  className="border-gray-300 bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 text-sm sm:text-base h-10 sm:h-12" 
+/>
+```
+
+**Note:** The disabled state is automatically handled by the Input component when the `disabled` prop is used.
+
+#### Hover State (Optional)
+Subtle hover effect for better interactivity (typically minimal for input fields).
+- **Border:** Slight color change (usually same as focus state)
+- **Background:** Very subtle background change (optional)
+- **Note:** Hover states are less emphasized on inputs compared to buttons
+
+#### Complete State Examples
+
+```tsx
+{/* Default Input */}
+<div className="space-y-2">
+  <Label className="text-sm sm:text-base font-medium text-gray-800">Email</Label>
+  <Input 
+    className="border-gray-300 focus:border-brand-orange focus:ring-brand-orange/20 bg-white text-sm sm:text-base h-10 sm:h-12" 
+    placeholder="Enter your email"
+  />
+</div>
+
+{/* Error State with Message */}
+<div className="space-y-2">
+  <Label className="text-sm sm:text-base font-medium text-gray-800">Email</Label>
+  <Input 
+    className="border-red-300 focus:border-red-500 focus:ring-red-500/20 bg-red-50 text-sm sm:text-base h-10 sm:h-12" 
+    placeholder="Enter your email"
+  />
+  <span className="text-xs text-red-600 font-medium">Please enter a valid email address</span>
+</div>
+
+{/* Success State with Feedback */}
+<div className="space-y-2">
+  <Label className="text-sm sm:text-base font-medium text-gray-800">Email</Label>
+  <Input 
+    className="border-green-300 focus:border-green-500 focus:ring-green-500/20 bg-green-50 text-sm sm:text-base h-10 sm:h-12" 
+    placeholder="Enter your email"
+  />
+  <span className="text-xs text-green-600 font-medium">Email format looks good!</span>
+</div>
+
+{/* Disabled Input */}
+<div className="space-y-2">
+  <Label className="text-sm sm:text-base font-medium text-gray-800">Email</Label>
+  <Input 
+    disabled
+    className="border-gray-300 bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 text-sm sm:text-base h-10 sm:h-12" 
+    placeholder="This field is disabled"
+  />
+</div>
+```
+
+#### Input State Best Practices
+
+1. **Consistent Styling**: Always use the same visual treatment for the same state across all forms
+2. **Clear Visual Hierarchy**: Error states should be more prominent than success states
+3. **Accessible Colors**: Ensure all states meet WCAG contrast requirements (4.5:1 minimum)
+4. **Clear Feedback**: Always provide text feedback (error/success messages) in addition to visual state changes
+5. **Focus Indicators**: Selected states must be clearly visible for keyboard navigation
+6. **State Transitions**: Use smooth transitions between states for better UX
+7. **Validation Timing**: Show error states on blur (when user leaves field) or on submit, not on every keystroke
+
+#### Input State Accessibility Checklist
+
+- [ ] Focus state has visible ring (2-4px) with sufficient contrast
+- [ ] Error states are distinguishable by color AND text labels
+- [ ] Disabled inputs have clear visual indication and cannot be focused
+- [ ] All states meet WCAG 2.1 AA contrast requirements
+- [ ] Screen readers can identify the current state of the input
+- [ ] Keyboard navigation clearly shows which field is active
+- [ ] Error messages are associated with their inputs via ARIA attributes
+
 ### Status Indicators
 ```tsx
 /* Success Badge */

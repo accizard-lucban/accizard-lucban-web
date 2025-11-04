@@ -169,7 +169,8 @@ export function RiskMapPage() {
       }
 
       // Add proximity bias to Lucban, Quezon for better local results
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${accessToken}&limit=5&proximity=121.5556,14.1139&country=PH`;
+      // Philippines bbox: 116.0,4.0,127.0,21.5 (minLon,minLat,maxLon,maxLat)
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${accessToken}&limit=5&proximity=121.5569,14.1133&country=PH&bbox=116,4,127,21.5`;
       
       const data = await ensureOk(await fetch(url)).then(r => r.json());
       setSearchSuggestions(data.features || []);
@@ -886,7 +887,7 @@ export function RiskMapPage() {
                 }
               }}
               showHeatmap={showHeatmap}
-              showDirections={false}
+              showDirections={true}
               pins={pins}
               center={mapCenter}
               zoom={mapZoom}

@@ -182,26 +182,26 @@ export function LoginForm() {
 
     return <div className="min-h-screen flex items-center justify-center p-4 sm:p-8">
       {/* Floating Container */}
-      <div className="w-full max-w-6xl bg-white rounded-2xl shadow-2xl border-2 border-orange-200 overflow-hidden">
-        <div className="flex flex-col lg:flex-row min-h-[600px]">
+      <div className="w-full max-w-5xl bg-white rounded-2xl shadow-md overflow-hidden border border-gray-200">
+        <div className="flex flex-col lg:flex-row min-h-[500px]">
           {/* Left Side - Logo and Branding */}
-          <div className="flex-1 bg-[url('/accizard-uploads/login-image.png')] bg-cover bg-center min-h-[300px] lg:min-h-auto">
+          <div className="flex-1 bg-[url('/accizard-uploads/login-image.png')] bg-cover bg-center min-h-[250px] lg:min-h-auto">
             <div className="text-center">
               
             </div>
           </div>
 
           {/* Right Side - Login Form */}
-          <div className="flex-1 bg-white flex items-center justify-center p-4 sm:p-8 lg:p-12">
-            <Card className="w-full max-w-md border-0 shadow-none">
-          <CardHeader className="text-center pb-4 sm:pb-8">
+          <div className="flex-1 bg-white flex items-center justify-center p-4 sm:p-6 lg:p-8">
+            <Card className="w-full max-w-sm border-0 shadow-none">
+          <CardHeader className="text-center pb-3 sm:pb-6">
             <div className="flex flex-col items-center justify-center mb-4">
               {userType === "super-admin" ? (
                 <div className="flex flex-col items-center space-y-2">
                   <img 
                     src="/accizard-uploads/logo-ldrrmo-png.png" 
                     alt="LDRRMO Logo" 
-                    className="h-16 w-16 object-contain"
+                    className="h-12 w-12 object-contain"
                   />
                   <div className="text-center">
                     <CardTitle className="text-2xl sm:text-3xl font-bold text-gray-800 mb-0">Account Login</CardTitle>
@@ -213,7 +213,7 @@ export function LoginForm() {
                   <img 
                     src="/accizard-uploads/logo-ldrrmo-png.png" 
                     alt="LDRRMO Logo" 
-                    className="h-16 w-16 object-contain"
+                    className="h-12 w-12 object-contain"
                   />
                   <div className="text-center">
                     <CardTitle className="text-2xl sm:text-3xl font-bold text-gray-800 mb-0">Account Login</CardTitle>
@@ -226,7 +226,7 @@ export function LoginForm() {
           <CardContent>
             <Tabs defaultValue="super-admin" value={userType} onValueChange={setUserType} className="w-full">
               {/* User Type Toggle */}
-              <TabsList className="grid w-full grid-cols-2 mb-4 sm:mb-6 bg-gray-100 h-auto p-1">
+              <TabsList className="grid w-full grid-cols-2 mb-3 sm:mb-4 bg-gray-100 h-auto p-1">
                 <TabsTrigger 
                   value="super-admin" 
                   className="py-2 sm:py-3 px-2 sm:px-4 text-xs sm:text-sm font-medium data-[state=active]:bg-brand-orange data-[state=active]:text-white text-gray-600 hover:bg-orange-100 hover:text-brand-orange transition-colors"
@@ -242,15 +242,15 @@ export function LoginForm() {
               </TabsList>
 
               <TabsContent value="super-admin" className="mt-0">
-                <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+                <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="email" className="text-gray-800 font-medium text-sm sm:text-base">Email</Label>
-                    <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" required className="h-10 sm:h-12 border-gray-300 focus:border-gray-300 focus:ring-[#1f2937] text-sm sm:text-base" />
+                    <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" required className="h-10 sm:h-12 border-gray-300 focus:border-gray-300 focus:ring-0 text-sm sm:text-base" />
                   </div>
                   <div className="space-y-2 relative">
                     <Label htmlFor="password" className="text-gray-800 font-medium text-sm sm:text-base">Password</Label>
                     <div className="relative">
-                      <Input id="password" type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required className="h-10 sm:h-12 border-gray-300 focus:border-gray-300 focus:ring-[#1f2937] pr-10 text-sm sm:text-base" />
+                      <Input id="password" type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required className="h-10 sm:h-12 border-gray-300 focus:border-gray-300 focus:ring-0 pr-10 text-sm sm:text-base" />
                       <Button
                         type="button"
                         variant="ghost"
@@ -295,15 +295,15 @@ export function LoginForm() {
               </TabsContent>
 
               <TabsContent value="admin" className="mt-0">
-                <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+                <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="username" className="text-gray-800 font-medium text-sm sm:text-base">Username</Label>
-                    <Input id="username" type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" required className="h-10 sm:h-12 border-gray-300 focus:border-gray-300 focus:ring-[#1f2937] text-sm sm:text-base" />
+                    <Input id="username" type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" required className="h-10 sm:h-12 border-gray-300 focus:border-gray-300 focus:ring-0 text-sm sm:text-base" />
                   </div>
                   <div className="space-y-2 relative">
                     <Label htmlFor="password-admin" className="text-gray-800 font-medium text-sm sm:text-base">Password</Label>
                     <div className="relative">
-                      <Input id="password-admin" type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required className="h-10 sm:h-12 border-gray-300 focus:border-gray-300 focus:ring-[#1f2937] pr-10 text-sm sm:text-base" />
+                      <Input id="password-admin" type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required className="h-10 sm:h-12 border-gray-300 focus:border-gray-300 focus:ring-0 pr-10 text-sm sm:text-base" />
                       <Button
                         type="button"
                         variant="ghost"

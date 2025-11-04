@@ -11,7 +11,6 @@ import { ResponsiveBar } from '@nivo/bar';
 import { ResponsiveCalendar } from '@nivo/calendar';
 import { ResponsiveLine } from '@nivo/line';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ReportsOverTimeChart } from "@/components/charts/ReportsOverTimeChart";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/sonner";
 import { ensureOk, getHttpStatusMessage } from "@/lib/utils";
@@ -1783,6 +1782,76 @@ ${calendarChart ? `
     legendPosition: 'middle' as const,
     legendOffset: 60
   }), []);
+
+  // Reports Over Time Chart - inline component
+  const ReportsOverTimeChart = ({ height = '100%', chartId = 'reports-over-time-chart', pointSize = 6, bottomMargin = 60 }: { height?: string; chartId?: string; pointSize?: number; bottomMargin?: number }) => {
+    const filteredData = useMemo(() => 
+      reportsOverTimeData.filter(item => enabledReportTypes[item.id]), 
+      [reportsOverTimeData, enabledReportTypes]
+    );
+
+    return (
+      <div id={chartId} style={{ height, minHeight: '300px' }}>
+        <ResponsiveLine
+          data={filteredData}
+          margin={{ top: 30, right: 60, bottom: bottomMargin, left: 60 }}
+          xScale={{ type: 'point' }}
+          yScale={{ 
+            type: 'linear', 
+            min: 'auto', 
+            max: 'auto',
+            stacked: false,
+            reverse: false 
+          }}
+          yFormat=" >-.0f"
+          axisTop={null}
+          axisRight={null}
+          axisBottom={{
+            tickSize: 5,
+            tickPadding: 5,
+            tickRotation: 0,
+            legend: 'Month',
+            legendPosition: 'middle',
+            legendOffset: bottomMargin > 60 ? 50 : 40
+          }}
+          axisLeft={{
+            tickSize: 5,
+            tickPadding: 5,
+            tickRotation: 0,
+            legend: 'Number of Reports',
+            legendPosition: 'middle',
+            legendOffset: -50
+          }}
+          colors={({ id }) => hazardColors[id as keyof typeof hazardColors] || '#6B7280'}
+          pointSize={pointSize}
+          pointColor={{ theme: 'background' }}
+          pointBorderWidth={2}
+          pointBorderColor={{ from: 'seriesColor' }}
+          pointLabelYOffset={-12}
+          useMesh={true}
+          theme={nivoTheme}
+          tooltip={({ point }) => (
+            <div style={{
+              background: 'white',
+              padding: '8px 12px',
+              border: '1px solid #e5e7eb',
+              borderRadius: '6px',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+              fontFamily: 'DM Sans, sans-serif',
+              fontSize: '12px'
+            }}>
+              <div style={{ fontWeight: 600, color: '#111827' }}>
+                {point.data.xFormatted}
+              </div>
+              <div style={{ color: point.seriesColor, fontWeight: 500 }}>
+                {point.seriesId}: {point.data.yFormatted} reports
+              </div>
+            </div>
+          )}
+        />
+      </div>
+    );
+  };
   const axisLeftConfig = useMemo(() => ({
     tickSize: 5,
     tickPadding: 5,
@@ -2634,18 +2703,10 @@ ${calendarChart ? `
                 <div className="text-sm font-semibold mb-2">5-Day Outlook</div>
                 <div className="grid grid-cols-5 gap-2">
                   {weatherData.loading || weatherOutlook.length === 0 ? (
-                    // Loading state
+                    // Loading state with orange spinner
                     Array.from({ length: 5 }, (_, index) => (
-                      <div key={index} className="text-center p-2 rounded-lg">
-                        <div className="text-xs font-semibold mb-1">Loading...</div>
-                        <div className="text-lg mb-1">⏳</div>
-                        <div className="text-sm font-bold">
-                          <div className="leading-tight">
-                            <div>...°C</div>
-                            <div className="text-xs font-medium">...°F</div>
-                          </div>
-                        </div>
-                        <div className="text-xs">...</div>
+                      <div key={index} className="text-center p-2 rounded-lg flex flex-col items-center justify-center min-h-[120px]">
+                        <div className="w-8 h-8 border-2 border-brand-orange/20 border-t-brand-orange rounded-full animate-spin"></div>
                       </div>
                     ))
                   ) : (
@@ -3292,10 +3353,6 @@ ${calendarChart ? `
           <CardContent className="space-y-4">
             <div className="h-64">
               <ReportsOverTimeChart 
-                data={reportsOverTimeData}
-                enabledReportTypes={enabledReportTypes}
-                hazardColors={hazardColors}
-                nivoTheme={nivoTheme}
                 height="100%" 
                 chartId="reports-over-time-chart" 
               />
@@ -3918,10 +3975,6 @@ ${calendarChart ? `
           </DialogHeader>
           <div className="flex-1 min-h-0 mt-4">
             <ReportsOverTimeChart 
-              data={reportsOverTimeData}
-              enabledReportTypes={enabledReportTypes}
-              hazardColors={hazardColors}
-              nivoTheme={nivoTheme}
               height="calc(90vh - 140px)" 
               chartId="reports-over-time-chart-modal"
               pointSize={8}
@@ -4019,13 +4072,13 @@ ${calendarChart ? `
             {/* Summary Stats */}
             <div className="grid grid-cols-3 gap-4 pt-6 border-t border-gray-200 mt-4">
               <div className="text-center">
-                <div className="text-2xl font-bold text-brand-orange">
+                <div className="text-2xl font-bold">
                   {calendarData2025.reduce((sum, day) => sum + day.value, 0)}
                 </div>
                 <div className="text-sm text-gray-600 mt-1">Total Reports</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-brand-red">
+                <div className="text-2xl font-bold">
                   {Math.max(...calendarData2025.map(d => d.value))}
                 </div>
                 <div className="text-sm text-gray-600 mt-1">Peak Day</div>
